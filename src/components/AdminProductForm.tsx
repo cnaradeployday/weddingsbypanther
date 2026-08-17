@@ -577,52 +577,58 @@ export function AdminProductForm({
         {variants.length === 0 && (
           <p className="text-sm text-muted">No variants — this product sells as a single option.</p>
         )}
-        {variants.map((v) => (
-          <div key={v.localId} className="grid grid-cols-[56px_1fr_1fr_100px_90px_auto] gap-3 items-center">
-            <label className="relative h-14 w-14 rounded-lg overflow-hidden border border-line cursor-pointer bg-cream">
-              {(v.imagePreview ?? v.imageUrl) && (
-                <Image
-                  src={v.imagePreview ?? v.imageUrl ?? ""}
-                  alt=""
-                  fill
-                  className="object-cover"
-                  unoptimized={!!v.imagePreview}
-                />
-              )}
-              <input type="file" accept="image/*" onChange={handleVariantImage(v.localId)} className="hidden" />
-            </label>
-            <input
-              placeholder="Label (e.g. Walnut)"
-              value={v.label}
-              onChange={(e) => updateVariant(v.localId, { label: e.target.value })}
-              className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
-            />
-            <input
-              placeholder="SKU"
-              value={v.sku}
-              onChange={(e) => updateVariant(v.localId, { sku: e.target.value })}
-              className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
-            />
-            <input
-              type="number"
-              step="0.01"
-              placeholder="+price"
-              value={v.priceDelta}
-              onChange={(e) => updateVariant(v.localId, { priceDelta: Number(e.target.value) })}
-              className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
-            />
-            <input
-              type="number"
-              placeholder="Stock"
-              value={v.stock}
-              onChange={(e) => updateVariant(v.localId, { stock: e.target.value })}
-              className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
-            />
-            <button type="button" onClick={() => removeVariant(v.localId)} className="text-xs text-terracotta-dark">
-              Remove
-            </button>
+        {variants.length > 0 && (
+          <div className="overflow-x-auto">
+            <div className="space-y-3 min-w-[560px]">
+              {variants.map((v) => (
+                <div key={v.localId} className="grid grid-cols-[56px_1fr_1fr_100px_90px_auto] gap-3 items-center">
+                  <label className="relative h-14 w-14 rounded-lg overflow-hidden border border-line cursor-pointer bg-cream">
+                    {(v.imagePreview ?? v.imageUrl) && (
+                      <Image
+                        src={v.imagePreview ?? v.imageUrl ?? ""}
+                        alt=""
+                        fill
+                        className="object-cover"
+                        unoptimized={!!v.imagePreview}
+                      />
+                    )}
+                    <input type="file" accept="image/*" onChange={handleVariantImage(v.localId)} className="hidden" />
+                  </label>
+                  <input
+                    placeholder="Label (e.g. Walnut)"
+                    value={v.label}
+                    onChange={(e) => updateVariant(v.localId, { label: e.target.value })}
+                    className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
+                  />
+                  <input
+                    placeholder="SKU"
+                    value={v.sku}
+                    onChange={(e) => updateVariant(v.localId, { sku: e.target.value })}
+                    className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="+price"
+                    value={v.priceDelta}
+                    onChange={(e) => updateVariant(v.localId, { priceDelta: Number(e.target.value) })}
+                    className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
+                  />
+                  <input
+                    type="number"
+                    placeholder="Stock"
+                    value={v.stock}
+                    onChange={(e) => updateVariant(v.localId, { stock: e.target.value })}
+                    className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
+                  />
+                  <button type="button" onClick={() => removeVariant(v.localId)} className="text-xs text-terracotta-dark">
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-        ))}
+        )}
       </div>
 
       <div className="md:col-span-2">
