@@ -10,6 +10,7 @@ export type InitialPrintTechnique = {
   finishDescription: string;
   colorModeDescription: string;
   sortOrder: number;
+  stripSourceColor: boolean;
 };
 
 export function PrintTechniqueForm({ initial }: { initial?: InitialPrintTechnique }) {
@@ -23,6 +24,7 @@ export function PrintTechniqueForm({ initial }: { initial?: InitialPrintTechniqu
     initial?.colorModeDescription ?? "Match the color treatment to a realistic printed finish."
   );
   const [sortOrder, setSortOrder] = useState(initial?.sortOrder ?? 0);
+  const [stripSourceColor, setStripSourceColor] = useState(initial?.stripSourceColor ?? false);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +39,7 @@ export function PrintTechniqueForm({ initial }: { initial?: InitialPrintTechniqu
       finish_description: finishDescription,
       color_mode_description: colorModeDescription,
       sort_order: sortOrder,
+      strip_source_color: stripSourceColor,
     };
 
     const { error: saveError } = initial
@@ -120,6 +123,20 @@ export function PrintTechniqueForm({ initial }: { initial?: InitialPrintTechniqu
             className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
           />
         </div>
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={stripSourceColor}
+            onChange={(e) => setStripSourceColor(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            This technique physically can&apos;t reproduce color — pre-convert any uploaded logo/photo to
+            grayscale before sending it to the AI. Stronger than the color mode rule above (which only
+            asks nicely); use this for strictly monochrome techniques where even a small colored detail
+            (like a logo&apos;s accent dot) must never survive.
+          </span>
+        </label>
       </div>
 
       {error && <p className="text-sm text-terracotta-dark">{error}</p>}

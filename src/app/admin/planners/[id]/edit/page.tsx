@@ -1,0 +1,41 @@
+import { notFound, redirect } from "next/navigation";
+import { getSessionProfile, createClient } from "@/lib/supabase/server";
+import { getBackofficePermissions } from "@/lib/permissions";
+import { PlannerSettingsForm } from "@/components/PlannerSettingsForm";
+import { VettingStatusControl } from "@/components/VettingStatusControl";
+
+export default async function EditPlannerPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const session = await getSessionProfile();
+  if (!session) redirect("/login");
+  const supabase = await createClient();
+  const perms = await getBackofficePermissions(supabase, session.profile);
+  if (!perms.planners.write) redirect("/admin/planners");
+
+  const { data: planner } = await supabase.from("planners").select("*").eq("id", id).maybeSingle();
+  if (!planner) notFound();
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-4 mb-1">
+        <h1 className="font-serif text-3xl">{planner.business_name}</h1>
+        <VettingStatusControl table="planners" id={planner.id} status={planner.status} />
+      </div>
+      <p className="text-muted mb-8">
+        Storefront live at /store/{planner.slug} — everything here is exactly what this planner can edit
+        themselves from their own Storefront settings.
+      </p>
+      <PlannerSettingsForm
+        plannerId={planner.id}
+        initial={{
+          business_name: planner.business_name,
+          tagline: planner.tagline,
+          initials: planner.initials,
+          default_markup_pct: planner.default_markup_pct,
+          logo_url: planner.logo_url,
+          accent_color: planner.accent_color,
+        }}
+      />
+    </div>
+  );
+}

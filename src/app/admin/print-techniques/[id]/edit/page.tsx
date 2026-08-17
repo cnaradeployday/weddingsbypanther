@@ -22,6 +22,7 @@ export default async function EditPrintTechniquePage({ params }: { params: Promi
     finishDescription: technique.finish_description,
     colorModeDescription: technique.color_mode_description,
     sortOrder: technique.sort_order,
+    stripSourceColor: technique.strip_source_color,
   };
 
   return (

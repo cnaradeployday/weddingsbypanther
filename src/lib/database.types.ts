@@ -273,6 +273,7 @@ export type Database = {
           id: string
           name: string
           sort_order: number
+          strip_source_color: boolean
         }
         Insert: {
           color_mode_description?: string
@@ -281,6 +282,7 @@ export type Database = {
           id?: string
           name: string
           sort_order?: number
+          strip_source_color?: boolean
         }
         Update: {
           color_mode_description?: string
@@ -289,6 +291,7 @@ export type Database = {
           id?: string
           name?: string
           sort_order?: number
+          strip_source_color?: boolean
         }
         Relationships: []
       }

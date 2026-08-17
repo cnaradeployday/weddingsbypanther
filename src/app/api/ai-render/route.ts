@@ -105,6 +105,21 @@ async function withPrintAreaGuide(base: ImagePayload, zone: PrintZone | undefine
   }
 }
 
+// Prompt instructions alone weren't reliably enough to keep small artwork
+// details (a logo's brand-color accent dot, an icon fragment) from leaking
+// through unconverted on color-incapable techniques like laser engraving.
+// Stripping color from the source pixels here removes the possibility
+// entirely — there is no color left for the model to (mis)reproduce.
+async function toGrayscale(image: ImagePayload): Promise<ImagePayload> {
+  try {
+    const buffer = Buffer.from(image.data, "base64");
+    const gray = await sharp(buffer).grayscale().png().toBuffer();
+    return { data: gray.toString("base64"), mimeType: "image/png" };
+  } catch {
+    return image;
+  }
+}
+
 async function loadImageAsBase64(url: string): Promise<ImagePayload | null> {
   try {
     if (url.startsWith("/")) {
@@ -198,7 +213,7 @@ export async function POST(req: NextRequest) {
       )
       .eq("id", productId)
       .maybeSingle(),
-    supabase.from("print_techniques").select("name, finish_description, color_mode_description"),
+    supabase.from("print_techniques").select("name, finish_description, color_mode_description, strip_source_color"),
   ]);
 
   if (!product) {
@@ -230,6 +245,10 @@ export async function POST(req: NextRequest) {
   const techniqueMeta = technique
     ? (techniqueCatalog ?? []).find((t) => t.name === technique.technique)
     : undefined;
+
+  if (logoImage && techniqueMeta?.strip_source_color) {
+    logoImage = await toGrayscale(logoImage);
+  }
   const finish = techniqueMeta?.finish_description ?? FALLBACK_FINISH;
   const colorMode = techniqueMeta?.color_mode_description ?? FALLBACK_COLOR_MODE;
   const alignPhrase =

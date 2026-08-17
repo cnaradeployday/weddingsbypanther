@@ -6,9 +6,9 @@ import { useCart } from "@/lib/cart";
 import { formatUSD } from "@/lib/format";
 
 const TIER_LABEL: Record<string, string> = {
-  under: "Under Budget",
-  fit: "Best Fit",
-  premium: "Most Premium",
+  under: "Your Budget",
+  fit: "+20%",
+  premium: "+40%",
 };
 
 type ProposalOption = {

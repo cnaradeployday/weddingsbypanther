@@ -8,10 +8,11 @@ import type { CatalogProduct } from "@/lib/queries";
 
 const STYLES = ["Romantic", "Minimalist", "Rustic", "Modern", "Classic"];
 
+type LineItem = { product: CatalogProduct; quantity: number };
 type Tier = {
   label: string;
   tier: "under" | "fit" | "premium";
-  items: { product: CatalogProduct; quantity: number }[];
+  items: LineItem[];
   total: number;
 };
 
@@ -19,11 +20,23 @@ function guestTables(guests: number) {
   return Math.max(1, Math.ceil(guests / 10));
 }
 
-function buildTier(
-  catalog: CatalogProduct[],
-  guests: number,
-  pick: (products: CatalogProduct[]) => CatalogProduct | undefined
-): { product: CatalogProduct; quantity: number }[] {
+type CategorySlot = { qty: number; options: CatalogProduct[]; index: number };
+
+function slotLineTotal(slot: CategorySlot): number {
+  const p = slot.options[slot.index];
+  if (!p) return 0;
+  return p.price * Math.max(slot.qty, p.minOrder);
+}
+
+function slotsTotal(slots: CategorySlot[]): number {
+  return slots.reduce((sum, s) => sum + slotLineTotal(s), 0);
+}
+
+// Every option is built from the same category plan (driven by guest count),
+// starting from each category's cheapest matching product — this is what
+// keeps every tier's products actually connected to what the customer
+// entered, rather than a price picked out of thin air.
+function buildBaseSlots(catalog: CatalogProduct[], guests: number): CategorySlot[] {
   const byCategory = new Map<string, CatalogProduct[]>();
   for (const p of catalog) {
     const list = byCategory.get(p.categorySlug) ?? [];
@@ -39,13 +52,48 @@ function buildTier(
     { slug: "welcome-bags", qty: Math.ceil(guests * 0.6) },
   ];
 
-  const items: { product: CatalogProduct; quantity: number }[] = [];
-  for (const { slug, qty } of plan) {
-    const options = (byCategory.get(slug) ?? []).slice().sort((a, b) => a.price - b.price);
-    const chosen = pick(options);
-    if (chosen) items.push({ product: chosen, quantity: Math.max(qty, chosen.minOrder) });
+  return plan
+    .map(({ slug, qty }) => {
+      const options = (byCategory.get(slug) ?? []).slice().sort((a, b) => a.price - b.price);
+      return { qty, options, index: 0 };
+    })
+    .filter((s) => s.options.length > 0);
+}
+
+// Greedily swaps each category's product for the next-more-expensive option
+// — always picking whichever available upgrade costs the least — until the
+// total reaches the target (or every category has run out of upgrades).
+// This is what lets the base option actually spend the customer's stated
+// budget instead of landing wherever the cheapest picks happen to total.
+function upgradeToTarget(slots: CategorySlot[], target: number): CategorySlot[] {
+  const working = slots.map((s) => ({ ...s }));
+  let total = slotsTotal(working);
+  while (total < target) {
+    let bestGain = Infinity;
+    let bestIndex = -1;
+    working.forEach((slot, i) => {
+      if (slot.index + 1 >= slot.options.length) return;
+      const gain = slotLineTotal({ ...slot, index: slot.index + 1 }) - slotLineTotal(slot);
+      if (gain > 0 && gain < bestGain) {
+        bestGain = gain;
+        bestIndex = i;
+      }
+    });
+    if (bestIndex === -1) break;
+    working[bestIndex].index += 1;
+    total = slotsTotal(working);
   }
-  return items;
+  return working;
+}
+
+function slotsToItems(slots: CategorySlot[]): LineItem[] {
+  return slots
+    .map((s) => {
+      const product = s.options[s.index];
+      if (!product) return null;
+      return { product, quantity: Math.max(s.qty, product.minOrder) };
+    })
+    .filter((i): i is LineItem => i !== null);
 }
 
 export function BuilderForm({
@@ -76,17 +124,28 @@ export function BuilderForm({
   const handleGenerate = async () => {
     setSubmitting(true);
 
-    const cheap = buildTier(catalog, guests, (opts) => opts[0]);
-    const mid = buildTier(catalog, guests, (opts) => opts[Math.floor(opts.length / 2)] ?? opts[0]);
-    const premium = buildTier(catalog, guests, (opts) => opts[opts.length - 1]);
+    const baseSlots = buildBaseSlots(catalog, guests);
+    // Tier 1 spends at least the customer's stated budget (upgrading from
+    // the cheapest picks until it does). Tiers 2 and 3 upgrade further from
+    // there to land at +20% and +40% over tier 1 specifically — not
+    // compounding on each other — using real, connected product swaps the
+    // whole way, so every number on screen is backed by actual line items.
+    const tier1Slots = upgradeToTarget(baseSlots, budget);
+    const items1 = slotsToItems(tier1Slots);
+    const total1 = slotsTotal(tier1Slots);
 
-    const totalOf = (items: { product: CatalogProduct; quantity: number }[]) =>
-      items.reduce((sum, i) => sum + i.product.price * i.quantity, 0);
+    const tier2Slots = upgradeToTarget(tier1Slots, total1 * 1.2);
+    const items2 = slotsToItems(tier2Slots);
+    const total2 = slotsTotal(tier2Slots);
+
+    const tier3Slots = upgradeToTarget(tier2Slots, total1 * 1.4);
+    const items3 = slotsToItems(tier3Slots);
+    const total3 = slotsTotal(tier3Slots);
 
     const tiers: Tier[] = [
-      { label: "The Quiet Set", tier: "under", items: cheap, total: totalOf(cheap) },
-      { label: "The Signature Set", tier: "fit", items: mid, total: totalOf(mid) },
-      { label: "The Gilded Evening", tier: "premium", items: premium, total: totalOf(premium) },
+      { label: "The Quiet Set", tier: "under", items: items1, total: total1 },
+      { label: "The Signature Set", tier: "fit", items: items2, total: total2 },
+      { label: "The Gilded Evening", tier: "premium", items: items3, total: total3 },
     ];
 
     const { data: proposal, error: proposalError } = await supabase
