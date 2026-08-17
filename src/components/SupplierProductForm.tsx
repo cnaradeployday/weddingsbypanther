@@ -134,15 +134,23 @@ export function SupplierProductForm({
   );
 
   const handlePhotos = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const remaining = 4 - existingImages.length;
+    const remaining = 4 - existingImages.length - photos.length;
     const files = Array.from(e.target.files ?? []).slice(0, Math.max(0, remaining));
-    setPhotos(files);
-    setPreviews(files.map((f) => URL.createObjectURL(f)));
+    e.target.value = "";
+    if (files.length === 0) return;
+    setPhotos((prev) => [...prev, ...files]);
+    setPreviews((prev) => [...prev, ...files.map((f) => URL.createObjectURL(f))]);
   };
 
   const removeExistingImage = (id: string) => {
     setExistingImages((prev) => prev.filter((img) => img.id !== id));
     setZoneImageId((prev) => (prev === id ? null : prev));
+  };
+
+  const removePendingPhoto = (index: number) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
+    setPreviews((prev) => prev.filter((_, i) => i !== index));
+    setZoneImageId((prev) => (prev === `pending:${index}` ? null : prev));
   };
 
   const addVariant = () => setVariants((prev) => [...prev, newVariantRow()]);
@@ -229,6 +237,10 @@ export function SupplierProductForm({
       productId = product.id;
     }
 
+    // Maps a pending photo's index (as referenced by zoneImageId, e.g.
+    // "pending:0") to the real row id it gets once uploaded and inserted.
+    const pendingIdByIndex = new Map<number, string>();
+
     if (photos.length > 0) {
       const startIndex = existingImages.length;
       const uploads = await Promise.all(
@@ -240,12 +252,22 @@ export function SupplierProductForm({
             .upload(path, file);
           if (uploadError) return null;
           const { data: publicUrl } = supabase.storage.from("product-images").getPublicUrl(path);
-          return { product_id: productId, url: publicUrl.publicUrl, sort_order: startIndex + i };
+          return { pendingIndex: i, product_id: productId, url: publicUrl.publicUrl, sort_order: startIndex + i };
         })
       );
       const rows = uploads.filter((r): r is NonNullable<typeof r> => r !== null);
       if (rows.length > 0) {
-        await supabase.from("product_images").insert(rows);
+        const { data: inserted } = await supabase
+          .from("product_images")
+          .insert(
+            rows.map((row) => ({
+              product_id: row.product_id,
+              url: row.url,
+              sort_order: row.sort_order,
+            }))
+          )
+          .select();
+        inserted?.forEach((row, i) => pendingIdByIndex.set(rows[i].pendingIndex, row.id));
       }
     }
 
@@ -261,6 +283,9 @@ export function SupplierProductForm({
     }
 
     if (personalizable) {
+      const resolvedZoneImageId = zoneImageId?.startsWith("pending:")
+        ? pendingIdByIndex.get(Number(zoneImageId.split(":")[1])) ?? null
+        : zoneImageId;
       await supabase.from("product_print_zones").insert({
         product_id: productId,
         label: "Zone 1",
@@ -272,7 +297,7 @@ export function SupplierProductForm({
         pos_y_pct: zonePos.posY,
         width_pct: zonePos.width,
         height_pct: zonePos.height,
-        image_id: zoneImageId,
+        image_id: resolvedZoneImageId,
       });
     }
 
@@ -442,8 +467,15 @@ export function SupplierProductForm({
               </div>
             ))}
             {previews.map((src, i) => (
-              <div key={i} className="relative h-16 w-16 rounded-lg overflow-hidden border border-line">
+              <div key={src} className="relative h-16 w-16 rounded-lg overflow-hidden border border-line group">
                 <Image src={src} alt="" fill className="object-cover" unoptimized />
+                <button
+                  type="button"
+                  onClick={() => removePendingPhoto(i)}
+                  className="absolute inset-0 bg-black/50 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  Remove
+                </button>
               </div>
             ))}
             {existingImages.length + previews.length < 4 && (
@@ -484,7 +516,7 @@ export function SupplierProductForm({
 
         {personalizable && (
           <div>
-            {existingImages.length > 1 && (
+            {existingImages.length + previews.length > 1 && (
               <div className="mb-3">
                 <label className="text-xs uppercase tracking-wide text-muted block mb-2">
                   Reference photo for the print area
@@ -502,6 +534,18 @@ export function SupplierProductForm({
                       <Image src={img.url} alt="" fill className="object-cover" />
                     </button>
                   ))}
+                  {previews.map((src, i) => (
+                    <button
+                      key={src}
+                      type="button"
+                      onClick={() => setZoneImageId(`pending:${i}`)}
+                      className={`relative h-14 w-14 rounded-lg overflow-hidden border-2 ${
+                        zoneImageId === `pending:${i}` ? "border-terracotta" : "border-transparent"
+                      }`}
+                    >
+                      <Image src={src} alt="" fill className="object-cover" unoptimized />
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
@@ -509,7 +553,14 @@ export function SupplierProductForm({
               Print area — drag to position, drag the corner to resize
             </p>
             <PrintAreaTool
-              imageUrl={existingImages.find((i) => i.id === zoneImageId)?.url ?? previews[0] ?? null}
+              imageUrl={
+                (zoneImageId?.startsWith("pending:")
+                  ? previews[Number(zoneImageId.split(":")[1])]
+                  : existingImages.find((i) => i.id === zoneImageId)?.url) ??
+                existingImages[0]?.url ??
+                previews[0] ??
+                null
+              }
               zone={zonePos}
               onChange={setZonePos}
               sizeLabel={`${zoneWidth} × ${zoneHeight}mm`}

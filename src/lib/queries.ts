@@ -122,28 +122,37 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
   const planner = await getPlannerBySlug(plannerSlug);
   if (!planner) return null;
 
-  const { data, error } = await supabase
-    .from("planner_products")
+  // Two separate, unambiguous queries instead of filtering a nested
+  // (products) column through the planner_products embed — PostgREST only
+  // nulls out a non-matching to-one embed rather than excluding the row,
+  // which made that shortcut unreliable.
+  const { data: p, error: productError } = await supabase
+    .from("products")
     .select(
-      `markup_pct,
-       product:products (
-         *,
-         category:categories ( name, slug ),
-         supplier:suppliers ( business_name ),
-         images:product_images ( id, url, sort_order ),
-         techniques:product_print_techniques ( id, technique, extra_price, is_default ),
-         zones:product_print_zones ( id, label, width_mm, height_mm, max_chars_per_line, max_lines, pos_x_pct, pos_y_pct, width_pct, height_pct, image_id ),
-         variants:product_variants ( id, label, sku, price_delta, image_url, sort_order )
-       )`
+      `*,
+       category:categories ( name, slug ),
+       supplier:suppliers ( business_name ),
+       images:product_images ( id, url, sort_order ),
+       techniques:product_print_techniques ( id, technique, extra_price, is_default ),
+       zones:product_print_zones ( id, label, width_mm, height_mm, max_chars_per_line, max_lines, pos_x_pct, pos_y_pct, width_pct, height_pct, image_id ),
+       variants:product_variants ( id, label, sku, price_delta, image_url, sort_order )`
     )
-    .eq("planner_id", planner.id)
-    .eq("enabled", true)
-    .eq("product.slug", productSlug)
+    .eq("slug", productSlug)
+    .eq("status", "approved")
     .maybeSingle();
 
-  if (error || !data || !data.product) return null;
+  if (productError || !p) return null;
 
-  const p = data.product;
+  const { data: link, error: linkError } = await supabase
+    .from("planner_products")
+    .select("markup_pct")
+    .eq("planner_id", planner.id)
+    .eq("product_id", p.id)
+    .eq("enabled", true)
+    .maybeSingle();
+
+  if (linkError || !link) return null;
+
   const images = (p.images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
   const techniques = (p.techniques ?? []).slice();
   const zones = p.zones ?? [];
@@ -156,8 +165,8 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
     name: p.name,
     description: p.description,
     factoryPrice: p.factory_price,
-    markupPct: data.markup_pct,
-    unitPrice: applyMarkup(p.factory_price, data.markup_pct),
+    markupPct: link.markup_pct,
+    unitPrice: applyMarkup(p.factory_price, link.markup_pct),
     minOrder: p.min_order,
     leadTimeMin: p.lead_time_days_min,
     leadTimeMax: p.lead_time_days_max,
