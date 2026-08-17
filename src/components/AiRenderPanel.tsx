@@ -18,6 +18,33 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+function downloadName(dataUrl: string, label: string) {
+  return `bespoke-ai-${label}.${dataUrl.match(/^data:image\/(\w+);/)?.[1] ?? "png"}`;
+}
+
+function RenderCard({ label, src }: { label: string; src: string }) {
+  return (
+    <div>
+      <div className="relative aspect-[4/5] rounded-xl overflow-hidden border border-line bg-cream">
+        <Image src={src} alt={label} fill className="object-contain" unoptimized />
+        <span className="absolute bottom-2 left-2 text-[10px] bg-cream-light/90 px-2 py-1 rounded-full">
+          AI-generated — not a guaranteed final result
+        </span>
+      </div>
+      <div className="flex items-center justify-between mt-2">
+        <span className="text-xs text-muted">{label}</span>
+        <a
+          href={src}
+          download={downloadName(src, label.toLowerCase().replace(/\s+/g, "-"))}
+          className="text-xs font-medium underline underline-offset-2 hover:text-terracotta-dark transition-colors"
+        >
+          Download
+        </a>
+      </div>
+    </div>
+  );
+}
+
 export function AiRenderPanel({
   productId,
   names,
@@ -34,6 +61,7 @@ export function AiRenderPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  const [contextResult, setContextResult] = useState<string | null>(null);
   const [usedCount, setUsedCount] = useState(() => {
     if (typeof window === "undefined") return 0;
     return Number(sessionStorage.getItem(sessionKey(productId)) ?? "0");
@@ -53,6 +81,7 @@ export function AiRenderPanel({
     setLoading(true);
     setError(null);
     setResult(null);
+    setContextResult(null);
 
     try {
       const logoDataUrl = logoFile ? await fileToDataUrl(logoFile) : undefined;
@@ -64,6 +93,7 @@ export function AiRenderPanel({
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Could not generate a preview.");
       setResult(json.imageDataUrl);
+      setContextResult(json.contextImageDataUrl ?? null);
       const next = usedCount + 1;
       setUsedCount(next);
       sessionStorage.setItem(sessionKey(productId), String(next));
@@ -84,8 +114,8 @@ export function AiRenderPanel({
       </div>
       <p className="text-xs text-muted mb-4">
         Optional — upload your own logo, or leave it blank to use the names/monogram above. We&apos;ll
-        generate a realistic preview on this exact product photo. {remaining} of {MAX_RENDERS_PER_PRODUCT}{" "}
-        left this session.
+        generate a close-up product preview and a wedding lifestyle shot. {remaining} of{" "}
+        {MAX_RENDERS_PER_PRODUCT} left this session.
       </p>
 
       <div className="flex items-center gap-3 mb-4">
@@ -112,20 +142,17 @@ export function AiRenderPanel({
       {error && <p className="text-sm text-terracotta-dark mb-3">{error}</p>}
 
       {result && (
-        <div className="max-w-xs">
-          <div className="relative aspect-[4/5] rounded-xl overflow-hidden border border-line bg-cream">
-            <Image src={result} alt="AI-generated preview" fill className="object-contain" unoptimized />
-            <span className="absolute bottom-2 left-2 text-[10px] bg-cream-light/90 px-2 py-1 rounded-full">
-              AI-generated — not a guaranteed final result
-            </span>
-          </div>
-          <a
-            href={result}
-            download={`bespoke-ai-preview.${result.match(/^data:image\/(\w+);/)?.[1] ?? "png"}`}
-            className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium underline underline-offset-2 hover:text-terracotta-dark transition-colors"
-          >
-            Download image
-          </a>
+        <div className="grid grid-cols-2 gap-4 max-w-xl">
+          <RenderCard label="Product" src={result} />
+          {contextResult ? (
+            <RenderCard label="Wedding context" src={contextResult} />
+          ) : (
+            <div className="relative aspect-[4/5] rounded-xl border border-dashed border-line flex items-center justify-center">
+              <p className="text-xs text-muted text-center px-3">
+                Couldn&apos;t generate the wedding-context shot this time.
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

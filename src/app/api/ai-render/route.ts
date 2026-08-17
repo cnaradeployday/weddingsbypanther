@@ -36,16 +36,20 @@ const TECHNIQUE_COLOR_MODE: Record<string, string> = {
     "Render the artwork as a raised, monochrome wax-seal impression in a single wax color. Completely discard the original artwork's colors.",
 };
 
+// Any output must be a single, edge-to-edge photograph — image-editing
+// models will sometimes "helpfully" produce a moodboard/collage of several
+// small mockups instead of one edited photo, which is unusable here.
+const SINGLE_IMAGE_RULE =
+  "Output exactly ONE photograph that fills the entire frame edge-to-edge. Never produce a collage, grid, moodboard, multiple thumbnails, side-by-side variations, empty margins/borders, or any UI chrome — just one single, full-bleed photo.";
+
 type PrintZone = { pos_x_pct: number; pos_y_pct: number; width_pct: number; height_pct: number };
+type ImagePayload = { data: string; mimeType: string };
 
 // Draws a visible dashed guide rectangle over the printable area on the base
 // photo. Image-editing models follow a visual mask far more reliably than a
 // text description of percentages, so this is what keeps the AI render
 // inside the actual print area instead of drifting outside it.
-async function withPrintAreaGuide(
-  base: { data: string; mimeType: string },
-  zone: PrintZone | undefined
-): Promise<{ data: string; mimeType: string }> {
+async function withPrintAreaGuide(base: ImagePayload, zone: PrintZone | undefined): Promise<ImagePayload> {
   if (!zone) return base;
   try {
     const buffer = Buffer.from(base.data, "base64");
@@ -76,7 +80,7 @@ async function withPrintAreaGuide(
   }
 }
 
-async function loadImageAsBase64(url: string): Promise<{ data: string; mimeType: string } | null> {
+async function loadImageAsBase64(url: string): Promise<ImagePayload | null> {
   try {
     if (url.startsWith("/")) {
       const filePath = path.join(process.cwd(), "public", url);
@@ -92,6 +96,45 @@ async function loadImageAsBase64(url: string): Promise<{ data: string; mimeType:
     return { data: Buffer.from(buf).toString("base64"), mimeType };
   } catch {
     return null;
+  }
+}
+
+async function callGemini(
+  apiKey: string,
+  prompt: string,
+  images: ImagePayload[]
+): Promise<{ image: ImagePayload } | { error: string }> {
+  const parts: Record<string, unknown>[] = [{ text: prompt }];
+  for (const img of images) parts.push({ inline_data: { mime_type: img.mimeType, data: img.data } });
+
+  try {
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts }] }),
+      }
+    );
+
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      return { error: `AI render failed: ${errText.slice(0, 300)}` };
+    }
+
+    const json = await geminiRes.json();
+    const resultParts = json?.candidates?.[0]?.content?.parts ?? [];
+    const imagePart = resultParts.find((p: { inlineData?: { data?: string } }) => p.inlineData?.data);
+
+    if (!imagePart?.inlineData?.data) {
+      return { error: "The model didn't return an image." };
+    }
+
+    return {
+      image: { data: imagePart.inlineData.data, mimeType: imagePart.inlineData.mimeType ?? "image/png" },
+    };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "AI render failed." };
   }
 }
 
@@ -144,7 +187,7 @@ export async function POST(req: NextRequest) {
   }
   const guidedImage = await withPrintAreaGuide(baseImage, zone);
 
-  let logoImage: { data: string; mimeType: string } | null = null;
+  let logoImage: ImagePayload | null = null;
   if (logoDataUrl?.startsWith("data:")) {
     const match = /^data:(.+);base64,(.*)$/.exec(logoDataUrl);
     if (match) logoImage = { mimeType: match[1], data: match[2] };
@@ -185,7 +228,7 @@ export async function POST(req: NextRequest) {
     }${monogram ? `, near a small monogram-style ornament` : ""}.`;
   }
 
-  const prompt = `You are editing a real product photography image for a wedding merchandise brand. Do not change anything about the product, background, lighting, shadows, or composition except for: removing the guide rectangle described below, and adding the personalization described below strictly inside it.
+  const productPrompt = `You are editing a real product photography image for a wedding merchandise brand. This is a precise, surgical edit: keep the exact same product, background, lighting, shadows, camera angle, zoom level, and composition as the input photo. The only changes allowed are: removing the guide rectangle described below, and adding the personalization described below strictly inside it.
 
 ${contentInstruction}
 
@@ -193,41 +236,34 @@ ${region}
 
 Render the personalization with ${finish}, matching the print technique "${technique?.technique ?? "printed"}". ${colorMode}
 
-The result must look like authentic product photography, not a flat sticker or overlay, and must contain no trace of the guide rectangle — respect the surface curvature, lighting direction, and material of the product in the original photo.`;
+The result must look like authentic, unedited product photography — same framing as the input, not zoomed in or cropped — with no trace of the guide rectangle. Respect the surface curvature, lighting direction, and material of the product in the original photo.
 
-  const parts: Record<string, unknown>[] = [{ text: prompt }];
-  parts.push({ inline_data: { mime_type: guidedImage.mimeType, data: guidedImage.data } });
-  if (logoImage) parts.push({ inline_data: { mime_type: logoImage.mimeType, data: logoImage.data } });
+${SINGLE_IMAGE_RULE}`;
 
-  try {
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts }] }),
-      }
-    );
+  const productImages: ImagePayload[] = [guidedImage];
+  if (logoImage) productImages.push(logoImage);
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      return NextResponse.json({ error: `AI render failed: ${errText.slice(0, 300)}` }, { status: 502 });
-    }
-
-    const json = await geminiRes.json();
-    const resultParts = json?.candidates?.[0]?.content?.parts ?? [];
-    const imagePart = resultParts.find((p: { inlineData?: { data?: string } }) => p.inlineData?.data);
-
-    if (!imagePart?.inlineData?.data) {
-      return NextResponse.json({ error: "The model didn't return an image. Try again." }, { status: 502 });
-    }
-
-    const mimeType = imagePart.inlineData.mimeType ?? "image/png";
-    return NextResponse.json({ imageDataUrl: `data:${mimeType};base64,${imagePart.inlineData.data}` });
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "AI render failed." },
-      { status: 500 }
-    );
+  const productResult = await callGemini(apiKey, productPrompt, productImages);
+  if ("error" in productResult) {
+    return NextResponse.json({ error: productResult.error }, { status: 502 });
   }
+
+  const productImageDataUrl = `data:${productResult.image.mimeType};base64,${productResult.image.data}`;
+
+  // Second pass: place the now-personalized product into a realistic wedding
+  // lifestyle scene, chaining off the first result so the product and its
+  // personalization stay identical — only the surrounding context changes.
+  const contextPrompt = `You are a product photographer for a wedding merchandise brand. The attached image is a personalized product that has already been finalized — its shape, material, color, and personalization (the ${
+    logoImage ? "logo/artwork" : "text"
+  } applied with ${finish}) must be reproduced exactly as shown, pixel-faithful, with the personalization clearly legible.
+
+Reimagine this exact product inside a realistic, elegant wedding lifestyle scene appropriate for this kind of item — for example displayed on a reception or welcome table with soft natural light and understated floral styling, or naturally held/used during a wedding moment. Keep the product and its personalization completely unchanged; only the surrounding environment, framing, and lighting context should differ from the input.
+
+${SINGLE_IMAGE_RULE} No text captions, no watermarks, no collage of multiple angles — one full-bleed lifestyle photograph.`;
+
+  const contextResult = await callGemini(apiKey, contextPrompt, [productResult.image]);
+  const contextImageDataUrl =
+    "image" in contextResult ? `data:${contextResult.image.mimeType};base64,${contextResult.image.data}` : null;
+
+  return NextResponse.json({ imageDataUrl: productImageDataUrl, contextImageDataUrl });
 }

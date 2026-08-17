@@ -81,7 +81,7 @@ export function ProductConfigurator({
 
   const [names, setNames] = useState("Amelia & Ravi");
   const [date, setDate] = useState("2026-06-14");
-  const [monogram, setMonogram] = useState(MONOGRAMS[0]);
+  const [monogram, setMonogram] = useState("");
   const [techniqueId, setTechniqueId] = useState(
     product.techniques.find((t) => t.is_default)?.id ?? product.techniques[0]?.id ?? ""
   );
@@ -164,9 +164,14 @@ export function ProductConfigurator({
                 height: `${zone.height_pct}%`,
               }}
             >
-              <span style={{ fontSize: monogramFontPx, textShadow: "0 1px 4px rgba(255,255,255,0.85)" }} className="mb-1">
-                {monogram}
-              </span>
+              {monogram && (
+                <span
+                  style={{ fontSize: monogramFontPx, textShadow: "0 1px 4px rgba(255,255,255,0.85)" }}
+                  className="mb-1"
+                >
+                  {monogram}
+                </span>
+              )}
               <span
                 style={{ fontSize: nameFontPx, textShadow: "0 1px 4px rgba(255,255,255,0.85)" }}
                 className="font-serif leading-tight line-clamp-2"
@@ -274,8 +279,18 @@ export function ProductConfigurator({
               />
             </div>
             <div>
-              <label className="text-xs uppercase tracking-wide text-muted block mb-2">Monogram</label>
+              <label className="text-xs uppercase tracking-wide text-muted block mb-2">
+                Monogram <span className="normal-case text-muted/70">(optional)</span>
+              </label>
               <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => setMonogram("")}
+                  className={`h-11 px-3 rounded-lg border flex items-center justify-center text-xs font-medium ${
+                    monogram === "" ? "border-dark bg-dark text-cream-light" : "border-line"
+                  }`}
+                >
+                  None
+                </button>
                 {MONOGRAMS.map((m) => (
                   <button
                     key={m}
