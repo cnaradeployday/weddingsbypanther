@@ -6,9 +6,33 @@ import { useRouter } from "next/navigation";
 import { formatUSD } from "@/lib/format";
 import { applyMarkup } from "@/lib/format";
 import { useCart } from "@/lib/cart";
+import { createClient } from "@/lib/supabase/client";
+import { techniqueInkColor } from "@/lib/printTechniqueColors";
 import { AiRenderPanel } from "./AiRenderPanel";
 
 const MONOGRAMS = ["✦", "❀", "❖", "⬥", "✿", "☙"];
+
+// Approximates how each print technique looks on the manual (non-AI) live
+// preview — a plain color swap for printed techniques, plus a debossed
+// highlight/shadow pairing for engrave so it reads as cut into the material
+// rather than printed on top of it.
+function techniqueTextStyle(techniqueName?: string): React.CSSProperties {
+  const color = techniqueInkColor(techniqueName);
+  if (techniqueName === "Laser engrave") {
+    return {
+      color,
+      textShadow: "0 1px 0 rgba(255,255,255,0.6), 0 -1px 1px rgba(0,0,0,0.5)",
+      fontWeight: 500,
+    };
+  }
+  if (techniqueName === "Foil stamp") {
+    return { color, textShadow: "0 1px 3px rgba(0,0,0,0.3), 0 0 1px rgba(255,255,255,0.5)", fontWeight: 500 };
+  }
+  if (techniqueName === "Embroidery") {
+    return { color, textShadow: "0 1px 0 rgba(255,255,255,0.45)", fontWeight: 600 };
+  }
+  return { color, textShadow: "0 1px 4px rgba(255,255,255,0.85)" };
+}
 
 type Technique = { id: string; technique: string; extra_price: number; is_default: boolean };
 type ProductImage = { id: string; url: string };
@@ -53,6 +77,11 @@ const DEFAULT_POSITIONS: Record<ElemKey, ElemPos> = {
 
 function clampPct(v: number) {
   return Math.min(100, Math.max(0, v));
+}
+
+async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const res = await fetch(dataUrl);
+  return res.blob();
 }
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -126,6 +155,11 @@ export function ProductConfigurator({
   const [variantId, setVariantId] = useState(product.variants[0]?.id ?? "");
   const [quantity, setQuantity] = useState(product.minOrder);
   const [justAdded, setJustAdded] = useState(false);
+  const [addingToCart, setAddingToCart] = useState(false);
+  const [latestRender, setLatestRender] = useState<{
+    imageDataUrl: string;
+    contextImageDataUrl: string | null;
+  } | null>(null);
 
   const zone = product.zones[0];
   const zoneImageIndex = zone?.image_id ? product.images.findIndex((i) => i.id === zone.image_id) : -1;
@@ -216,7 +250,42 @@ export function ProductConfigurator({
     setLogoPreview(null);
   };
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
+    setAddingToCart(true);
+
+    // If the customer generated an AI render for this exact configuration,
+    // persist it to storage so it isn't lost once the tab closes — the
+    // planner/supplier/admin need to see it later against the real order.
+    let renderUrl: string | undefined;
+    let renderContextUrl: string | undefined;
+    if (latestRender) {
+      try {
+        const client = createClient();
+        const base = `${product.plannerSlug}/${product.id}/${crypto.randomUUID()}`;
+        const productBlob = await dataUrlToBlob(latestRender.imageDataUrl);
+        const { error: uploadError } = await client.storage
+          .from("personalization-renders")
+          .upload(`${base}-product.png`, productBlob, { contentType: "image/png" });
+        if (!uploadError) {
+          renderUrl = client.storage.from("personalization-renders").getPublicUrl(`${base}-product.png`)
+            .data.publicUrl;
+        }
+        if (latestRender.contextImageDataUrl) {
+          const contextBlob = await dataUrlToBlob(latestRender.contextImageDataUrl);
+          const { error: contextError } = await client.storage
+            .from("personalization-renders")
+            .upload(`${base}-context.png`, contextBlob, { contentType: "image/png" });
+          if (!contextError) {
+            renderContextUrl = client.storage
+              .from("personalization-renders")
+              .getPublicUrl(`${base}-context.png`).data.publicUrl;
+          }
+        }
+      } catch {
+        // Best-effort — still add to cart even if the upload fails.
+      }
+    }
+
     addItem({
       key: `${product.id}:${variantId}:${names}:${date}:${monogram}:${techniqueId}`,
       productId: product.id,
@@ -237,9 +306,12 @@ export function ProductConfigurator({
             sizeScale,
             positions,
             hasLogo: !!logoFile,
+            renderUrl,
+            renderContextUrl,
           }
         : undefined,
     });
+    setAddingToCart(false);
     setJustAdded(true);
     setTimeout(() => setJustAdded(false), 2000);
   };
@@ -286,7 +358,7 @@ export function ProductConfigurator({
                     top: `${positions.monogram.y}%`,
                     transform: "translate(-50%, -50%)",
                     fontSize: monogramFontPx,
-                    textShadow: "0 1px 4px rgba(255,255,255,0.85)",
+                    ...techniqueTextStyle(technique?.technique),
                   }}
                 >
                   {monogram}
@@ -301,7 +373,7 @@ export function ProductConfigurator({
                     top: `${positions.names.y}%`,
                     transform: "translate(-50%, -50%)",
                     fontSize: nameFontPx,
-                    textShadow: "0 1px 4px rgba(255,255,255,0.85)",
+                    ...techniqueTextStyle(technique?.technique),
                   }}
                 >
                   {names}
@@ -316,7 +388,7 @@ export function ProductConfigurator({
                     top: `${positions.date.y}%`,
                     transform: "translate(-50%, -50%)",
                     fontSize: dateFontPx,
-                    textShadow: "0 1px 4px rgba(255,255,255,0.85)",
+                    ...techniqueTextStyle(technique?.technique),
                   }}
                 >
                   {formattedDate}
@@ -553,6 +625,7 @@ export function ProductConfigurator({
             images={product.images}
             defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
             unlimited={unlimitedRenders}
+            onGenerated={setLatestRender}
           />
         )}
 
@@ -599,9 +672,10 @@ export function ProductConfigurator({
           </div>
           <button
             onClick={handleAddToCart}
-            className="px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors shrink-0"
+            disabled={addingToCart}
+            className="px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors shrink-0 disabled:opacity-50"
           >
-            {justAdded ? "Added ✓" : "Add to Cart"}
+            {addingToCart ? "Adding…" : justAdded ? "Added ✓" : "Add to Cart"}
           </button>
         </div>
         <button

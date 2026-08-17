@@ -56,6 +56,7 @@ export function AiRenderPanel({
   images = [],
   defaultImageId = null,
   unlimited = false,
+  onGenerated,
 }: {
   productId: string;
   names: string;
@@ -67,6 +68,7 @@ export function AiRenderPanel({
   images?: { id: string; url: string }[];
   defaultImageId?: string | null;
   unlimited?: boolean;
+  onGenerated?: (result: { imageDataUrl: string; contextImageDataUrl: string | null }) => void;
 }) {
   const [imageId, setImageId] = useState<string | null>(defaultImageId);
   const [loading, setLoading] = useState(false);
@@ -107,6 +109,7 @@ export function AiRenderPanel({
       if (!res.ok) throw new Error(json.error ?? "Could not generate a preview.");
       setResult(json.imageDataUrl);
       setContextResult(json.contextImageDataUrl ?? null);
+      onGenerated?.({ imageDataUrl: json.imageDataUrl, contextImageDataUrl: json.contextImageDataUrl ?? null });
       if (!unlimited) {
         const next = usedCount + 1;
         setUsedCount(next);

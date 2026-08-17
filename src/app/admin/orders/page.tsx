@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { formatUSD } from "@/lib/format";
 import { OrderStatusSelect } from "@/components/OrderStatusSelect";
@@ -28,6 +29,7 @@ export default async function AdminOrdersPage() {
               <th className="px-5 py-3 font-medium">Status</th>
               <th className="px-5 py-3 font-medium">Total</th>
               <th className="px-5 py-3 font-medium">Date</th>
+              <th className="px-5 py-3 font-medium"></th>
             </tr>
           </thead>
           <tbody>
@@ -43,6 +45,14 @@ export default async function AdminOrdersPage() {
                 </td>
                 <td className="px-5 py-4 font-medium">{formatUSD(o.total)}</td>
                 <td className="px-5 py-4 text-muted">{new Date(o.created_at).toLocaleDateString()}</td>
+                <td className="px-5 py-4 text-right">
+                  <Link
+                    href={`/admin/orders/${o.id}`}
+                    className="text-xs font-medium underline underline-offset-2 hover:text-terracotta-dark transition-colors"
+                  >
+                    View
+                  </Link>
+                </td>
               </tr>
             ))}
           </tbody>

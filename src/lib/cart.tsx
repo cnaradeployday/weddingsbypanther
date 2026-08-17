@@ -22,6 +22,8 @@ export type CartItem = {
     sizeScale?: number;
     positions?: Record<string, { x: number; y: number }>;
     hasLogo?: boolean;
+    renderUrl?: string;
+    renderContextUrl?: string;
   };
 };
 

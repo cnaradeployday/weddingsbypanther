@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { supabase } from "@/lib/supabase";
+import { techniqueInkColor } from "@/lib/printTechniqueColors";
 
 export const runtime = "nodejs";
 
@@ -16,20 +17,13 @@ const SINGLE_IMAGE_RULE =
   "Output exactly ONE photograph that fills the entire frame edge-to-edge. Never produce a collage, grid, moodboard, multiple thumbnails, side-by-side variations, empty margins/borders, or any UI chrome — just one single, full-bleed photo.";
 
 type Corner = { x: number; y: number };
-type PrintZone = {
-  corners_pct: Corner[];
-  width_mm: number | null;
-  height_mm: number | null;
-};
+type PrintZone = { corners_pct: Corner[] };
 type ImagePayload = { data: string; mimeType: string };
 
 // Matches the aspect-[4/5] + object-cover box used everywhere the product
 // photo is shown (the admin print-area tool and the storefront product
-// page). pos_x_pct/width_pct etc. are calibrated by eye against that
-// cropped view, not the raw uploaded photo, so this same center-crop must
-// be applied before those percentages are turned into pixels — otherwise
-// the guide rectangle (and therefore the AI render) lands on a different
-// part of the photo than what was actually configured.
+// page), so pixel math derived from corners_pct lines up with what was
+// actually configured.
 const STOREFRONT_ASPECT = 4 / 5;
 
 async function cropToStorefrontAspect(base: ImagePayload): Promise<ImagePayload> {
@@ -56,47 +50,6 @@ async function cropToStorefrontAspect(base: ImagePayload): Promise<ImagePayload>
       .toBuffer();
 
     return { data: cropped.toString("base64"), mimeType: "image/png" };
-  } catch {
-    return base;
-  }
-}
-
-// Draws a visible dashed guide outline over the printable area on the base
-// photo — a quadrilateral, not always an axis-aligned rectangle, since the
-// admin can reshape each corner independently to match a surface shown at
-// an angle in the photo. Image-editing models follow a visual mask far more
-// reliably than a text description of percentages, so this is what keeps
-// the AI render inside the actual print area instead of drifting outside it.
-async function withPrintAreaGuide(base: ImagePayload, zone: PrintZone | undefined): Promise<ImagePayload> {
-  if (!zone || zone.corners_pct.length !== 4) return base;
-  try {
-    const buffer = Buffer.from(base.data, "base64");
-    const image = sharp(buffer);
-    const { width, height } = await image.metadata();
-    if (!width || !height) return base;
-
-    const points = zone.corners_pct
-      .map((c) => `${(c.x / 100) * width},${(c.y / 100) * height}`)
-      .join(" ");
-    const strokeWidth = Math.max(3, Math.round(width * 0.004));
-
-    // No fill — only a thin dashed outline. A filled tint gave the model a
-    // colored patch to (sometimes) leave a residue of in the output; an
-    // outline-only guide is both enough to communicate the boundary and
-    // easier for the model to fully erase.
-    const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <polygon points="${points}"
-        fill="none" stroke="rgb(255,0,80)" stroke-width="${strokeWidth}"
-        stroke-linejoin="round"
-        stroke-dasharray="${strokeWidth * 4},${strokeWidth * 2.5}" />
-    </svg>`;
-
-    const composited = await image
-      .composite([{ input: Buffer.from(svg), left: 0, top: 0 }])
-      .png()
-      .toBuffer();
-
-    return { data: composited.toString("base64"), mimeType: "image/png" };
   } catch {
     return base;
   }
@@ -175,6 +128,140 @@ async function callGemini(
   }
 }
 
+function escapeXml(s: string) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function boundingBoxPx(corners: Corner[], width: number, height: number) {
+  const xs = corners.map((c) => (c.x / 100) * width);
+  const ys = corners.map((c) => (c.y / 100) * height);
+  const left = Math.min(...xs);
+  const top = Math.min(...ys);
+  return { left, top, width: Math.max(...xs) - left, height: Math.max(...ys) - top };
+}
+
+function clampInt(v: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, Math.round(v)));
+}
+
+// Builds the personalization as its own flat image (white background, logo
+// + text laid out exactly where the customer dragged each element) rather
+// than asking an image-editing model to place things on the real product
+// photo. Placement here is plain arithmetic, so it can't drift the way an
+// AI edit of the whole photo could.
+async function buildArtworkImage({
+  canvasW,
+  canvasH,
+  logoImage,
+  positions,
+  names,
+  date,
+  monogram,
+  inkColor,
+}: {
+  canvasW: number;
+  canvasH: number;
+  logoImage: ImagePayload | null;
+  positions: Record<string, { x: number; y: number }>;
+  names: string;
+  date: string;
+  monogram: string;
+  inkColor: string;
+}): Promise<Buffer> {
+  const pos = (key: string, fallback: Corner) => positions[key] ?? fallback;
+
+  let logoElement = "";
+  if (logoImage) {
+    const boxSize = Math.round(canvasW * 0.45);
+    const fitted = await sharp(Buffer.from(logoImage.data, "base64"))
+      .resize(boxSize, boxSize, { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 1 } })
+      .png()
+      .toBuffer();
+    const p = pos("logo", { x: 50, y: 35 });
+    const x = Math.round((p.x / 100) * canvasW - boxSize / 2);
+    const y = Math.round((p.y / 100) * canvasH - boxSize / 2);
+    logoElement = `<image x="${x}" y="${y}" width="${boxSize}" height="${boxSize}" href="data:image/png;base64,${fitted.toString(
+      "base64"
+    )}" />`;
+  }
+
+  const textElements: string[] = [];
+  if (monogram.trim()) {
+    const p = pos("monogram", { x: 50, y: 15 });
+    textElements.push(
+      `<text x="${(p.x / 100) * canvasW}" y="${(p.y / 100) * canvasH}" font-size="${canvasH * 0.14}" font-family="Georgia, 'Times New Roman', serif" fill="${inkColor}" text-anchor="middle" dominant-baseline="central">${escapeXml(monogram)}</text>`
+    );
+  }
+  if (names.trim()) {
+    const p = pos("names", { x: 50, y: 65 });
+    textElements.push(
+      `<text x="${(p.x / 100) * canvasW}" y="${(p.y / 100) * canvasH}" font-size="${canvasH * 0.11}" font-family="Georgia, 'Times New Roman', serif" fill="${inkColor}" text-anchor="middle" dominant-baseline="central">${escapeXml(names.trim())}</text>`
+    );
+  }
+  if (date.trim()) {
+    const p = pos("date", { x: 50, y: 82 });
+    textElements.push(
+      `<text x="${(p.x / 100) * canvasW}" y="${(p.y / 100) * canvasH}" font-size="${canvasH * 0.05}" font-family="Georgia, 'Times New Roman', serif" letter-spacing="1" fill="${inkColor}" text-anchor="middle" dominant-baseline="central">${escapeXml(date.trim())}</text>`
+    );
+  }
+
+  const svg = `<svg width="${canvasW}" height="${canvasH}" xmlns="http://www.w3.org/2000/svg">
+    <rect x="0" y="0" width="${canvasW}" height="${canvasH}" fill="white" />
+    ${logoElement}
+    ${textElements.join("\n")}
+  </svg>`;
+
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+// Multiply-blends the artwork onto the real product photo at the exact
+// print-area location — the same trick mockup generators use so the
+// product's own lighting/texture shows through the "ink", and white stays
+// invisible. This is deterministic pixel math, not a model guessing.
+//
+// The artwork buffer must already be rendered at (targetW x targetH) — do
+// not resize it here. Rendering the SVG text/logo directly at final size
+// (rather than rendering big and downscaling with Lanczos) avoids the
+// resize-kernel ringing/haloing that was leaving a faint white "shadow"
+// around engraved text edges.
+async function compositePersonalization(
+  base: ImagePayload,
+  artwork: Buffer,
+  box: { left: number; top: number; width: number; height: number },
+  targetW: number,
+  targetH: number
+): Promise<ImagePayload> {
+  const buffer = Buffer.from(base.data, "base64");
+  const image = sharp(buffer);
+  const meta = await image.metadata();
+  const width = meta.width ?? Math.round(box.left + box.width);
+  const height = meta.height ?? Math.round(box.top + box.height);
+
+  const cx = box.left + box.width / 2;
+  const cy = box.top + box.height / 2;
+  const left = clampInt(cx - targetW / 2, 0, Math.max(0, width - targetW));
+  const top = clampInt(cy - targetH / 2, 0, Math.max(0, height - targetH));
+
+  const composited = await image
+    .composite([{ input: artwork, left, top, blend: "multiply" }])
+    .png()
+    .toBuffer();
+
+  return { data: composited.toString("base64"), mimeType: "image/png" };
+}
+
+function buildLogoRestylePrompt(finish: string, colorMode: string, techniqueName: string) {
+  return `You are preparing artwork for physical ${techniqueName} printing. The attached image is source artwork (it may be a logo, illustration, or photo).
+
+Redraw it as it would look rendered with ${finish}, matching the ${techniqueName} technique.
+
+CRITICAL COLOR RULE: ${colorMode}
+
+Output ONLY the artwork itself: tightly cropped to its content with a small margin, centered, on a plain flat WHITE background. Do not include any product, mockup, scene, shadow, or extra elements — just the standalone artwork on white, as print-ready camera-ready art.
+
+${SINGLE_IMAGE_RULE}`;
+}
+
 export async function POST(req: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -191,7 +278,7 @@ export async function POST(req: NextRequest) {
   const monogram: string = body?.monogram ?? "";
   const logoDataUrl: string | undefined = body?.logoDataUrl;
   const sizeScale: number = typeof body?.sizeScale === "number" ? body.sizeScale : 1;
-  const positions: Record<string, { x: number; y: number }> = body?.positions ?? {};
+  const positions: Record<string, Corner> = body?.positions ?? {};
   const requestedImageId: string | undefined = body?.imageId;
 
   if (!productId) {
@@ -204,7 +291,7 @@ export async function POST(req: NextRequest) {
       .select(
         `name,
          images:product_images ( id, url, sort_order ),
-         zones:product_print_zones ( image_id, corners_pct, width_mm, height_mm ),
+         zones:product_print_zones ( image_id, corners_pct ),
          techniques:product_print_techniques ( technique, is_default )`
       )
       .eq("id", productId)
@@ -219,11 +306,7 @@ export async function POST(req: NextRequest) {
   const images = (product.images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
   const rawZone = product.zones?.[0];
   const zone: PrintZone | undefined = rawZone
-    ? {
-        corners_pct: (rawZone.corners_pct as Corner[] | null) ?? [],
-        width_mm: rawZone.width_mm,
-        height_mm: rawZone.height_mm,
-      }
+    ? { corners_pct: (rawZone.corners_pct as Corner[] | null) ?? [] }
     : undefined;
   const referenceImage =
     images.find((i) => i.id === requestedImageId) ?? images.find((i) => i.id === rawZone?.image_id) ?? images[0];
@@ -237,7 +320,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not load the product photo." }, { status: 502 });
   }
   const croppedBase = await cropToStorefrontAspect(baseImage);
-  const guidedImage = await withPrintAreaGuide(croppedBase, zone);
 
   let logoImage: ImagePayload | null = null;
   if (logoDataUrl?.startsWith("data:")) {
@@ -254,143 +336,55 @@ export async function POST(req: NextRequest) {
   }
   const finish = techniqueMeta?.finish_description ?? FALLBACK_FINISH;
   const colorMode = techniqueMeta?.color_mode_description ?? FALLBACK_COLOR_MODE;
-  // The customer drags each element (logo, monogram, names, date)
-  // independently on a live preview of the print area, so their exact
-  // relative position within that rectangle is described per-element here
-  // rather than as one shared alignment for the whole personalization.
-  function bucketH(pct: number): "left" | "center" | "right" {
-    if (pct < 33) return "left";
-    if (pct > 66) return "right";
-    return "center";
-  }
-  function bucketV(pct: number): "top" | "center" | "bottom" {
-    if (pct < 33) return "top";
-    if (pct > 66) return "bottom";
-    return "center";
-  }
-  function describePos(pos?: { x: number; y: number }): string {
-    if (!pos) return "centered";
-    const h = bucketH(pos.x);
-    const v = bucketV(pos.y);
-    if (h === "center" && v === "center") return "centered";
-    if (v === "center") return `toward the ${h} side`;
-    if (h === "center") return `toward the ${v}`;
-    return `toward the ${v}-${h}`;
-  }
+  const inkColor = techniqueInkColor(technique?.technique);
 
-  const elementDescriptions: string[] = [];
-  if (logoDataUrl && positions.logo) {
-    elementDescriptions.push(`the logo/artwork is placed ${describePos(positions.logo)} of the rectangle`);
-  }
-  if (monogram.trim() && positions.monogram) {
-    elementDescriptions.push(`the monogram is placed ${describePos(positions.monogram)} of the rectangle`);
-  }
-  if (names.trim() && positions.names) {
-    elementDescriptions.push(`the text "${names.trim()}" is placed ${describePos(positions.names)} of the rectangle`);
-  }
-  if (date.trim() && positions.date) {
-    elementDescriptions.push(`the date is placed ${describePos(positions.date)} of the rectangle`);
-  }
-
-  const alignPhrase =
-    elementDescriptions.length > 0
-      ? `Each personalization element keeps its own exact relative position within that rectangle, matching what the customer arranged: ${elementDescriptions.join(
-          "; "
-        )}. Preserve the relative spacing between elements — do not merge, center, or re-stack them together`
-      : "centered within that rectangle";
-
-  function isAxisAlignedRect(corners: Corner[]): boolean {
-    if (corners.length !== 4) return true;
-    const [tl, tr, br, bl] = corners;
-    const eps = 1;
-    return (
-      Math.abs(tl.y - tr.y) < eps &&
-      Math.abs(bl.y - br.y) < eps &&
-      Math.abs(tl.x - bl.x) < eps &&
-      Math.abs(tr.x - br.x) < eps
-    );
-  }
-  const shapePhrase =
-    zone && !isAxisAlignedRect(zone.corners_pct)
-      ? " This guide is drawn as a rotated or trapezoidal quadrilateral (not a plain upright rectangle), specifically to match the perspective/angle of that surface in the photo (e.g. a lid or panel shown at an angle) — the personalization must follow that exact shape and angle, sitting flush and flat on that surface as the guide shows, not upright relative to the overall photo frame."
-      : "";
-
-  const region = zone
-    ? `The input photo has a dashed magenta/pink guide OUTLINE (no fill) marking the exact printable area. That marked shape is the ONLY place the personalization may appear — it must not extend past its edges in any direction, even if that means rendering the personalization smaller than you otherwise would. Place the personalization ${alignPhrase}.${shapePhrase} The area corresponds to a real printable zone of ${
-        zone.width_mm ?? "?"
-      }mm by ${
-        zone.height_mm ?? "?"
-      }mm, so keep the personalization's scale proportionate to that rectangle.${
-        sizeScale > 1.05
-          ? ` The customer asked for the personalization to be rendered larger than the default fit — size it to about ${Math.round(
-              sizeScale * 100
-            )}% of the default scale while still staying fully inside the rectangle.`
-          : sizeScale < 0.95
-          ? ` The customer asked for the personalization to be rendered smaller than the default fit — size it to about ${Math.round(
-              sizeScale * 100
-            )}% of the default scale.`
-          : ""
-      } CRITICAL: the dashed magenta guide line is only a temporary annotation for you, the editor — it must be 100% absent from your output. Do not leave any dashed line, solid line, colored tint, faint outline, or box-shaped discoloration anywhere in the image. The area inside and around where the guide was must show only the product's real, undisturbed material, color, and lighting, exactly matching the untouched surrounding surface, with the personalization sitting directly on top of it as if it were physically printed there.`
-    : "Place the personalization in the natural, obvious spot for this kind of product.";
-
-  const hasText = names.trim().length > 0 || date.trim().length > 0;
-  const textPieces = [names.trim() && `the text "${names.trim()}"`, date.trim() && `the date "${date.trim()}"`].filter(
-    Boolean
-  );
-
-  let contentInstruction: string;
+  // Restyling just the logo (a small, well-scoped image-to-image task) is
+  // far more reliable for the model than editing the whole product photo
+  // and hoping it respects placement. If this call fails, fall back to the
+  // (already grayscaled, if applicable) original logo rather than failing
+  // the whole render.
+  let artworkLogoImage: ImagePayload | null = null;
   if (logoImage) {
-    contentInstruction =
-      "The second attached image is source artwork to personalize the product with (it may be a logo, illustration, or photo, e.g. of a couple). Extract its shape and content, then re-render it directly onto the product using the print technique described below — do not simply paste, overlay, or sticker the original image's pixels, colors, or shading onto the product.";
-    if (hasText) {
-      contentInstruction += ` Also add ${textPieces.join(
-        " and "
-      )} as elegant serif text, arranged naturally alongside the artwork (e.g. beneath or beside it) within the same printable area${
-        monogram ? ", near a small monogram-style ornament" : ""
-      } — do not omit this text.`;
-    }
-  } else {
-    contentInstruction = `Add the following onto the product, in an elegant serif style consistent with wedding stationery: ${
-      textPieces.join(" and ") || `the text "${names}"`
-    }${monogram ? `, near a small monogram-style ornament` : ""}.`;
+    const restylePrompt = buildLogoRestylePrompt(finish, colorMode, technique?.technique ?? "printed");
+    const restyleResult = await callGemini(apiKey, restylePrompt, [logoImage]);
+    artworkLogoImage = "image" in restyleResult ? restyleResult.image : logoImage;
   }
 
-  const productPrompt = `You are editing a real product photography image for a wedding merchandise brand. This is a precise, surgical edit: keep the exact same product, background, lighting, shadows, camera angle, zoom level, and composition as the input photo. The only changes allowed are: removing the guide rectangle described below, and adding the personalization described below strictly inside it.
+  const photoMeta = await sharp(Buffer.from(croppedBase.data, "base64")).metadata();
+  const photoW = photoMeta.width ?? 1000;
+  const photoH = photoMeta.height ?? 1250;
 
-${contentInstruction}
+  const box =
+    zone && zone.corners_pct.length === 4
+      ? boundingBoxPx(zone.corners_pct, photoW, photoH)
+      : { left: photoW * 0.25, top: photoH * 0.3, width: photoW * 0.5, height: photoH * 0.3 };
 
-${region}
+  const targetW = Math.max(1, Math.round(box.width * sizeScale));
+  const targetH = Math.max(1, Math.round(box.height * sizeScale));
 
-Render the personalization with ${finish}, matching the print technique "${technique?.technique ?? "printed"}".
+  const artworkBuffer = await buildArtworkImage({
+    canvasW: targetW,
+    canvasH: targetH,
+    logoImage: artworkLogoImage,
+    positions,
+    names,
+    date,
+    monogram,
+    inkColor,
+  });
 
-CRITICAL COLOR RULE: ${colorMode}
+  const productResultImage = await compositePersonalization(croppedBase, artworkBuffer, box, targetW, targetH);
+  const productImageDataUrl = `data:${productResultImage.mimeType};base64,${productResultImage.data}`;
 
-The result must look like authentic, unedited product photography — same framing as the input, not zoomed in or cropped — with no trace of the guide rectangle. Respect the surface curvature, lighting direction, and material of the product in the original photo.
-
-${SINGLE_IMAGE_RULE}`;
-
-  const productImages: ImagePayload[] = [guidedImage];
-  if (logoImage) productImages.push(logoImage);
-
-  const productResult = await callGemini(apiKey, productPrompt, productImages);
-  if ("error" in productResult) {
-    return NextResponse.json({ error: productResult.error }, { status: 502 });
-  }
-
-  const productImageDataUrl = `data:${productResult.image.mimeType};base64,${productResult.image.data}`;
-
-  // Second pass: place the now-personalized product into a realistic wedding
-  // lifestyle scene, chaining off the first result so the product and its
-  // personalization stay identical — only the surrounding context changes.
-  const contextPrompt = `You are a product photographer for a wedding merchandise brand. The attached image is a personalized product that has already been finalized — its shape, material, color, and personalization (the ${
-    logoImage ? "logo/artwork" : "text"
-  } applied with ${finish}) must be reproduced exactly as shown, pixel-faithful, with the personalization clearly legible.
+  // Second pass: place the now-personalized product (accurately composited,
+  // not AI-guessed) into a realistic wedding lifestyle scene.
+  const contextPrompt = `You are a product photographer for a wedding merchandise brand. The attached image is a personalized product that has already been finalized — its shape, material, color, and personalization must be reproduced exactly as shown, pixel-faithful, with the personalization clearly legible.
 
 Reimagine this exact product inside a realistic, elegant wedding lifestyle scene appropriate for this kind of item — for example displayed on a reception or welcome table with soft natural light and understated floral styling, or naturally held/used during a wedding moment. Keep the product and its personalization completely unchanged; only the surrounding environment, framing, and lighting context should differ from the input.
 
 ${SINGLE_IMAGE_RULE} No text captions, no watermarks, no collage of multiple angles — one full-bleed lifestyle photograph.`;
 
-  const contextResult = await callGemini(apiKey, contextPrompt, [productResult.image]);
+  const contextResult = await callGemini(apiKey, contextPrompt, [productResultImage]);
   const contextImageDataUrl =
     "image" in contextResult ? `data:${contextResult.image.mimeType};base64,${contextResult.image.data}` : null;
 
