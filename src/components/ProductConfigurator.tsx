@@ -216,6 +216,17 @@ export function ProductConfigurator({
 
   const zoneBox = useMemo(() => (zone ? boundingBox(zone.corners_pct) : null), [zone]);
 
+  // The draggable elements are positioned within zoneBox (its bounding box) —
+  // that's the same coordinate space the AI render and snapshot compositors
+  // use. But for angled/perspective products the actual print area is a
+  // trapezoid, not that bounding rectangle, so the visible outline traces
+  // the true quad (matching the admin print-area tool exactly) even though
+  // it draws in the full-photo 0-100 space rather than zoneBox's.
+  const zonePoints = useMemo(
+    () => (zone ? zone.corners_pct.map((c) => `${c.x},${c.y}`).join(" ") : ""),
+    [zone]
+  );
+
   // Real px-per-mm for the currently rendered zone box, so text/logo sizing
   // reflects the product's actual printable area instead of a fixed guess.
   const mmPerPx = useMemo(() => {
@@ -353,10 +364,26 @@ export function ProductConfigurator({
       <div>
         <div className="relative aspect-[4/5] rounded-2xl overflow-hidden bg-cream mb-4">
           {displayImage && <Image src={displayImage} alt={product.name} fill className="object-cover" priority />}
+          {product.personalizable && zone && showOverlayHere && (
+            <svg
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              className="absolute inset-0 w-full h-full pointer-events-none"
+            >
+              <polygon
+                points={zonePoints}
+                fill="none"
+                stroke="rgba(250,247,240,0.85)"
+                strokeWidth={0.6}
+                strokeDasharray="2.4,1.5"
+                vectorEffect="non-scaling-stroke"
+              />
+            </svg>
+          )}
           {product.personalizable && zone && zoneBox && showOverlayHere && (
             <div
               ref={zoneRef}
-              className="absolute pointer-events-none rounded-2xl border-2 border-dashed border-cream-light/70 text-dark text-center overflow-hidden"
+              className="absolute pointer-events-none text-dark text-center overflow-visible"
               style={{
                 left: `${zoneBox.left}%`,
                 top: `${zoneBox.top}%`,
