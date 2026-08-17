@@ -16,11 +16,11 @@ function slugify(input: string) {
   return `${base}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-export function SupplierProductForm({
-  supplierId,
+export function AdminProductForm({
+  suppliers,
   categories,
 }: {
-  supplierId: string;
+  suppliers: { id: string; business_name: string }[];
   categories: { id: string; name: string }[];
 }) {
   const router = useRouter();
@@ -28,6 +28,7 @@ export function SupplierProductForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
@@ -44,6 +45,7 @@ export function SupplierProductForm({
   const [maxChars, setMaxChars] = useState(24);
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
+  const [addToPlanners, setAddToPlanners] = useState(true);
 
   const handlePhotos = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []).slice(0, 4);
@@ -56,6 +58,10 @@ export function SupplierProductForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!supplierId) {
+      setError("Add a supplier first — every product needs one.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
 
@@ -74,7 +80,7 @@ export function SupplierProductForm({
         lead_time_days_max: leadMax,
         stock_on_hand: stock,
         personalizable,
-        status: "pending",
+        status: "approved",
       })
       .select()
       .single();
@@ -126,7 +132,21 @@ export function SupplierProductForm({
       });
     }
 
-    router.push("/supplier/products");
+    if (addToPlanners) {
+      const { data: planners } = await supabase.from("planners").select("id, default_markup_pct");
+      if (planners && planners.length > 0) {
+        await supabase.from("planner_products").insert(
+          planners.map((p) => ({
+            planner_id: p.id,
+            product_id: product.id,
+            markup_pct: p.default_markup_pct,
+            enabled: true,
+          }))
+        );
+      }
+    }
+
+    router.push("/admin/products");
     router.refresh();
   };
 
@@ -134,6 +154,18 @@ export function SupplierProductForm({
     <form onSubmit={handleSubmit} className="max-w-3xl grid md:grid-cols-2 gap-8">
       <div className="rounded-xl border border-line bg-white p-6 space-y-4">
         <p className="text-xs uppercase tracking-wide text-muted">Basics</p>
+        <select
+          value={supplierId}
+          onChange={(e) => setSupplierId(e.target.value)}
+          className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+        >
+          {suppliers.length === 0 && <option value="">No suppliers yet</option>}
+          {suppliers.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.business_name}
+            </option>
+          ))}
+        </select>
         <input
           required
           placeholder="Product name"
@@ -297,17 +329,26 @@ export function SupplierProductForm({
           </div>
         )}
 
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={addToPlanners}
+            onChange={(e) => setAddToPlanners(e.target.checked)}
+          />
+          Enable on every planner storefront at their default markup
+        </label>
+
         {error && <p className="text-sm text-terracotta-dark">{error}</p>}
 
         <button
           type="submit"
-          disabled={submitting}
-          className="w-full px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors disabled:opacity-50"
+          disabled={submitting || suppliers.length === 0}
+          className="w-full px-6 py-3 rounded-full bg-sage text-cream-light text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
         >
-          {submitting ? "Submitting…" : "Submit for Approval"}
+          {submitting ? "Publishing…" : "Publish product"}
         </button>
         <p className="text-xs text-muted">
-          An admin will review this product before it appears on any storefront.
+          Products you add here are approved immediately — no review queue.
         </p>
       </div>
     </form>

@@ -5,6 +5,7 @@ import { BackofficeShell } from "@/components/BackofficeShell";
 const NAV = [
   { href: "/admin", label: "Dashboard" },
   { href: "/admin/approvals", label: "Approval queue" },
+  { href: "/admin/products", label: "Products" },
   { href: "/admin/suppliers", label: "Suppliers" },
   { href: "/admin/planners", label: "Planners" },
   { href: "/admin/orders", label: "Orders" },
