@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 import { supabase } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -14,6 +15,66 @@ const TECHNIQUE_FINISH: Record<string, string> = {
   Embroidery: "a stitched thread texture with visible individual stitches and slight dimensional thickness",
   "Wax seal": "an embossed wax seal texture in a solid wax color",
 };
+
+// How much of the source artwork's original color/detail should survive the
+// print technique. Most physical techniques cannot reproduce full-color
+// photography, so uploaded photos/logos must be reduced accordingly.
+const TECHNIQUE_COLOR_MODE: Record<string, string> = {
+  "Foil stamp":
+    "Render the artwork as a single solid metallic tone (gold, silver, or rose gold — pick whichever fits the product) with no gradients. Completely discard the original artwork's colors, including any skin tones, background colors, or photo shading.",
+  "Laser engrave":
+    "Render the artwork as a monochrome engraved mark in the product material's own color (burned/etched, no ink, no color). Completely discard the original artwork's colors, including any skin tones, background colors, or photo shading — a photo becomes a grayscale-derived engraved silhouette/line art, never a color image.",
+  "Screen print":
+    "Reduce the artwork to 1-2 flat solid spot colors, as real screen printing would use. Do not attempt full photographic color or smooth gradients.",
+  Letterpress:
+    "Render the artwork as a single-color pressed impression (ink or blind emboss). Completely discard the original artwork's colors.",
+  "UV print":
+    "Reproduce the artwork in full, accurate photographic color and detail — UV printing supports true color reproduction.",
+  Embroidery:
+    "Simplify the artwork into a stitched design using at most 4-6 thread colors with visible thread texture. Do not attempt photographic detail, fine gradients, or the original color palette.",
+  "Wax seal":
+    "Render the artwork as a raised, monochrome wax-seal impression in a single wax color. Completely discard the original artwork's colors.",
+};
+
+type PrintZone = { pos_x_pct: number; pos_y_pct: number; width_pct: number; height_pct: number };
+
+// Draws a visible dashed guide rectangle over the printable area on the base
+// photo. Image-editing models follow a visual mask far more reliably than a
+// text description of percentages, so this is what keeps the AI render
+// inside the actual print area instead of drifting outside it.
+async function withPrintAreaGuide(
+  base: { data: string; mimeType: string },
+  zone: PrintZone | undefined
+): Promise<{ data: string; mimeType: string }> {
+  if (!zone) return base;
+  try {
+    const buffer = Buffer.from(base.data, "base64");
+    const image = sharp(buffer);
+    const { width, height } = await image.metadata();
+    if (!width || !height) return base;
+
+    const x = Math.round((zone.pos_x_pct / 100) * width);
+    const y = Math.round((zone.pos_y_pct / 100) * height);
+    const rectW = Math.max(1, Math.round((zone.width_pct / 100) * width));
+    const rectH = Math.max(1, Math.round((zone.height_pct / 100) * height));
+    const strokeWidth = Math.max(3, Math.round(width * 0.004));
+
+    const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      <rect x="${x}" y="${y}" width="${rectW}" height="${rectH}"
+        fill="rgba(255,0,80,0.10)" stroke="rgb(255,0,80)" stroke-width="${strokeWidth}"
+        stroke-dasharray="${strokeWidth * 4},${strokeWidth * 2.5}" />
+    </svg>`;
+
+    const composited = await image
+      .composite([{ input: Buffer.from(svg), left: 0, top: 0 }])
+      .png()
+      .toBuffer();
+
+    return { data: composited.toString("base64"), mimeType: "image/png" };
+  } catch {
+    return base;
+  }
+}
 
 async function loadImageAsBase64(url: string): Promise<{ data: string; mimeType: string } | null> {
   try {
@@ -81,6 +142,7 @@ export async function POST(req: NextRequest) {
   if (!baseImage) {
     return NextResponse.json({ error: "Could not load the product photo." }, { status: 502 });
   }
+  const guidedImage = await withPrintAreaGuide(baseImage, zone);
 
   let logoImage: { data: string; mimeType: string } | null = null;
   if (logoDataUrl?.startsWith("data:")) {
@@ -89,32 +151,36 @@ export async function POST(req: NextRequest) {
   }
 
   const finish = technique ? TECHNIQUE_FINISH[technique.technique] ?? "a clean printed finish" : "a clean printed finish";
+  const colorMode = technique
+    ? TECHNIQUE_COLOR_MODE[technique.technique] ??
+      "Match the color treatment to a realistic version of this print technique."
+    : "Match the color treatment to a realistic printed finish.";
   const region = zone
-    ? `The personalization must be placed only within the region located approximately ${zone.pos_x_pct.toFixed(
-        0
-      )}% from the left and ${zone.pos_y_pct.toFixed(0)}% from the top of the photo, spanning about ${zone.width_pct.toFixed(
-        0
-      )}% of the photo's width and ${zone.height_pct.toFixed(0)}% of its height. In real life that print area measures ${
+    ? `The input photo has a dashed magenta/pink guide rectangle marking the exact printable area. That marked rectangle is the ONLY place the personalization may appear — it must not extend past the rectangle's edges in any direction, even if that means rendering the personalization smaller than you otherwise would. The rectangle corresponds to a real printable zone of ${
         zone.width_mm ?? "?"
-      }mm by ${zone.height_mm ?? "?"}mm, so keep the personalization proportionate to that size relative to the product.`
+      }mm by ${
+        zone.height_mm ?? "?"
+      }mm, so keep the personalization's scale proportionate to that rectangle. The guide rectangle itself is only a temporary annotation: it must NOT appear in your output image — remove it completely and replace that area with the product's real material/surface plus the personalization.`
     : "Place the personalization in the natural, obvious spot for this kind of product.";
 
   const contentInstruction = logoImage
-    ? "Apply the provided logo image (the second image) onto the product, replacing nothing else in the scene."
+    ? "The second attached image is source artwork to personalize the product with (it may be a logo, illustration, or photo, e.g. of a couple). Extract its shape and content, then re-render it directly onto the product using the print technique described below — do not simply paste, overlay, or sticker the original image's pixels, colors, or shading onto the product."
     : `Add the following text onto the product, in an elegant serif style consistent with wedding stationery: "${names}"${
         date ? ` and the date "${date}"` : ""
       }${monogram ? `, near a small monogram-style ornament` : ""}.`;
 
-  const prompt = `You are editing a real product photography image for a wedding merchandise brand. Do not change anything about the product, background, lighting, shadows, or composition except for the personalization described below.
+  const prompt = `You are editing a real product photography image for a wedding merchandise brand. Do not change anything about the product, background, lighting, shadows, or composition except for: removing the guide rectangle described below, and adding the personalization described below strictly inside it.
 
 ${contentInstruction}
 
 ${region}
 
-Render the personalization with ${finish}, matching the print technique "${technique?.technique ?? "printed"}". The result must look like authentic product photography, not a flat sticker — respect the surface curvature, lighting direction, and material of the product in the original photo.`;
+Render the personalization with ${finish}, matching the print technique "${technique?.technique ?? "printed"}". ${colorMode}
+
+The result must look like authentic product photography, not a flat sticker or overlay, and must contain no trace of the guide rectangle — respect the surface curvature, lighting direction, and material of the product in the original photo.`;
 
   const parts: Record<string, unknown>[] = [{ text: prompt }];
-  parts.push({ inline_data: { mime_type: baseImage.mimeType, data: baseImage.data } });
+  parts.push({ inline_data: { mime_type: guidedImage.mimeType, data: guidedImage.data } });
   if (logoImage) parts.push({ inline_data: { mime_type: logoImage.mimeType, data: logoImage.data } });
 
   try {

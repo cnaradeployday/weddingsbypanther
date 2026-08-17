@@ -112,11 +112,20 @@ export function AiRenderPanel({
       {error && <p className="text-sm text-terracotta-dark mb-3">{error}</p>}
 
       {result && (
-        <div className="relative aspect-[4/5] rounded-xl overflow-hidden border border-line max-w-xs">
-          <Image src={result} alt="AI-generated preview" fill className="object-cover" unoptimized />
-          <span className="absolute bottom-2 left-2 text-[10px] bg-cream-light/90 px-2 py-1 rounded-full">
-            AI-generated — not a guaranteed final result
-          </span>
+        <div className="max-w-xs">
+          <div className="relative aspect-[4/5] rounded-xl overflow-hidden border border-line bg-cream">
+            <Image src={result} alt="AI-generated preview" fill className="object-contain" unoptimized />
+            <span className="absolute bottom-2 left-2 text-[10px] bg-cream-light/90 px-2 py-1 rounded-full">
+              AI-generated — not a guaranteed final result
+            </span>
+          </div>
+          <a
+            href={result}
+            download={`bespoke-ai-preview.${result.match(/^data:image\/(\w+);/)?.[1] ?? "png"}`}
+            className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium underline underline-offset-2 hover:text-terracotta-dark transition-colors"
+          >
+            Download image
+          </a>
         </div>
       )}
     </div>
