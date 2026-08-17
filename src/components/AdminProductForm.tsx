@@ -5,7 +5,14 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { ExistingImage, InitialProduct } from "./SupplierProductForm";
-import { PrintAreaTool } from "./PrintAreaTool";
+import { PrintAreaTool, type Quad } from "./PrintAreaTool";
+
+const DEFAULT_CORNERS: Quad = [
+  { x: 30, y: 35 },
+  { x: 70, y: 35 },
+  { x: 70, y: 60 },
+  { x: 30, y: 60 },
+];
 
 type VariantRow = {
   localId: string;
@@ -77,13 +84,7 @@ export function AdminProductForm({
   const [zoneWidth, setZoneWidth] = useState(initial?.zone?.width ?? 60);
   const [zoneHeight, setZoneHeight] = useState(initial?.zone?.height ?? 30);
   const [maxChars, setMaxChars] = useState(initial?.zone?.maxChars ?? 24);
-  const [zonePos, setZonePos] = useState({
-    posX: initial?.zone?.posX ?? 30,
-    posY: initial?.zone?.posY ?? 35,
-    width: initial?.zone?.widthPct ?? 40,
-    height: initial?.zone?.heightPct ?? 25,
-    rotation: initial?.zone?.rotation ?? 0,
-  });
+  const [corners, setCorners] = useState<Quad>(initial?.zone?.corners ?? DEFAULT_CORNERS);
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [existingImages, setExistingImages] = useState<ExistingImage[]>(initial?.images ?? []);
@@ -268,11 +269,7 @@ export function AdminProductForm({
         height_mm: zoneHeight,
         max_chars_per_line: maxChars,
         max_lines: 2,
-        pos_x_pct: zonePos.posX,
-        pos_y_pct: zonePos.posY,
-        width_pct: zonePos.width,
-        height_pct: zonePos.height,
-        rotation_deg: zonePos.rotation,
+        corners_pct: corners,
         image_id: resolvedZoneImageId,
       });
     }
@@ -545,7 +542,8 @@ export function AdminProductForm({
               </div>
             )}
             <p className="text-xs uppercase tracking-wide text-muted mb-2">
-              Print area — drag to position, drag the corner to resize, drag the top handle to rotate
+              Print area — drag the shape to move it, drag any corner to reshape it (useful when the
+              surface is at an angle in the photo)
             </p>
             <PrintAreaTool
               imageUrl={
@@ -556,11 +554,11 @@ export function AdminProductForm({
                 previews[0] ??
                 null
               }
-              zone={zonePos}
-              onChange={setZonePos}
+              corners={corners}
+              onChange={setCorners}
               sizeLabel={`${zoneWidth} × ${zoneHeight}mm`}
             />
-            <div className="grid grid-cols-4 gap-3 mt-3">
+            <div className="grid grid-cols-3 gap-3 mt-3">
               <div>
                 <label className="text-xs text-muted block mb-1">Width (mm)</label>
                 <input
@@ -585,15 +583,6 @@ export function AdminProductForm({
                   type="number"
                   value={maxChars}
                   onChange={(e) => setMaxChars(Number(e.target.value))}
-                  className="w-full rounded-lg border border-line px-3 py-2 focus:outline-none focus:border-dark"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted block mb-1">Rotation (°)</label>
-                <input
-                  type="number"
-                  value={zonePos.rotation}
-                  onChange={(e) => setZonePos((z) => ({ ...z, rotation: Number(e.target.value) }))}
                   className="w-full rounded-lg border border-line px-3 py-2 focus:outline-none focus:border-dark"
                 />
               </div>

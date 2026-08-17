@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { SupplierProductForm, type InitialProduct } from "@/components/SupplierProductForm";
+import type { Quad } from "@/components/PrintAreaTool";
 
 export default async function EditSupplierProductPage({
   params,
@@ -29,7 +30,7 @@ export default async function EditSupplierProductPage({
     .select(
       `*, images:product_images(id, url, sort_order),
        techniques:product_print_techniques(technique),
-       zones:product_print_zones(width_mm, height_mm, max_chars_per_line, pos_x_pct, pos_y_pct, width_pct, height_pct, rotation_deg, image_id),
+       zones:product_print_zones(width_mm, height_mm, max_chars_per_line, corners_pct, image_id),
        variants:product_variants(id, label, sku, price_delta, stock_on_hand, image_url, sort_order)`
     )
     .eq("id", id)
@@ -59,11 +60,7 @@ export default async function EditSupplierProductPage({
           width: zone.width_mm ?? 60,
           height: zone.height_mm ?? 30,
           maxChars: zone.max_chars_per_line ?? 24,
-          posX: zone.pos_x_pct,
-          posY: zone.pos_y_pct,
-          widthPct: zone.width_pct,
-          heightPct: zone.height_pct,
-          rotation: zone.rotation_deg,
+          corners: zone.corners_pct as Quad,
           imageId: zone.image_id,
         }
       : null,

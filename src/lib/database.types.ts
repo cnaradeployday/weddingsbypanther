@@ -329,6 +329,7 @@ export type Database = {
       }
       product_print_zones: {
         Row: {
+          corners_pct: Json
           height_mm: number | null
           height_pct: number
           id: string
@@ -344,6 +345,7 @@ export type Database = {
           width_pct: number
         }
         Insert: {
+          corners_pct?: Json
           height_mm?: number | null
           height_pct?: number
           id?: string
@@ -359,6 +361,7 @@ export type Database = {
           width_pct?: number
         }
         Update: {
+          corners_pct?: Json
           height_mm?: number | null
           height_pct?: number
           id?: string

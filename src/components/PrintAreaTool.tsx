@@ -1,24 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import Image from "next/image";
 
 function clamp(v: number, min: number, max: number) {
   return Math.min(max, Math.max(min, v));
 }
 
-type Zone = { posX: number; posY: number; width: number; height: number; rotation: number };
-type DragState = { mode: "move" | "resize" | "rotate"; startX: number; startY: number; orig: Zone };
+export type Corner = { x: number; y: number };
+// Order: top-left, top-right, bottom-right, bottom-left.
+export type Quad = [Corner, Corner, Corner, Corner];
+
+type DragState = { mode: "move" | "corner"; cornerIndex?: number; startX: number; startY: number; orig: Quad };
 
 export function PrintAreaTool({
   imageUrl,
-  zone,
+  corners,
   onChange,
   sizeLabel,
 }: {
   imageUrl: string | null;
-  zone: Zone;
-  onChange: (zone: Zone) => void;
+  corners: Quad;
+  onChange: (corners: Quad) => void;
   sizeLabel?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -28,41 +31,28 @@ export function PrintAreaTool({
     onChangeRef.current = onChange;
   }, [onChange]);
 
-  // Listeners stay attached for the component's lifetime; they no-op unless
-  // a drag is in progress (dragState.current is set on pointer down).
   useEffect(() => {
     const handleMove = (e: PointerEvent) => {
       const state = dragState.current;
       const container = containerRef.current;
       if (!state || !container) return;
       const rect = container.getBoundingClientRect();
-
-      if (state.mode === "rotate") {
-        const centerX = rect.left + ((state.orig.posX + state.orig.width / 2) / 100) * rect.width;
-        const centerY = rect.top + ((state.orig.posY + state.orig.height / 2) / 100) * rect.height;
-        const angleRad = Math.atan2(e.clientY - centerY, e.clientX - centerX);
-        let deg = Math.round((angleRad * 180) / Math.PI + 90);
-        if (deg > 180) deg -= 360;
-        if (deg < -180) deg += 360;
-        onChangeRef.current({ ...state.orig, rotation: deg });
-        return;
-      }
-
       const dxPct = ((e.clientX - state.startX) / rect.width) * 100;
       const dyPct = ((e.clientY - state.startY) / rect.height) * 100;
 
-      if (state.mode === "move") {
-        onChangeRef.current({
-          ...state.orig,
-          posX: clamp(state.orig.posX + dxPct, 0, 100 - state.orig.width),
-          posY: clamp(state.orig.posY + dyPct, 0, 100 - state.orig.height),
-        });
+      if (state.mode === "corner" && state.cornerIndex !== undefined) {
+        const next = state.orig.map((c) => ({ ...c })) as Quad;
+        next[state.cornerIndex] = {
+          x: clamp(state.orig[state.cornerIndex].x + dxPct, 0, 100),
+          y: clamp(state.orig[state.cornerIndex].y + dyPct, 0, 100),
+        };
+        onChangeRef.current(next);
       } else {
-        onChangeRef.current({
-          ...state.orig,
-          width: clamp(state.orig.width + dxPct, 10, 100 - state.orig.posX),
-          height: clamp(state.orig.height + dyPct, 10, 100 - state.orig.posY),
-        });
+        const next = state.orig.map((c) => ({
+          x: clamp(c.x + dxPct, 0, 100),
+          y: clamp(c.y + dyPct, 0, 100),
+        })) as Quad;
+        onChangeRef.current(next);
       }
     };
 
@@ -78,13 +68,31 @@ export function PrintAreaTool({
     };
   }, []);
 
-  const handlePointerDown = useCallback(
-    (mode: "move" | "resize" | "rotate") => (e: React.PointerEvent) => {
+  const startMove = useCallback(
+    (e: React.PointerEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      dragState.current = { mode, startX: e.clientX, startY: e.clientY, orig: zone };
+      dragState.current = { mode: "move", startX: e.clientX, startY: e.clientY, orig: corners };
     },
-    [zone]
+    [corners]
+  );
+
+  const startCornerDrag = useCallback(
+    (index: number) => (e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragState.current = { mode: "corner", cornerIndex: index, startX: e.clientX, startY: e.clientY, orig: corners };
+    },
+    [corners]
+  );
+
+  const points = useMemo(() => corners.map((c) => `${c.x},${c.y}`).join(" "), [corners]);
+  const centroid = useMemo(
+    () => ({
+      x: corners.reduce((s, c) => s + c.x, 0) / 4,
+      y: corners.reduce((s, c) => s + c.y, 0) / 4,
+    }),
+    [corners]
   );
 
   return (
@@ -99,32 +107,41 @@ export function PrintAreaTool({
           Upload a photo above to position the print zone on it
         </div>
       )}
-      <div
-        onPointerDown={handlePointerDown("move")}
-        className="absolute border-2 border-dashed border-terracotta bg-terracotta/20 cursor-move touch-none flex items-center justify-center"
-        style={{
-          left: `${zone.posX}%`,
-          top: `${zone.posY}%`,
-          width: `${zone.width}%`,
-          height: `${zone.height}%`,
-          transform: `rotate(${zone.rotation ?? 0}deg)`,
-        }}
+
+      <svg
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        className="absolute inset-0 w-full h-full pointer-events-none"
       >
-        {sizeLabel && (
-          <span className="pointer-events-none text-[11px] font-medium text-terracotta-dark bg-cream-light/90 px-2 py-0.5 rounded-full whitespace-nowrap">
-            {sizeLabel}
-          </span>
-        )}
-        <div
-          onPointerDown={handlePointerDown("resize")}
-          className="absolute -right-1.5 -bottom-1.5 h-4 w-4 rounded-full bg-terracotta border-2 border-cream-light cursor-nwse-resize touch-none"
+        <polygon
+          points={points}
+          fill="rgba(198,93,60,0.18)"
+          stroke="rgb(198,93,60)"
+          strokeWidth={0.6}
+          strokeDasharray="2.4,1.5"
+          vectorEffect="non-scaling-stroke"
+          className="pointer-events-auto cursor-move touch-none"
+          onPointerDown={startMove}
         />
+      </svg>
+
+      {sizeLabel && (
+        <span
+          className="absolute pointer-events-none text-[11px] font-medium text-terracotta-dark bg-cream-light/90 px-2 py-0.5 rounded-full whitespace-nowrap"
+          style={{ left: `${centroid.x}%`, top: `${centroid.y}%`, transform: "translate(-50%, -50%)" }}
+        >
+          {sizeLabel}
+        </span>
+      )}
+
+      {corners.map((c, i) => (
         <div
-          onPointerDown={handlePointerDown("rotate")}
-          className="absolute left-1/2 -top-7 -translate-x-1/2 h-4 w-4 rounded-full bg-cream-light border-2 border-terracotta cursor-alias touch-none"
+          key={i}
+          onPointerDown={startCornerDrag(i)}
+          className="absolute h-4 w-4 rounded-full bg-terracotta border-2 border-cream-light cursor-pointer touch-none"
+          style={{ left: `${c.x}%`, top: `${c.y}%`, transform: "translate(-50%, -50%)" }}
         />
-        <div className="pointer-events-none absolute left-1/2 -top-5 -translate-x-1/2 w-px h-5 bg-terracotta/60" />
-      </div>
+      ))}
     </div>
   );
 }

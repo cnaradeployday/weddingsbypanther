@@ -134,7 +134,7 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
        supplier:suppliers ( business_name ),
        images:product_images ( id, url, sort_order ),
        techniques:product_print_techniques ( id, technique, extra_price, is_default ),
-       zones:product_print_zones ( id, label, width_mm, height_mm, max_chars_per_line, max_lines, pos_x_pct, pos_y_pct, width_pct, height_pct, rotation_deg, image_id ),
+       zones:product_print_zones ( id, label, width_mm, height_mm, max_chars_per_line, max_lines, corners_pct, image_id ),
        variants:product_variants ( id, label, sku, price_delta, image_url, sort_order )`
     )
     .eq("slug", productSlug)
@@ -155,7 +155,10 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
 
   const images = (p.images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
   const techniques = (p.techniques ?? []).slice();
-  const zones = p.zones ?? [];
+  const zones = (p.zones ?? []).map((z) => ({
+    ...z,
+    corners_pct: (z.corners_pct as { x: number; y: number }[] | null) ?? [],
+  }));
   const variants = (p.variants ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
 
   return {

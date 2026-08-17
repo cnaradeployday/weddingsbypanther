@@ -26,13 +26,20 @@ type Zone = {
   max_chars_per_line: number | null;
   width_mm: number | null;
   height_mm: number | null;
-  pos_x_pct: number;
-  pos_y_pct: number;
-  width_pct: number;
-  height_pct: number;
-  rotation_deg: number | null;
+  corners_pct: { x: number; y: number }[];
   image_id: string | null;
 };
+
+// The live CSS preview shows the bounding box of the (possibly angled/
+// trapezoidal) print area rather than attempting a true perspective warp —
+// the AI render is what shows the accurate, perspective-correct result.
+function boundingBox(corners: { x: number; y: number }[]) {
+  const xs = corners.map((c) => c.x);
+  const ys = corners.map((c) => c.y);
+  const left = Math.min(...xs);
+  const top = Math.min(...ys);
+  return { left, top, width: Math.max(...xs) - left, height: Math.max(...ys) - top };
+}
 
 type ElemKey = "logo" | "monogram" | "names" | "date";
 type ElemPos = { x: number; y: number };
@@ -173,12 +180,14 @@ export function ProductConfigurator({
   const displayImage = variant?.image_url ?? product.images[activeImage]?.url ?? product.images[0]?.url;
   const showOverlayHere = !zone?.image_id || product.images[activeImage]?.id === zone.image_id;
 
+  const zoneBox = useMemo(() => (zone ? boundingBox(zone.corners_pct) : null), [zone]);
+
   // Real px-per-mm for the currently rendered zone box, so text/logo sizing
   // reflects the product's actual printable area instead of a fixed guess.
   const mmPerPx = useMemo(() => {
     if (!zone?.width_mm || !zoneSize.width) return null;
     return zone.width_mm / zoneSize.width;
-  }, [zone?.width_mm, zoneSize.width]);
+  }, [zone, zoneSize.width]);
   const pxPerMm = mmPerPx ? 1 / mmPerPx : null;
   const nameFontPx = (pxPerMm ? Math.max(10, Math.min(28, pxPerMm * 5)) : 18) * sizeScale;
   const monogramFontPx = (pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20) * sizeScale;
@@ -240,16 +249,15 @@ export function ProductConfigurator({
       <div>
         <div className="relative aspect-[4/5] rounded-2xl overflow-hidden bg-cream mb-4">
           {displayImage && <Image src={displayImage} alt={product.name} fill className="object-cover" priority />}
-          {product.personalizable && zone && showOverlayHere && (
+          {product.personalizable && zone && zoneBox && showOverlayHere && (
             <div
               ref={zoneRef}
               className="absolute pointer-events-none rounded-2xl border-2 border-dashed border-cream-light/70 text-dark text-center overflow-hidden"
               style={{
-                left: `${zone.pos_x_pct}%`,
-                top: `${zone.pos_y_pct}%`,
-                width: `${zone.width_pct}%`,
-                height: `${zone.height_pct}%`,
-                transform: zone.rotation_deg ? `rotate(${zone.rotation_deg}deg)` : undefined,
+                left: `${zoneBox.left}%`,
+                top: `${zoneBox.top}%`,
+                width: `${zoneBox.width}%`,
+                height: `${zoneBox.height}%`,
               }}
             >
               {logoPreview && (

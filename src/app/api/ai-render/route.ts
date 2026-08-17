@@ -15,12 +15,11 @@ const FALLBACK_COLOR_MODE = "Match the color treatment to a realistic printed fi
 const SINGLE_IMAGE_RULE =
   "Output exactly ONE photograph that fills the entire frame edge-to-edge. Never produce a collage, grid, moodboard, multiple thumbnails, side-by-side variations, empty margins/borders, or any UI chrome — just one single, full-bleed photo.";
 
+type Corner = { x: number; y: number };
 type PrintZone = {
-  pos_x_pct: number;
-  pos_y_pct: number;
-  width_pct: number;
-  height_pct: number;
-  rotation_deg: number | null;
+  corners_pct: Corner[];
+  width_mm: number | null;
+  height_mm: number | null;
 };
 type ImagePayload = { data: string; mimeType: string };
 
@@ -62,35 +61,33 @@ async function cropToStorefrontAspect(base: ImagePayload): Promise<ImagePayload>
   }
 }
 
-// Draws a visible dashed guide rectangle over the printable area on the base
-// photo. Image-editing models follow a visual mask far more reliably than a
-// text description of percentages, so this is what keeps the AI render
-// inside the actual print area instead of drifting outside it.
+// Draws a visible dashed guide outline over the printable area on the base
+// photo — a quadrilateral, not always an axis-aligned rectangle, since the
+// admin can reshape each corner independently to match a surface shown at
+// an angle in the photo. Image-editing models follow a visual mask far more
+// reliably than a text description of percentages, so this is what keeps
+// the AI render inside the actual print area instead of drifting outside it.
 async function withPrintAreaGuide(base: ImagePayload, zone: PrintZone | undefined): Promise<ImagePayload> {
-  if (!zone) return base;
+  if (!zone || zone.corners_pct.length !== 4) return base;
   try {
     const buffer = Buffer.from(base.data, "base64");
     const image = sharp(buffer);
     const { width, height } = await image.metadata();
     if (!width || !height) return base;
 
-    const x = Math.round((zone.pos_x_pct / 100) * width);
-    const y = Math.round((zone.pos_y_pct / 100) * height);
-    const rectW = Math.max(1, Math.round((zone.width_pct / 100) * width));
-    const rectH = Math.max(1, Math.round((zone.height_pct / 100) * height));
+    const points = zone.corners_pct
+      .map((c) => `${(c.x / 100) * width},${(c.y / 100) * height}`)
+      .join(" ");
     const strokeWidth = Math.max(3, Math.round(width * 0.004));
-    const rotation = zone.rotation_deg ?? 0;
-    const cx = x + rectW / 2;
-    const cy = y + rectH / 2;
 
     // No fill — only a thin dashed outline. A filled tint gave the model a
     // colored patch to (sometimes) leave a residue of in the output; an
     // outline-only guide is both enough to communicate the boundary and
     // easier for the model to fully erase.
     const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <rect x="${x}" y="${y}" width="${rectW}" height="${rectH}"
-        transform="rotate(${rotation} ${cx} ${cy})"
+      <polygon points="${points}"
         fill="none" stroke="rgb(255,0,80)" stroke-width="${strokeWidth}"
+        stroke-linejoin="round"
         stroke-dasharray="${strokeWidth * 4},${strokeWidth * 2.5}" />
     </svg>`;
 
@@ -207,7 +204,7 @@ export async function POST(req: NextRequest) {
       .select(
         `name,
          images:product_images ( id, url, sort_order ),
-         zones:product_print_zones ( image_id, pos_x_pct, pos_y_pct, width_pct, height_pct, rotation_deg, width_mm, height_mm ),
+         zones:product_print_zones ( image_id, corners_pct, width_mm, height_mm ),
          techniques:product_print_techniques ( technique, is_default )`
       )
       .eq("id", productId)
@@ -220,9 +217,16 @@ export async function POST(req: NextRequest) {
   }
 
   const images = (product.images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
-  const zone = product.zones?.[0];
+  const rawZone = product.zones?.[0];
+  const zone: PrintZone | undefined = rawZone
+    ? {
+        corners_pct: (rawZone.corners_pct as Corner[] | null) ?? [],
+        width_mm: rawZone.width_mm,
+        height_mm: rawZone.height_mm,
+      }
+    : undefined;
   const referenceImage =
-    images.find((i) => i.id === requestedImageId) ?? images.find((i) => i.id === zone?.image_id) ?? images[0];
+    images.find((i) => i.id === requestedImageId) ?? images.find((i) => i.id === rawZone?.image_id) ?? images[0];
   if (!referenceImage) {
     return NextResponse.json({ error: "This product has no photo to render on." }, { status: 400 });
   }
@@ -295,16 +299,24 @@ export async function POST(req: NextRequest) {
         )}. Preserve the relative spacing between elements — do not merge, center, or re-stack them together`
       : "centered within that rectangle";
 
-  const rotation = zone?.rotation_deg ?? 0;
-  const rotationPhrase =
-    Math.abs(rotation) >= 1
-      ? ` The rectangle itself is drawn rotated ${Math.abs(rotation)}° ${
-          rotation > 0 ? "clockwise" : "counter-clockwise"
-        } to match the angle of that surface in the photo (e.g. a lid or panel shown at an angle) — the personalization must follow that same rotated angle, sitting flush and flat on that surface exactly as the rotated rectangle shows, not upright relative to the overall photo frame.`
+  function isAxisAlignedRect(corners: Corner[]): boolean {
+    if (corners.length !== 4) return true;
+    const [tl, tr, br, bl] = corners;
+    const eps = 1;
+    return (
+      Math.abs(tl.y - tr.y) < eps &&
+      Math.abs(bl.y - br.y) < eps &&
+      Math.abs(tl.x - bl.x) < eps &&
+      Math.abs(tr.x - br.x) < eps
+    );
+  }
+  const shapePhrase =
+    zone && !isAxisAlignedRect(zone.corners_pct)
+      ? " This guide is drawn as a rotated or trapezoidal quadrilateral (not a plain upright rectangle), specifically to match the perspective/angle of that surface in the photo (e.g. a lid or panel shown at an angle) — the personalization must follow that exact shape and angle, sitting flush and flat on that surface as the guide shows, not upright relative to the overall photo frame."
       : "";
 
   const region = zone
-    ? `The input photo has a dashed magenta/pink guide OUTLINE (no fill) marking the exact printable area. That marked rectangle is the ONLY place the personalization may appear — it must not extend past the rectangle's edges in any direction, even if that means rendering the personalization smaller than you otherwise would. Place the personalization ${alignPhrase}.${rotationPhrase} The rectangle corresponds to a real printable zone of ${
+    ? `The input photo has a dashed magenta/pink guide OUTLINE (no fill) marking the exact printable area. That marked shape is the ONLY place the personalization may appear — it must not extend past its edges in any direction, even if that means rendering the personalization smaller than you otherwise would. Place the personalization ${alignPhrase}.${shapePhrase} The area corresponds to a real printable zone of ${
         zone.width_mm ?? "?"
       }mm by ${
         zone.height_mm ?? "?"
