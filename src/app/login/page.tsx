@@ -31,11 +31,21 @@ export default function LoginPage() {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, role_id")
       .eq("id", data.user.id)
       .maybeSingle();
 
-    router.push(`/${profile?.role ?? "login"}`);
+    if (profile?.role === "admin" || profile?.role_id) {
+      router.push("/admin");
+    } else {
+      const [{ data: planner }, { data: supplier }] = await Promise.all([
+        supabase.from("planners").select("id").eq("profile_id", data.user.id).maybeSingle(),
+        supabase.from("suppliers").select("id").eq("profile_id", data.user.id).maybeSingle(),
+      ]);
+      if (planner) router.push("/planner");
+      else if (supplier) router.push("/supplier");
+      else router.push("/");
+    }
     router.refresh();
   };
 

@@ -74,6 +74,8 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
         product_id: item.productId,
         quantity: item.quantity,
         unit_price: item.unitPrice,
+        variant_id: item.variantId ?? null,
+        variant_label: item.variantLabel ?? null,
         personalization: item.personalization ?? null,
       }));
 

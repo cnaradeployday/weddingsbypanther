@@ -42,9 +42,42 @@ export type InitialProduct = {
     posY: number;
     widthPct: number;
     heightPct: number;
+    imageId: string | null;
   } | null;
   images: ExistingImage[];
+  variants: {
+    id: string;
+    label: string;
+    sku: string | null;
+    priceDelta: number;
+    stock: number | null;
+    imageUrl: string | null;
+  }[];
 };
+
+type VariantRow = {
+  localId: string;
+  label: string;
+  sku: string;
+  priceDelta: number;
+  stock: string;
+  imageUrl: string | null;
+  imageFile: File | null;
+  imagePreview: string | null;
+};
+
+function newVariantRow(): VariantRow {
+  return {
+    localId: Math.random().toString(36).slice(2),
+    label: "",
+    sku: "",
+    priceDelta: 0,
+    stock: "",
+    imageUrl: null,
+    imageFile: null,
+    imagePreview: null,
+  };
+}
 
 export function SupplierProductForm({
   supplierId,
@@ -84,6 +117,21 @@ export function SupplierProductForm({
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [existingImages, setExistingImages] = useState<ExistingImage[]>(initial?.images ?? []);
+  const [zoneImageId, setZoneImageId] = useState<string | null>(
+    initial?.zone?.imageId ?? initial?.images[0]?.id ?? null
+  );
+  const [variants, setVariants] = useState<VariantRow[]>(
+    (initial?.variants ?? []).map((v) => ({
+      localId: v.id,
+      label: v.label,
+      sku: v.sku ?? "",
+      priceDelta: v.priceDelta,
+      stock: v.stock === null ? "" : String(v.stock),
+      imageUrl: v.imageUrl,
+      imageFile: null,
+      imagePreview: null,
+    }))
+  );
 
   const handlePhotos = (e: React.ChangeEvent<HTMLInputElement>) => {
     const remaining = 4 - existingImages.length;
@@ -92,8 +140,21 @@ export function SupplierProductForm({
     setPreviews(files.map((f) => URL.createObjectURL(f)));
   };
 
-  const removeExistingImage = (id: string) =>
+  const removeExistingImage = (id: string) => {
     setExistingImages((prev) => prev.filter((img) => img.id !== id));
+    setZoneImageId((prev) => (prev === id ? null : prev));
+  };
+
+  const addVariant = () => setVariants((prev) => [...prev, newVariantRow()]);
+  const removeVariant = (localId: string) =>
+    setVariants((prev) => prev.filter((v) => v.localId !== localId));
+  const updateVariant = (localId: string, patch: Partial<VariantRow>) =>
+    setVariants((prev) => prev.map((v) => (v.localId === localId ? { ...v, ...patch } : v)));
+  const handleVariantImage = (localId: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    updateVariant(localId, { imageFile: file, imagePreview: URL.createObjectURL(file) });
+  };
 
   const toggleTechnique = (t: string) =>
     setTechniques((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
@@ -138,6 +199,7 @@ export function SupplierProductForm({
 
       await supabase.from("product_print_techniques").delete().eq("product_id", productId);
       await supabase.from("product_print_zones").delete().eq("product_id", productId);
+      await supabase.from("product_variants").delete().eq("product_id", productId);
     } else {
       const { data: product, error: productError } = await supabase
         .from("products")
@@ -210,7 +272,38 @@ export function SupplierProductForm({
         pos_y_pct: zonePos.posY,
         width_pct: zonePos.width,
         height_pct: zonePos.height,
+        image_id: zoneImageId,
       });
+    }
+
+    const namedVariants = variants.filter((v) => v.label.trim());
+    if (namedVariants.length > 0) {
+      const variantRows = await Promise.all(
+        namedVariants.map(async (v, i) => {
+          let imageUrl = v.imageUrl;
+          if (v.imageFile) {
+            const ext = v.imageFile.name.split(".").pop() ?? "jpg";
+            const path = `${supplierId}/${productId}/variants/${i}-${Date.now()}.${ext}`;
+            const { error: uploadError } = await supabase.storage
+              .from("product-images")
+              .upload(path, v.imageFile);
+            if (!uploadError) {
+              const { data: publicUrl } = supabase.storage.from("product-images").getPublicUrl(path);
+              imageUrl = publicUrl.publicUrl;
+            }
+          }
+          return {
+            product_id: productId,
+            label: v.label.trim(),
+            sku: v.sku.trim() || null,
+            price_delta: v.priceDelta,
+            stock_on_hand: v.stock === "" ? null : Number(v.stock),
+            image_url: imageUrl,
+            sort_order: i,
+          };
+        })
+      );
+      await supabase.from("product_variants").insert(variantRows);
     }
 
     router.push("/supplier/products");
@@ -391,13 +484,35 @@ export function SupplierProductForm({
 
         {personalizable && (
           <div>
+            {existingImages.length > 1 && (
+              <div className="mb-3">
+                <label className="text-xs uppercase tracking-wide text-muted block mb-2">
+                  Reference photo for the print area
+                </label>
+                <div className="flex gap-2">
+                  {existingImages.map((img) => (
+                    <button
+                      key={img.id}
+                      type="button"
+                      onClick={() => setZoneImageId(img.id)}
+                      className={`relative h-14 w-14 rounded-lg overflow-hidden border-2 ${
+                        zoneImageId === img.id ? "border-terracotta" : "border-transparent"
+                      }`}
+                    >
+                      <Image src={img.url} alt="" fill className="object-cover" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <p className="text-xs uppercase tracking-wide text-muted mb-2">
               Print area — drag to position, drag the corner to resize
             </p>
             <PrintAreaTool
-              imageUrl={existingImages[0]?.url ?? previews[0] ?? null}
+              imageUrl={existingImages.find((i) => i.id === zoneImageId)?.url ?? previews[0] ?? null}
               zone={zonePos}
               onChange={setZonePos}
+              sizeLabel={`${zoneWidth} × ${zoneHeight}mm`}
             />
             <div className="grid grid-cols-3 gap-3 mt-3">
               <div>
@@ -431,7 +546,72 @@ export function SupplierProductForm({
           </div>
         )}
 
-        {error && <p className="text-sm text-terracotta-dark">{error}</p>}
+      </div>
+
+      <div className="md:col-span-2 rounded-xl border border-line bg-white p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-xs uppercase tracking-wide text-muted">
+            Variants (color, material, etc.) — optional
+          </p>
+          <button
+            type="button"
+            onClick={addVariant}
+            className="text-xs text-terracotta font-medium"
+          >
+            + Add variant
+          </button>
+        </div>
+        {variants.length === 0 && (
+          <p className="text-sm text-muted">No variants — this product sells as a single option.</p>
+        )}
+        {variants.map((v) => (
+          <div key={v.localId} className="grid grid-cols-[56px_1fr_1fr_100px_90px_auto] gap-3 items-center">
+            <label className="relative h-14 w-14 rounded-lg overflow-hidden border border-line cursor-pointer bg-cream">
+              {(v.imagePreview ?? v.imageUrl) && (
+                <Image src={v.imagePreview ?? v.imageUrl ?? ""} alt="" fill className="object-cover" unoptimized={!!v.imagePreview} />
+              )}
+              <input type="file" accept="image/*" onChange={handleVariantImage(v.localId)} className="hidden" />
+            </label>
+            <input
+              placeholder="Label (e.g. Walnut)"
+              value={v.label}
+              onChange={(e) => updateVariant(v.localId, { label: e.target.value })}
+              className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
+            />
+            <input
+              placeholder="SKU"
+              value={v.sku}
+              onChange={(e) => updateVariant(v.localId, { sku: e.target.value })}
+              className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
+            />
+            <input
+              type="number"
+              step="0.01"
+              placeholder="+price"
+              value={v.priceDelta}
+              onChange={(e) => updateVariant(v.localId, { priceDelta: Number(e.target.value) })}
+              className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
+            />
+            <input
+              type="number"
+              placeholder="Stock"
+              value={v.stock}
+              onChange={(e) => updateVariant(v.localId, { stock: e.target.value })}
+              className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
+            />
+            <button
+              type="button"
+              onClick={() => removeVariant(v.localId)}
+              className="text-xs text-terracotta-dark"
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="md:col-span-2">
+        {error && <p className="text-sm text-terracotta-dark mb-4">{error}</p>}
 
         <button
           type="submit"

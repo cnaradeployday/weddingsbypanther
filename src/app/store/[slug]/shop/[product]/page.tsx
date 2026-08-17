@@ -25,9 +25,12 @@ export default async function ProductPage({
         leadTimeMin: product.leadTimeMin,
         leadTimeMax: product.leadTimeMax,
         personalizable: product.personalizable,
+        factoryPrice: product.factoryPrice,
+        markupPct: product.markupPct,
         images: product.images,
         techniques: product.techniques,
         zones: product.zones,
+        variants: product.variants,
         plannerSlug: slug,
       }}
     />

@@ -14,7 +14,7 @@ const NAV = [
 
 export default async function PlannerLayout({ children }: { children: React.ReactNode }) {
   const session = await getSessionProfile();
-  if (!session || session.profile.role !== "planner") redirect("/login");
+  if (!session) redirect("/login");
 
   const supabase = await createClient();
   const { data: planner } = await supabase

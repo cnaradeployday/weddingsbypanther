@@ -1,11 +1,13 @@
 import { redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { VettingStatusControl } from "@/components/VettingStatusControl";
+import { getBackofficePermissions } from "@/lib/permissions";
 
 export default async function AdminSuppliersPage() {
   const session = await getSessionProfile();
   if (!session) redirect("/login");
   const supabase = await createClient();
+  const perms = await getBackofficePermissions(supabase, session.profile);
 
   const { data: suppliers } = await supabase
     .from("suppliers")
@@ -33,7 +35,7 @@ export default async function AdminSuppliersPage() {
                 <td className="px-5 py-4 text-muted">{s.since_year ?? "—"}</td>
                 <td className="px-5 py-4">{s.products?.[0]?.count ?? 0}</td>
                 <td className="px-5 py-4">
-                  <VettingStatusControl table="suppliers" id={s.id} status={s.status} />
+                  <VettingStatusControl table="suppliers" id={s.id} status={s.status} canWrite={perms.suppliers.write} />
                 </td>
               </tr>
             ))}

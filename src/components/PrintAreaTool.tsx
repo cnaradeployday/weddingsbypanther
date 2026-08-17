@@ -14,10 +14,12 @@ export function PrintAreaTool({
   imageUrl,
   zone,
   onChange,
+  sizeLabel,
 }: {
   imageUrl: string | null;
   zone: Zone;
   onChange: (zone: Zone) => void;
+  sizeLabel?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<DragState | null>(null);
@@ -89,7 +91,7 @@ export function PrintAreaTool({
       )}
       <div
         onPointerDown={handlePointerDown("move")}
-        className="absolute border-2 border-dashed border-terracotta bg-terracotta/20 cursor-move touch-none"
+        className="absolute border-2 border-dashed border-terracotta bg-terracotta/20 cursor-move touch-none flex items-center justify-center"
         style={{
           left: `${zone.posX}%`,
           top: `${zone.posY}%`,
@@ -97,6 +99,11 @@ export function PrintAreaTool({
           height: `${zone.height}%`,
         }}
       >
+        {sizeLabel && (
+          <span className="pointer-events-none text-[11px] font-medium text-terracotta-dark bg-cream-light/90 px-2 py-0.5 rounded-full whitespace-nowrap">
+            {sizeLabel}
+          </span>
+        )}
         <div
           onPointerDown={handlePointerDown("resize")}
           className="absolute -right-1.5 -bottom-1.5 h-4 w-4 rounded-full bg-terracotta border-2 border-cream-light cursor-nwse-resize touch-none"

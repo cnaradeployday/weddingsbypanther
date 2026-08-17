@@ -41,6 +41,8 @@ export type Database = {
           product_id: string | null
           quantity: number
           unit_price: number
+          variant_id: string | null
+          variant_label: string | null
         }
         Insert: {
           id?: string
@@ -49,6 +51,8 @@ export type Database = {
           product_id?: string | null
           quantity: number
           unit_price: number
+          variant_id?: string | null
+          variant_label?: string | null
         }
         Update: {
           id?: string
@@ -57,6 +61,8 @@ export type Database = {
           product_id?: string | null
           quantity?: number
           unit_price?: number
+          variant_id?: string | null
+          variant_label?: string | null
         }
         Relationships: [
           {
@@ -71,6 +77,13 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "product_variants"
             referencedColumns: ["id"]
           },
         ]
@@ -289,6 +302,7 @@ export type Database = {
           height_mm: number | null
           height_pct: number
           id: string
+          image_id: string | null
           label: string
           max_chars_per_line: number | null
           max_lines: number
@@ -302,6 +316,7 @@ export type Database = {
           height_mm?: number | null
           height_pct?: number
           id?: string
+          image_id?: string | null
           label: string
           max_chars_per_line?: number | null
           max_lines?: number
@@ -315,6 +330,7 @@ export type Database = {
           height_mm?: number | null
           height_pct?: number
           id?: string
+          image_id?: string | null
           label?: string
           max_chars_per_line?: number | null
           max_lines?: number
@@ -326,7 +342,58 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "product_print_zones_image_id_fkey"
+            columns: ["image_id"]
+            isOneToOne: false
+            referencedRelation: "product_images"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "product_print_zones_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_variants: {
+        Row: {
+          created_at: string
+          id: string
+          image_url: string | null
+          label: string
+          price_delta: number
+          product_id: string | null
+          sku: string | null
+          sort_order: number
+          stock_on_hand: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          label: string
+          price_delta?: number
+          product_id?: string | null
+          sku?: string | null
+          sort_order?: number
+          stock_on_hand?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          label?: string
+          price_delta?: number
+          product_id?: string | null
+          sku?: string | null
+          sort_order?: number
+          stock_on_hand?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_variants_product_id_fkey"
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
@@ -413,6 +480,7 @@ export type Database = {
           full_name: string | null
           id: string
           role: string
+          role_id: string | null
         }
         Insert: {
           created_at?: string
@@ -420,6 +488,7 @@ export type Database = {
           full_name?: string | null
           id: string
           role: string
+          role_id?: string | null
         }
         Update: {
           created_at?: string
@@ -427,8 +496,17 @@ export type Database = {
           full_name?: string | null
           id?: string
           role?: string
+          role_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       proposal_option_items: {
         Row: {
@@ -545,6 +623,59 @@ export type Database = {
           },
         ]
       }
+      role_permissions: {
+        Row: {
+          can_read: boolean
+          can_write: boolean
+          id: string
+          role_id: string | null
+          section: string
+        }
+        Insert: {
+          can_read?: boolean
+          can_write?: boolean
+          id?: string
+          role_id?: string | null
+          section: string
+        }
+        Update: {
+          can_read?: boolean
+          can_write?: boolean
+          id?: string
+          role_id?: string | null
+          section?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "role_permissions_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      roles: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       suppliers: {
         Row: {
           business_name: string
@@ -589,6 +720,10 @@ export type Database = {
     }
     Functions: {
       current_role: { Args: never; Returns: string }
+      has_backoffice_access: {
+        Args: { p_mode?: string; p_section: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

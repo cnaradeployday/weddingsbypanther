@@ -14,7 +14,15 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-export function OrderStatusSelect({ orderId, status }: { orderId: string; status: string }) {
+export function OrderStatusSelect({
+  orderId,
+  status,
+  canWrite = true,
+}: {
+  orderId: string;
+  status: string;
+  canWrite?: boolean;
+}) {
   const supabase = createClient();
   const router = useRouter();
   const [value, setValue] = useState(status);
@@ -28,6 +36,10 @@ export function OrderStatusSelect({ orderId, status }: { orderId: string; status
     setSaving(false);
     router.refresh();
   };
+
+  if (!canWrite) {
+    return <span className="text-xs bg-cream px-2.5 py-1.5 rounded-full">{STATUS_LABEL[value] ?? value}</span>;
+  }
 
   return (
     <select

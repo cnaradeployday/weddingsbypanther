@@ -2,11 +2,13 @@ import { redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { formatUSD } from "@/lib/format";
 import { OrderStatusSelect } from "@/components/OrderStatusSelect";
+import { getBackofficePermissions } from "@/lib/permissions";
 
 export default async function AdminOrdersPage() {
   const session = await getSessionProfile();
   if (!session) redirect("/login");
   const supabase = await createClient();
+  const perms = await getBackofficePermissions(supabase, session.profile);
 
   const { data: orders } = await supabase
     .from("orders")
@@ -37,7 +39,7 @@ export default async function AdminOrdersPage() {
                 </td>
                 <td className="px-5 py-4 text-muted">{o.planner?.business_name ?? "—"}</td>
                 <td className="px-5 py-4">
-                  <OrderStatusSelect orderId={o.id} status={o.status} />
+                  <OrderStatusSelect orderId={o.id} status={o.status} canWrite={perms.orders.write} />
                 </td>
                 <td className="px-5 py-4 font-medium">{formatUSD(o.total)}</td>
                 <td className="px-5 py-4 text-muted">{new Date(o.created_at).toLocaleDateString()}</td>

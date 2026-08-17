@@ -14,10 +14,12 @@ export function VettingStatusControl({
   table,
   id,
   status,
+  canWrite = true,
 }: {
   table: "planners" | "suppliers";
   id: string;
   status: string;
+  canWrite?: boolean;
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -35,7 +37,7 @@ export function VettingStatusControl({
   return (
     <div className="flex items-center gap-2">
       <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${STATUS_STYLE[value]}`}>{value}</span>
-      {value !== "approved" && (
+      {canWrite && value !== "approved" && (
         <button
           onClick={() => update("approved")}
           disabled={working}
@@ -44,7 +46,7 @@ export function VettingStatusControl({
           Approve
         </button>
       )}
-      {value !== "suspended" && (
+      {canWrite && value !== "suspended" && (
         <button
           onClick={() => update("suspended")}
           disabled={working}

@@ -14,8 +14,10 @@ function slugify(input: string) {
 
 export function CategoryManager({
   categories,
+  canWrite = true,
 }: {
   categories: { id: string; name: string; slug: string; sort_order: number }[];
+  canWrite?: boolean;
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -59,21 +61,23 @@ export function CategoryManager({
         </table>
       </div>
 
-      <form onSubmit={handleAdd} className="flex gap-3 max-w-md">
-        <input
-          placeholder="New category name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="flex-1 rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
-        />
-        <button
-          type="submit"
-          disabled={submitting}
-          className="px-5 py-3 rounded-full bg-dark text-cream-light text-sm font-medium hover:bg-dark-soft transition-colors disabled:opacity-50"
-        >
-          Add
-        </button>
-      </form>
+      {canWrite && (
+        <form onSubmit={handleAdd} className="flex gap-3 max-w-md">
+          <input
+            placeholder="New category name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="flex-1 rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+          />
+          <button
+            type="submit"
+            disabled={submitting}
+            className="px-5 py-3 rounded-full bg-dark text-cream-light text-sm font-medium hover:bg-dark-soft transition-colors disabled:opacity-50"
+          >
+            Add
+          </button>
+        </form>
+      )}
     </div>
   );
 }

@@ -20,7 +20,13 @@ export type PendingProduct = {
   techniques: string[];
 };
 
-export function ApprovalQueue({ products: initial }: { products: PendingProduct[] }) {
+export function ApprovalQueue({
+  products: initial,
+  canWrite = true,
+}: {
+  products: PendingProduct[];
+  canWrite?: boolean;
+}) {
   const supabase = createClient();
   const [products, setProducts] = useState(initial);
   const [selectedId, setSelectedId] = useState(initial[0]?.id ?? null);
@@ -77,29 +83,31 @@ export function ApprovalQueue({ products: initial }: { products: PendingProduct[
                 {selected.supplierName} · {selected.categoryName}
               </p>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => resolve("rejected")}
-                disabled={working}
-                className="px-4 py-2 rounded-full border border-terracotta text-terracotta text-sm font-medium disabled:opacity-50"
-              >
-                Reject
-              </button>
-              <button
-                onClick={() => resolve("draft")}
-                disabled={working}
-                className="px-4 py-2 rounded-full border border-line text-dark text-sm font-medium disabled:opacity-50"
-              >
-                Request changes
-              </button>
-              <button
-                onClick={() => resolve("approved")}
-                disabled={working}
-                className="px-4 py-2 rounded-full bg-sage text-cream-light text-sm font-medium disabled:opacity-50"
-              >
-                Approve
-              </button>
-            </div>
+            {canWrite && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => resolve("rejected")}
+                  disabled={working}
+                  className="px-4 py-2 rounded-full border border-terracotta text-terracotta text-sm font-medium disabled:opacity-50"
+                >
+                  Reject
+                </button>
+                <button
+                  onClick={() => resolve("draft")}
+                  disabled={working}
+                  className="px-4 py-2 rounded-full border border-line text-dark text-sm font-medium disabled:opacity-50"
+                >
+                  Request changes
+                </button>
+                <button
+                  onClick={() => resolve("approved")}
+                  disabled={working}
+                  className="px-4 py-2 rounded-full bg-sage text-cream-light text-sm font-medium disabled:opacity-50"
+                >
+                  Approve
+                </button>
+              </div>
+            )}
           </div>
 
           {selected.images[0] && (
@@ -131,15 +139,19 @@ export function ApprovalQueue({ products: initial }: { products: PendingProduct[
             </div>
           </div>
 
-          <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-            Reviewer note (visible to supplier — required for &quot;Request changes&quot;)
-          </label>
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={2}
-            className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
-          />
+          {canWrite && (
+            <>
+              <label className="text-xs uppercase tracking-wide text-muted block mb-2">
+                Reviewer note (visible to supplier — required for &quot;Request changes&quot;)
+              </label>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={2}
+                className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+              />
+            </>
+          )}
         </div>
       )}
     </div>

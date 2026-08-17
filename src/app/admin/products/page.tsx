@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { formatUSD } from "@/lib/format";
+import { getBackofficePermissions } from "@/lib/permissions";
 
 const STATUS_STYLE: Record<string, string> = {
   approved: "bg-sage/15 text-sage",
@@ -14,6 +15,7 @@ export default async function AdminProductsPage() {
   const session = await getSessionProfile();
   if (!session) redirect("/login");
   const supabase = await createClient();
+  const perms = await getBackofficePermissions(supabase, session.profile);
 
   const { data: products } = await supabase
     .from("products")
@@ -27,12 +29,14 @@ export default async function AdminProductsPage() {
           <h1 className="font-serif text-3xl mb-1">Products</h1>
           <p className="text-muted">{products?.length ?? 0} products across all suppliers</p>
         </div>
-        <Link
-          href="/admin/products/new"
-          className="px-5 py-2.5 rounded-full bg-sage text-cream-light text-sm font-medium hover:opacity-90 transition-opacity"
-        >
-          Add product
-        </Link>
+        {perms.products.write && (
+          <Link
+            href="/admin/products/new"
+            className="px-5 py-2.5 rounded-full bg-sage text-cream-light text-sm font-medium hover:opacity-90 transition-opacity"
+          >
+            Add product
+          </Link>
+        )}
       </div>
 
       <div className="rounded-xl border border-line bg-white overflow-x-auto">
@@ -63,9 +67,11 @@ export default async function AdminProductsPage() {
                   </span>
                 </td>
                 <td className="px-5 py-4">
-                  <Link href={`/admin/products/${p.id}/edit`} className="text-terracotta text-sm font-medium">
-                    Edit
-                  </Link>
+                  {perms.products.write && (
+                    <Link href={`/admin/products/${p.id}/edit`} className="text-terracotta text-sm font-medium">
+                      Edit
+                    </Link>
+                  )}
                 </td>
               </tr>
             ))}
