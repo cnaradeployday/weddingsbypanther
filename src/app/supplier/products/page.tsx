@@ -7,7 +7,14 @@ const STATUS_STYLE: Record<string, string> = {
   approved: "bg-sage/15 text-sage",
   pending: "bg-gold/20 text-dark",
   rejected: "bg-terracotta/15 text-terracotta-dark",
-  draft: "bg-line text-muted",
+  draft: "bg-gold/30 text-dark",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  approved: "approved",
+  pending: "pending",
+  rejected: "rejected",
+  draft: "changes requested",
 };
 
 export default async function SupplierProductsPage() {
@@ -55,6 +62,7 @@ export default async function SupplierProductsPage() {
                 <th className="px-5 py-3 font-medium">Factory price</th>
                 <th className="px-5 py-3 font-medium">Min order</th>
                 <th className="px-5 py-3 font-medium">Status</th>
+                <th className="px-5 py-3 font-medium"></th>
               </tr>
             </thead>
             <tbody>
@@ -69,8 +77,13 @@ export default async function SupplierProductsPage() {
                   <td className="px-5 py-4">{p.min_order}</td>
                   <td className="px-5 py-4">
                     <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${STATUS_STYLE[p.status]}`}>
-                      {p.status}
+                      {STATUS_LABEL[p.status] ?? p.status}
                     </span>
+                  </td>
+                  <td className="px-5 py-4">
+                    <Link href={`/supplier/products/${p.id}/edit`} className="text-terracotta text-sm font-medium">
+                      Edit
+                    </Link>
                   </td>
                 </tr>
               ))}

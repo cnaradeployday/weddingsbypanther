@@ -29,8 +29,12 @@ export function ApprovalQueue({ products: initial }: { products: PendingProduct[
 
   const selected = products.find((p) => p.id === selectedId) ?? null;
 
-  const resolve = async (status: "approved" | "rejected") => {
+  const resolve = async (status: "approved" | "rejected" | "draft") => {
     if (!selected) return;
+    if (status === "draft" && !note.trim()) {
+      alert("Add a note explaining what needs to change before sending it back.");
+      return;
+    }
     setWorking(true);
     await supabase
       .from("products")
@@ -82,6 +86,13 @@ export function ApprovalQueue({ products: initial }: { products: PendingProduct[
                 Reject
               </button>
               <button
+                onClick={() => resolve("draft")}
+                disabled={working}
+                className="px-4 py-2 rounded-full border border-line text-dark text-sm font-medium disabled:opacity-50"
+              >
+                Request changes
+              </button>
+              <button
                 onClick={() => resolve("approved")}
                 disabled={working}
                 className="px-4 py-2 rounded-full bg-sage text-cream-light text-sm font-medium disabled:opacity-50"
@@ -121,7 +132,7 @@ export function ApprovalQueue({ products: initial }: { products: PendingProduct[
           </div>
 
           <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-            Reviewer note (visible to supplier if rejected)
+            Reviewer note (visible to supplier — required for &quot;Request changes&quot;)
           </label>
           <textarea
             value={note}

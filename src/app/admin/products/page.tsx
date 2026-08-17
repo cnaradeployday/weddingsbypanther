@@ -44,6 +44,7 @@ export default async function AdminProductsPage() {
               <th className="px-5 py-3 font-medium">Category</th>
               <th className="px-5 py-3 font-medium">Factory price</th>
               <th className="px-5 py-3 font-medium">Status</th>
+              <th className="px-5 py-3 font-medium"></th>
             </tr>
           </thead>
           <tbody>
@@ -60,6 +61,11 @@ export default async function AdminProductsPage() {
                   <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${STATUS_STYLE[p.status]}`}>
                     {p.status}
                   </span>
+                </td>
+                <td className="px-5 py-4">
+                  <Link href={`/admin/products/${p.id}/edit`} className="text-terracotta text-sm font-medium">
+                    Edit
+                  </Link>
                 </td>
               </tr>
             ))}

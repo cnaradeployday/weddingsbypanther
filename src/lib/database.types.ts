@@ -172,33 +172,39 @@ export type Database = {
       }
       planners: {
         Row: {
+          accent_color: string
           business_name: string
           created_at: string
           default_markup_pct: number
           id: string
           initials: string | null
+          logo_url: string | null
           profile_id: string | null
           slug: string
           tagline: string | null
           theme_dark: boolean
         }
         Insert: {
+          accent_color?: string
           business_name: string
           created_at?: string
           default_markup_pct?: number
           id?: string
           initials?: string | null
+          logo_url?: string | null
           profile_id?: string | null
           slug: string
           tagline?: string | null
           theme_dark?: boolean
         }
         Update: {
+          accent_color?: string
           business_name?: string
           created_at?: string
           default_markup_pct?: number
           id?: string
           initials?: string | null
+          logo_url?: string | null
           profile_id?: string | null
           slug?: string
           tagline?: string | null

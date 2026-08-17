@@ -1,8 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCategories, getPlannerBySlug, getStorefrontCatalog } from "@/lib/queries";
-import { formatUSD } from "@/lib/format";
+import { CatalogSearch } from "@/components/CatalogSearch";
 
 export default async function ShopPage({
   params,
@@ -70,32 +69,7 @@ export default async function ShopPage({
           </ul>
         </aside>
 
-        <div>
-          <p className="text-sm text-muted mb-4">{products.length} products</p>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-10">
-            {products.map((p) => (
-              <Link key={p.id} href={`${base}/shop/${p.slug}`} className="group">
-                <div className="relative aspect-square rounded-xl overflow-hidden mb-3 bg-cream">
-                  {p.image && (
-                    <Image
-                      src={p.image}
-                      alt={p.name}
-                      fill
-                      className="object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                  )}
-                  <span className="absolute top-3 left-3 text-[10px] uppercase tracking-wide bg-cream-light/90 px-2 py-1 rounded-full">
-                    {p.categoryName}
-                  </span>
-                </div>
-                <p className="font-medium text-sm">{p.name}</p>
-                <p className="text-sm text-muted">
-                  From {formatUSD(p.price)} · min {p.minOrder}
-                </p>
-              </Link>
-            ))}
-          </div>
-        </div>
+        <CatalogSearch products={products} base={base} />
       </div>
     </div>
   );

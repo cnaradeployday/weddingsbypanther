@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/lib/cart";
 
@@ -7,10 +8,12 @@ export function StoreHeader({
   plannerSlug,
   businessName,
   initials,
+  logoUrl,
 }: {
   plannerSlug: string;
   businessName: string;
   initials: string | null;
+  logoUrl?: string | null;
 }) {
   const { totalPieces } = useCart();
   const base = `/store/${plannerSlug}`;
@@ -19,9 +22,15 @@ export function StoreHeader({
     <header className="sticky top-0 z-40 bg-cream-light/95 backdrop-blur border-b border-line">
       <div className="mx-auto max-w-7xl px-6 py-4 flex items-center justify-between gap-6">
         <Link href={base} className="flex items-center gap-3 shrink-0">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-dark text-cream-light text-xs font-serif tracking-wide">
-            {initials ?? businessName.slice(0, 2).toUpperCase()}
-          </span>
+          {logoUrl ? (
+            <span className="relative flex h-9 w-9 items-center justify-center rounded-full overflow-hidden bg-dark">
+              <Image src={logoUrl} alt="" fill className="object-cover" />
+            </span>
+          ) : (
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-dark text-cream-light text-xs font-serif tracking-wide">
+              {initials ?? businessName.slice(0, 2).toUpperCase()}
+            </span>
+          )}
           <span className="leading-tight">
             <span className="block font-serif text-lg">{businessName}</span>
             <span className="block text-[10px] uppercase tracking-[0.18em] text-muted">

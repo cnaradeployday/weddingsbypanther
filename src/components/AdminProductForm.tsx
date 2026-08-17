@@ -4,8 +4,10 @@ import { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import type { ExistingImage, InitialProduct } from "./SupplierProductForm";
 
 const TECHNIQUES = ["Foil stamp", "Laser engrave", "Screen print", "Letterpress", "UV print", "Embroidery", "Wax seal"];
+const STATUSES = ["approved", "pending", "draft", "rejected"];
 
 function slugify(input: string) {
   const base = input
@@ -19,39 +21,50 @@ function slugify(input: string) {
 export function AdminProductForm({
   suppliers,
   categories,
+  initial,
+  initialSupplierId,
 }: {
   suppliers: { id: string; business_name: string }[];
   categories: { id: string; name: string }[];
+  initial?: InitialProduct;
+  initialSupplierId?: string;
 }) {
   const router = useRouter();
   const supabase = createClient();
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
-  const [sku, setSku] = useState("");
-  const [factoryPrice, setFactoryPrice] = useState(5);
-  const [minOrder, setMinOrder] = useState(25);
-  const [leadMin, setLeadMin] = useState(7);
-  const [leadMax, setLeadMax] = useState(10);
-  const [stock, setStock] = useState(1000);
-  const [personalizable, setPersonalizable] = useState(true);
-  const [techniques, setTechniques] = useState<string[]>(["Foil stamp"]);
-  const [zoneWidth, setZoneWidth] = useState(60);
-  const [zoneHeight, setZoneHeight] = useState(30);
-  const [maxChars, setMaxChars] = useState(24);
+  const [supplierId, setSupplierId] = useState(initialSupplierId ?? suppliers[0]?.id ?? "");
+  const [name, setName] = useState(initial?.name ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [categoryId, setCategoryId] = useState(initial?.categoryId ?? categories[0]?.id ?? "");
+  const [sku, setSku] = useState(initial?.sku ?? "");
+  const [factoryPrice, setFactoryPrice] = useState(initial?.factoryPrice ?? 5);
+  const [minOrder, setMinOrder] = useState(initial?.minOrder ?? 25);
+  const [leadMin, setLeadMin] = useState(initial?.leadMin ?? 7);
+  const [leadMax, setLeadMax] = useState(initial?.leadMax ?? 10);
+  const [stock, setStock] = useState(initial?.stock ?? 1000);
+  const [personalizable, setPersonalizable] = useState(initial?.personalizable ?? true);
+  const [status, setStatus] = useState(initial?.status ?? "approved");
+  const [techniques, setTechniques] = useState<string[]>(initial?.techniques ?? ["Foil stamp"]);
+  const [zoneWidth, setZoneWidth] = useState(initial?.zone?.width ?? 60);
+  const [zoneHeight, setZoneHeight] = useState(initial?.zone?.height ?? 30);
+  const [maxChars, setMaxChars] = useState(initial?.zone?.maxChars ?? 24);
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
-  const [addToPlanners, setAddToPlanners] = useState(true);
+  const [existingImages, setExistingImages] = useState<ExistingImage[]>(initial?.images ?? []);
+  const [addToPlanners, setAddToPlanners] = useState(!initial);
 
   const handlePhotos = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []).slice(0, 4);
+    const remaining = 4 - existingImages.length;
+    const files = Array.from(e.target.files ?? []).slice(0, Math.max(0, remaining));
     setPhotos(files);
     setPreviews(files.map((f) => URL.createObjectURL(f)));
   };
+
+  const removeExistingImage = (id: string) =>
+    setExistingImages((prev) => prev.filter((img) => img.id !== id));
 
   const toggleTechnique = (t: string) =>
     setTechniques((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
@@ -65,43 +78,82 @@ export function AdminProductForm({
     setSubmitting(true);
     setError(null);
 
-    const { data: product, error: productError } = await supabase
-      .from("products")
-      .insert({
-        supplier_id: supplierId,
-        category_id: categoryId,
-        name,
-        slug: slugify(name),
-        description,
-        sku: sku || null,
-        factory_price: factoryPrice,
-        min_order: minOrder,
-        lead_time_days_min: leadMin,
-        lead_time_days_max: leadMax,
-        stock_on_hand: stock,
-        personalizable,
-        status: "approved",
-      })
-      .select()
-      .single();
+    let productId = initial?.id ?? "";
 
-    if (productError || !product) {
-      setError(productError?.message ?? "Could not save product.");
-      setSubmitting(false);
-      return;
+    if (initial) {
+      const { error: updateError } = await supabase
+        .from("products")
+        .update({
+          supplier_id: supplierId,
+          category_id: categoryId,
+          description,
+          sku: sku || null,
+          factory_price: factoryPrice,
+          min_order: minOrder,
+          lead_time_days_min: leadMin,
+          lead_time_days_max: leadMax,
+          stock_on_hand: stock,
+          personalizable,
+          status,
+        })
+        .eq("id", productId);
+
+      if (updateError) {
+        setError(updateError.message);
+        setSubmitting(false);
+        return;
+      }
+
+      const removedIds = (initial.images ?? [])
+        .filter((img) => !existingImages.find((e) => e.id === img.id))
+        .map((img) => img.id);
+      if (removedIds.length > 0) {
+        await supabase.from("product_images").delete().in("id", removedIds);
+      }
+
+      await supabase.from("product_print_techniques").delete().eq("product_id", productId);
+      await supabase.from("product_print_zones").delete().eq("product_id", productId);
+    } else {
+      const { data: product, error: productError } = await supabase
+        .from("products")
+        .insert({
+          supplier_id: supplierId,
+          category_id: categoryId,
+          name,
+          slug: slugify(name),
+          description,
+          sku: sku || null,
+          factory_price: factoryPrice,
+          min_order: minOrder,
+          lead_time_days_min: leadMin,
+          lead_time_days_max: leadMax,
+          stock_on_hand: stock,
+          personalizable,
+          status: "approved",
+        })
+        .select()
+        .single();
+
+      if (productError || !product) {
+        setError(productError?.message ?? "Could not save product.");
+        setSubmitting(false);
+        return;
+      }
+      productId = product.id;
     }
 
     if (photos.length > 0) {
+      const startIndex = existingImages.length;
       const uploads = await Promise.all(
         photos.map(async (file, i) => {
           const ext = file.name.split(".").pop() ?? "jpg";
-          const path = `${supplierId}/${product.id}/${i}-${Date.now()}.${ext}`;
+          const path = `${supplierId}/${productId}/${startIndex + i}-${Date.now()}.${ext}`;
           const { error: uploadError } = await supabase.storage
             .from("product-images")
             .upload(path, file);
           if (uploadError) return null;
           const { data: publicUrl } = supabase.storage.from("product-images").getPublicUrl(path);
-          return { product_id: product.id, url: publicUrl.publicUrl, sort_order: i };
+          return { product_id: productId, url: publicUrl.publicUrl, sort_order: startIndex + i };
         })
       );
       const rows = uploads.filter((r): r is NonNullable<typeof r> => r !== null);
@@ -113,7 +165,7 @@ export function AdminProductForm({
     if (techniques.length > 0) {
       await supabase.from("product_print_techniques").insert(
         techniques.map((t, i) => ({
-          product_id: product.id,
+          product_id: productId,
           technique: t,
           extra_price: 0,
           is_default: i === 0,
@@ -123,7 +175,7 @@ export function AdminProductForm({
 
     if (personalizable) {
       await supabase.from("product_print_zones").insert({
-        product_id: product.id,
+        product_id: productId,
         label: "Zone 1",
         width_mm: zoneWidth,
         height_mm: zoneHeight,
@@ -132,13 +184,13 @@ export function AdminProductForm({
       });
     }
 
-    if (addToPlanners) {
+    if (!initial && addToPlanners) {
       const { data: planners } = await supabase.from("planners").select("id, default_markup_pct");
       if (planners && planners.length > 0) {
         await supabase.from("planner_products").insert(
           planners.map((p) => ({
             planner_id: p.id,
-            product_id: product.id,
+            product_id: productId,
             markup_pct: p.default_markup_pct,
             enabled: true,
           }))
@@ -146,6 +198,24 @@ export function AdminProductForm({
       }
     }
 
+    router.push("/admin/products");
+    router.refresh();
+  };
+
+  const handleDelete = async () => {
+    if (!initial) return;
+    if (!confirm(`Delete "${initial.name}"? This can't be undone.`)) return;
+    setDeleting(true);
+    const { error: deleteError } = await supabase.from("products").delete().eq("id", initial.id);
+    if (deleteError) {
+      setError(
+        deleteError.message.includes("violates foreign key")
+          ? "Can't delete — this product has existing orders. Consider unlisting it instead."
+          : deleteError.message
+      );
+      setDeleting(false);
+      return;
+    }
     router.push("/admin/products");
     router.refresh();
   };
@@ -170,12 +240,13 @@ export function AdminProductForm({
           required
           placeholder="Product name"
           value={name}
+          disabled={!!initial}
           onChange={(e) => setName(e.target.value)}
-          className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+          className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark disabled:bg-cream disabled:text-muted"
         />
         <textarea
           placeholder="Description"
-          value={description}
+          value={description ?? ""}
           onChange={(e) => setDescription(e.target.value)}
           rows={3}
           className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
@@ -194,7 +265,7 @@ export function AdminProductForm({
           </select>
           <input
             placeholder="SKU"
-            value={sku}
+            value={sku ?? ""}
             onChange={(e) => setSku(e.target.value)}
             className="rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
           />
@@ -255,15 +326,29 @@ export function AdminProductForm({
             Photos (up to 4)
           </label>
           <div className="flex flex-wrap gap-3">
+            {existingImages.map((img) => (
+              <div key={img.id} className="relative h-16 w-16 rounded-lg overflow-hidden border border-line group">
+                <Image src={img.url} alt="" fill className="object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeExistingImage(img.id)}
+                  className="absolute inset-0 bg-black/50 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
             {previews.map((src, i) => (
               <div key={i} className="relative h-16 w-16 rounded-lg overflow-hidden border border-line">
                 <Image src={src} alt="" fill className="object-cover" unoptimized />
               </div>
             ))}
-            <label className="h-16 w-16 rounded-lg border border-dashed border-line flex items-center justify-center text-xs text-muted cursor-pointer">
-              Upload
-              <input type="file" accept="image/*" multiple onChange={handlePhotos} className="hidden" />
-            </label>
+            {existingImages.length + previews.length < 4 && (
+              <label className="h-16 w-16 rounded-lg border border-dashed border-line flex items-center justify-center text-xs text-muted cursor-pointer">
+                Upload
+                <input type="file" accept="image/*" multiple onChange={handlePhotos} className="hidden" />
+              </label>
+            )}
           </div>
         </div>
       </div>
@@ -329,14 +414,31 @@ export function AdminProductForm({
           </div>
         )}
 
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={addToPlanners}
-            onChange={(e) => setAddToPlanners(e.target.checked)}
-          />
-          Enable on every planner storefront at their default markup
-        </label>
+        {initial ? (
+          <div>
+            <label className="text-xs uppercase tracking-wide text-muted block mb-1">Status</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark capitalize"
+            >
+              {STATUSES.map((s) => (
+                <option key={s} value={s} className="capitalize">
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={addToPlanners}
+              onChange={(e) => setAddToPlanners(e.target.checked)}
+            />
+            Enable on every planner storefront at their default markup
+          </label>
+        )}
 
         {error && <p className="text-sm text-terracotta-dark">{error}</p>}
 
@@ -345,11 +447,23 @@ export function AdminProductForm({
           disabled={submitting || suppliers.length === 0}
           className="w-full px-6 py-3 rounded-full bg-sage text-cream-light text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
         >
-          {submitting ? "Publishing…" : "Publish product"}
+          {submitting ? "Saving…" : initial ? "Save changes" : "Publish product"}
         </button>
-        <p className="text-xs text-muted">
-          Products you add here are approved immediately — no review queue.
-        </p>
+        {!initial && (
+          <p className="text-xs text-muted">
+            Products you add here are approved immediately — no review queue.
+          </p>
+        )}
+        {initial && (
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deleting}
+            className="w-full text-center text-sm text-terracotta-dark disabled:opacity-50"
+          >
+            {deleting ? "Deleting…" : "Delete product"}
+          </button>
+        )}
       </div>
     </form>
   );

@@ -27,6 +27,8 @@ export default async function PlannerSettingsPage() {
           tagline: planner.tagline,
           initials: planner.initials,
           default_markup_pct: planner.default_markup_pct,
+          logo_url: planner.logo_url,
+          accent_color: planner.accent_color,
         }}
       />
     </div>

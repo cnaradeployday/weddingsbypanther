@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
+import { OrderStatusSelect } from "@/components/OrderStatusSelect";
 
 export default async function SupplierOrdersPage() {
   const session = await getSessionProfile();
@@ -58,9 +59,7 @@ export default async function SupplierOrdersPage() {
                   <td className="px-5 py-4 text-muted">{item.order?.customer_name}</td>
                   <td className="px-5 py-4">{item.quantity}</td>
                   <td className="px-5 py-4">
-                    <span className="text-xs bg-cream px-2.5 py-1 rounded-full">
-                      {item.order?.status}
-                    </span>
+                    {item.order && <OrderStatusSelect orderId={item.order.id} status={item.order.status} />}
                   </td>
                   <td className="px-5 py-4 text-muted">
                     {item.order?.created_at ? new Date(item.order.created_at).toLocaleDateString() : "—"}

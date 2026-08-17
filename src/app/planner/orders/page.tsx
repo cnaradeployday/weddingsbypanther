@@ -1,14 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { formatUSD } from "@/lib/format";
-
-const STATUS_LABEL: Record<string, string> = {
-  pending_proof: "Pending proof",
-  in_production: "In production",
-  shipped: "Shipped",
-  delivered: "Delivered",
-  cancelled: "Cancelled",
-};
+import { OrderStatusSelect } from "@/components/OrderStatusSelect";
 
 export default async function PlannerOrdersPage() {
   const session = await getSessionProfile();
@@ -57,9 +50,7 @@ export default async function PlannerOrdersPage() {
                     {new Date(o.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-5 py-4">
-                    <span className="text-xs bg-cream px-2.5 py-1 rounded-full">
-                      {STATUS_LABEL[o.status] ?? o.status}
-                    </span>
+                    <OrderStatusSelect orderId={o.id} status={o.status} />
                   </td>
                   <td className="px-5 py-4 font-medium">{formatUSD(o.total)}</td>
                 </tr>

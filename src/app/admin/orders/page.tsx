@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { formatUSD } from "@/lib/format";
+import { OrderStatusSelect } from "@/components/OrderStatusSelect";
 
 export default async function AdminOrdersPage() {
   const session = await getSessionProfile();
@@ -36,7 +37,7 @@ export default async function AdminOrdersPage() {
                 </td>
                 <td className="px-5 py-4 text-muted">{o.planner?.business_name ?? "—"}</td>
                 <td className="px-5 py-4">
-                  <span className="text-xs bg-cream px-2.5 py-1 rounded-full">{o.status}</span>
+                  <OrderStatusSelect orderId={o.id} status={o.status} />
                 </td>
                 <td className="px-5 py-4 font-medium">{formatUSD(o.total)}</td>
                 <td className="px-5 py-4 text-muted">{new Date(o.created_at).toLocaleDateString()}</td>
