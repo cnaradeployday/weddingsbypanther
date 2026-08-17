@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
   const logoDataUrl: string | undefined = body?.logoDataUrl;
   const sizeScale: number = typeof body?.sizeScale === "number" ? body.sizeScale : 1;
   const positions: Record<string, Corner> = body?.positions ?? {};
+  const rotationOffsetDeg: number = typeof body?.rotationOffsetDeg === "number" ? body.rotationOffsetDeg : 0;
   const requestedImageId: string | undefined = body?.imageId;
 
   if (!productId) {
@@ -75,6 +76,7 @@ export async function POST(req: NextRequest) {
     monogram,
     inkColor,
     sizeScale,
+    rotationOffsetDeg,
   });
   if (!result) {
     return NextResponse.json({ error: "Could not load the product photo." }, { status: 502 });

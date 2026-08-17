@@ -147,6 +147,7 @@ export function ProductConfigurator({
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [sizeScale, setSizeScale] = useState(1);
+  const [rotationOffset, setRotationOffset] = useState(0);
   const [positions, setPositions] = useState<Record<ElemKey, ElemPos>>(DEFAULT_POSITIONS);
   const dragState = useRef<{ key: ElemKey; startX: number; startY: number; orig: ElemPos } | null>(null);
   const [techniqueId, setTechniqueId] = useState(
@@ -226,6 +227,27 @@ export function ProductConfigurator({
     () => (zone ? zone.corners_pct.map((c) => `${c.x},${c.y}`).join(" ") : ""),
     [zone]
   );
+
+  // Tilts the logo/text to match the print area's own incline (its top
+  // edge, TL→TR) so personalization reads as embedded in an angled surface
+  // instead of pasted on upright. Uses zoneBox's rendered pixel size to
+  // convert the full-image percentage corners into real on-screen angles —
+  // the container isn't square (aspect-[4/5]), so raw percentage deltas
+  // alone would give a skewed angle.
+  const autoRotationDeg = useMemo(() => {
+    if (!zone || zone.corners_pct.length !== 4 || !zoneBox || !zoneBox.width || !zoneBox.height) return 0;
+    if (!zoneSize.width || !zoneSize.height) return 0;
+    const pxPerPctX = zoneSize.width / zoneBox.width;
+    const pxPerPctY = zoneSize.height / zoneBox.height;
+    const [tl, tr] = zone.corners_pct;
+    const dx = (tr.x - tl.x) * pxPerPctX;
+    const dy = (tr.y - tl.y) * pxPerPctY;
+    return (Math.atan2(dy, dx) * 180) / Math.PI;
+  }, [zone, zoneBox, zoneSize.width, zoneSize.height]);
+  // Customers can nudge rotation further on top of the auto-matched angle
+  // (e.g. the quad only approximates the surface, or they simply prefer it
+  // off-axis).
+  const zoneRotationDeg = autoRotationDeg + rotationOffset;
 
   // Real px-per-mm for the currently rendered zone box, so text/logo sizing
   // reflects the product's actual printable area instead of a fixed guess.
@@ -310,7 +332,16 @@ export function ProductConfigurator({
         const res = await fetch("/api/personalization-snapshot", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productId: product.id, names, date, monogram, logoDataUrl, sizeScale, positions }),
+          body: JSON.stringify({
+            productId: product.id,
+            names,
+            date,
+            monogram,
+            logoDataUrl,
+            sizeScale,
+            positions,
+            rotationOffsetDeg: rotationOffset,
+          }),
         });
         if (res.ok) {
           const json = await res.json();
@@ -347,6 +378,7 @@ export function ProductConfigurator({
             technique: technique?.technique,
             sizeScale,
             positions,
+            rotationOffset,
             hasLogo: !!logoFile,
             renderUrl,
             renderContextUrl,
@@ -400,7 +432,7 @@ export function ProductConfigurator({
                     top: `${positions.logo.y}%`,
                     width: "45%",
                     aspectRatio: "1",
-                    transform: "translate(-50%, -50%)",
+                    transform: `translate(-50%, -50%) rotate(${zoneRotationDeg}deg)`,
                   }}
                 >
                   <div className="relative w-full h-full pointer-events-none">
@@ -415,7 +447,7 @@ export function ProductConfigurator({
                   style={{
                     left: `${positions.monogram.x}%`,
                     top: `${positions.monogram.y}%`,
-                    transform: "translate(-50%, -50%)",
+                    transform: `translate(-50%, -50%) rotate(${zoneRotationDeg}deg)`,
                     fontSize: monogramFontPx,
                     ...techniqueTextStyle(technique?.technique),
                   }}
@@ -430,7 +462,7 @@ export function ProductConfigurator({
                   style={{
                     left: `${positions.names.x}%`,
                     top: `${positions.names.y}%`,
-                    transform: "translate(-50%, -50%)",
+                    transform: `translate(-50%, -50%) rotate(${zoneRotationDeg}deg)`,
                     fontSize: nameFontPx,
                     ...techniqueTextStyle(technique?.technique),
                   }}
@@ -445,7 +477,7 @@ export function ProductConfigurator({
                   style={{
                     left: `${positions.date.x}%`,
                     top: `${positions.date.y}%`,
-                    transform: "translate(-50%, -50%)",
+                    transform: `translate(-50%, -50%) rotate(${zoneRotationDeg}deg)`,
                     fontSize: dateFontPx,
                     ...techniqueTextStyle(technique?.technique),
                   }}
@@ -633,13 +665,53 @@ export function ProductConfigurator({
                 </button>
               </div>
             </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs uppercase tracking-wide text-muted">Rotate</label>
+                <span className="text-xs text-muted">
+                  {rotationOffset > 0 ? "+" : ""}
+                  {rotationOffset}°{autoRotationDeg ? " from print area" : ""}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setRotationOffset((r) => Math.max(-45, r - 5))}
+                  className="h-9 w-9 shrink-0 rounded-full border border-line flex items-center justify-center text-sm"
+                >
+                  −
+                </button>
+                <input
+                  type="range"
+                  min={-45}
+                  max={45}
+                  step={1}
+                  value={rotationOffset}
+                  onChange={(e) => setRotationOffset(Number(e.target.value))}
+                  className="w-full accent-terracotta"
+                />
+                <button
+                  type="button"
+                  onClick={() => setRotationOffset((r) => Math.min(45, r + 5))}
+                  className="h-9 w-9 shrink-0 rounded-full border border-line flex items-center justify-center text-sm"
+                >
+                  +
+                </button>
+              </div>
+              <p className="text-xs text-muted mt-1">
+                Text and logo already tilt to match the print area automatically — use this to fine-tune further.
+              </p>
+            </div>
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted">
                 Drag the logo, text, date, or monogram directly on the photo to position each one.
               </p>
               <button
                 type="button"
-                onClick={() => setPositions(DEFAULT_POSITIONS)}
+                onClick={() => {
+                  setPositions(DEFAULT_POSITIONS);
+                  setRotationOffset(0);
+                }}
                 className="text-xs text-terracotta-dark font-medium shrink-0 ml-3"
               >
                 Reset positions
@@ -681,6 +753,7 @@ export function ProductConfigurator({
             logoFile={logoFile}
             sizeScale={sizeScale}
             positions={positions}
+            rotationOffset={rotationOffset}
             images={product.images}
             defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
             unlimited={unlimitedRenders}

@@ -53,6 +53,7 @@ export function AiRenderPanel({
   logoFile = null,
   sizeScale = 1,
   positions,
+  rotationOffset = 0,
   images = [],
   defaultImageId = null,
   unlimited = false,
@@ -65,6 +66,7 @@ export function AiRenderPanel({
   logoFile?: File | null;
   sizeScale?: number;
   positions?: Record<string, { x: number; y: number }>;
+  rotationOffset?: number;
   images?: { id: string; url: string }[];
   defaultImageId?: string | null;
   unlimited?: boolean;
@@ -102,6 +104,7 @@ export function AiRenderPanel({
           logoDataUrl,
           sizeScale,
           positions,
+          rotationOffsetDeg: rotationOffset,
           imageId,
         }),
       });

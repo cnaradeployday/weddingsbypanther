@@ -98,6 +98,17 @@ export function clampInt(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.round(v)));
 }
 
+// The print zone is a freeform quad (corners can be dragged independently
+// for angled/perspective product shots), stored TL/TR/BR/BL. Its visual
+// tilt is approximated by the angle of its top edge, in real photo pixel
+// space (not raw percentages, which would be skewed by a non-square photo).
+export function zoneRotationDeg(corners: Corner[], width: number, height: number): number {
+  if (corners.length !== 4) return 0;
+  const tl = { x: (corners[0].x / 100) * width, y: (corners[0].y / 100) * height };
+  const tr = { x: (corners[1].x / 100) * width, y: (corners[1].y / 100) * height };
+  return (Math.atan2(tr.y - tl.y, tr.x - tl.x) * 180) / Math.PI;
+}
+
 // Builds the personalization as its own flat image (white background, logo
 // + text laid out exactly where the customer dragged each element) rather
 // than asking an image-editing model to place things on the real product
@@ -112,6 +123,7 @@ export async function buildArtworkImage({
   date,
   monogram,
   inkColor,
+  rotationDeg = 0,
 }: {
   canvasW: number;
   canvasH: number;
@@ -121,8 +133,14 @@ export async function buildArtworkImage({
   date: string;
   monogram: string;
   inkColor: string;
+  rotationDeg?: number;
 }): Promise<Buffer> {
   const pos = (key: string, fallback: Corner) => positions[key] ?? fallback;
+  // Rotate each element around its own anchor point so it sits flush with
+  // the (possibly angled) print area, the same way it looks embossed/
+  // engraved into a tilted surface rather than pasted on upright.
+  const rotateAttr = (cx: number, cy: number) =>
+    rotationDeg ? ` transform="rotate(${rotationDeg} ${cx} ${cy})"` : "";
 
   let logoElement = "";
   if (logoImage) {
@@ -132,30 +150,38 @@ export async function buildArtworkImage({
       .png()
       .toBuffer();
     const p = pos("logo", { x: 50, y: 35 });
-    const x = Math.round((p.x / 100) * canvasW - boxSize / 2);
-    const y = Math.round((p.y / 100) * canvasH - boxSize / 2);
+    const cx = (p.x / 100) * canvasW;
+    const cy = (p.y / 100) * canvasH;
+    const x = Math.round(cx - boxSize / 2);
+    const y = Math.round(cy - boxSize / 2);
     logoElement = `<image x="${x}" y="${y}" width="${boxSize}" height="${boxSize}" href="data:image/png;base64,${fitted.toString(
       "base64"
-    )}" />`;
+    )}"${rotateAttr(cx, cy)} />`;
   }
 
   const textElements: string[] = [];
   if (monogram.trim()) {
     const p = pos("monogram", { x: 50, y: 15 });
+    const cx = (p.x / 100) * canvasW;
+    const cy = (p.y / 100) * canvasH;
     textElements.push(
-      `<text x="${(p.x / 100) * canvasW}" y="${(p.y / 100) * canvasH}" font-size="${canvasH * 0.14}" font-family="Georgia, 'Times New Roman', serif" fill="${inkColor}" text-anchor="middle" dominant-baseline="central">${escapeXml(monogram)}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${canvasH * 0.14}" font-family="Georgia, 'Times New Roman', serif" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy)}>${escapeXml(monogram)}</text>`
     );
   }
   if (names.trim()) {
     const p = pos("names", { x: 50, y: 65 });
+    const cx = (p.x / 100) * canvasW;
+    const cy = (p.y / 100) * canvasH;
     textElements.push(
-      `<text x="${(p.x / 100) * canvasW}" y="${(p.y / 100) * canvasH}" font-size="${canvasH * 0.11}" font-family="Georgia, 'Times New Roman', serif" fill="${inkColor}" text-anchor="middle" dominant-baseline="central">${escapeXml(names.trim())}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${canvasH * 0.11}" font-family="Georgia, 'Times New Roman', serif" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy)}>${escapeXml(names.trim())}</text>`
     );
   }
   if (date.trim()) {
     const p = pos("date", { x: 50, y: 82 });
+    const cx = (p.x / 100) * canvasW;
+    const cy = (p.y / 100) * canvasH;
     textElements.push(
-      `<text x="${(p.x / 100) * canvasW}" y="${(p.y / 100) * canvasH}" font-size="${canvasH * 0.05}" font-family="Georgia, 'Times New Roman', serif" letter-spacing="1" fill="${inkColor}" text-anchor="middle" dominant-baseline="central">${escapeXml(date.trim())}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${canvasH * 0.05}" font-family="Georgia, 'Times New Roman', serif" letter-spacing="1" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy)}>${escapeXml(date.trim())}</text>`
     );
   }
 
@@ -219,6 +245,7 @@ export async function composeProductPersonalization({
   monogram,
   inkColor,
   sizeScale,
+  rotationOffsetDeg = 0,
 }: {
   referenceImageUrl: string;
   zone: PrintZone | undefined;
@@ -229,6 +256,7 @@ export async function composeProductPersonalization({
   monogram: string;
   inkColor: string;
   sizeScale: number;
+  rotationOffsetDeg?: number;
 }): Promise<ImagePayload | null> {
   const baseImage = await loadImageAsBase64(referenceImageUrl);
   if (!baseImage) return null;
@@ -245,6 +273,9 @@ export async function composeProductPersonalization({
 
   const targetW = Math.max(1, Math.round(box.width * sizeScale));
   const targetH = Math.max(1, Math.round(box.height * sizeScale));
+  const rotationDeg =
+    (zone && zone.corners_pct.length === 4 ? zoneRotationDeg(zone.corners_pct, photoW, photoH) : 0) +
+    rotationOffsetDeg;
 
   const artworkBuffer = await buildArtworkImage({
     canvasW: targetW,
@@ -255,6 +286,7 @@ export async function composeProductPersonalization({
     date,
     monogram,
     inkColor,
+    rotationDeg,
   });
 
   return compositePersonalization(croppedBase, artworkBuffer, box, targetW, targetH);
