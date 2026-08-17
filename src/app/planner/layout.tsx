@@ -8,6 +8,7 @@ const NAV = [
   { href: "/planner/products", label: "Product catalog" },
   { href: "/planner/orders", label: "Orders" },
   { href: "/planner/proposals", label: "Proposals" },
+  { href: "/planner/clients", label: "Clients" },
   { href: "/planner/settings", label: "Storefront" },
 ];
 

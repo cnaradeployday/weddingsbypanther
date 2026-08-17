@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
+import { VettingStatusControl } from "@/components/VettingStatusControl";
 
 export default async function AdminPlannersPage() {
   const session = await getSessionProfile();
@@ -19,6 +20,7 @@ export default async function AdminPlannersPage() {
               <th className="px-5 py-3 font-medium">Studio</th>
               <th className="px-5 py-3 font-medium">Storefront</th>
               <th className="px-5 py-3 font-medium">Default markup</th>
+              <th className="px-5 py-3 font-medium">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -31,6 +33,9 @@ export default async function AdminPlannersPage() {
                   </a>
                 </td>
                 <td className="px-5 py-4 text-muted">{p.default_markup_pct}%</td>
+                <td className="px-5 py-4">
+                  <VettingStatusControl table="planners" id={p.id} status={p.status} />
+                </td>
               </tr>
             ))}
           </tbody>

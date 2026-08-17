@@ -40,6 +40,19 @@ export default async function PlannerOverview() {
       <h1 className="font-serif text-3xl mb-1">Overview</h1>
       <p className="text-muted mb-8">Welcome back, {planner.business_name}.</p>
 
+      {planner.status === "pending" && (
+        <div className="rounded-xl border border-gold bg-gold/10 p-4 text-sm mb-8">
+          Your storefront is awaiting approval from the Bespoke team — it won&apos;t be visible
+          to customers until then. You can keep setting things up in the meantime.
+        </div>
+      )}
+      {planner.status === "suspended" && (
+        <div className="rounded-xl border border-terracotta bg-terracotta/10 p-4 text-sm mb-8">
+          Your storefront has been suspended and isn&apos;t visible to customers. Contact
+          Bespoke support if you think this is a mistake.
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map((s) => (
           <div key={s.label} className="rounded-xl border border-line bg-white p-5">

@@ -26,7 +26,7 @@ export default async function EditSupplierProductPage({
     .select(
       `*, images:product_images(id, url, sort_order),
        techniques:product_print_techniques(technique),
-       zones:product_print_zones(width_mm, height_mm, max_chars_per_line)`
+       zones:product_print_zones(width_mm, height_mm, max_chars_per_line, pos_x_pct, pos_y_pct, width_pct, height_pct)`
     )
     .eq("id", id)
     .eq("supplier_id", supplier.id)
@@ -51,7 +51,15 @@ export default async function EditSupplierProductPage({
     reviewerNote: product.reviewer_note,
     techniques: (product.techniques ?? []).map((t) => t.technique),
     zone: zone
-      ? { width: zone.width_mm ?? 60, height: zone.height_mm ?? 30, maxChars: zone.max_chars_per_line ?? 24 }
+      ? {
+          width: zone.width_mm ?? 60,
+          height: zone.height_mm ?? 30,
+          maxChars: zone.max_chars_per_line ?? 24,
+          posX: zone.pos_x_pct,
+          posY: zone.pos_y_pct,
+          widthPct: zone.width_pct,
+          heightPct: zone.height_pct,
+        }
       : null,
     images: (product.images ?? [])
       .slice()

@@ -9,7 +9,17 @@ import { useCart } from "@/lib/cart";
 const MONOGRAMS = ["✦", "❀", "❖", "⬥", "✿", "☙"];
 
 type Technique = { id: string; technique: string; extra_price: number; is_default: boolean };
-type Zone = { id: string; label: string; max_chars_per_line: number | null; width_mm: number | null; height_mm: number | null };
+type Zone = {
+  id: string;
+  label: string;
+  max_chars_per_line: number | null;
+  width_mm: number | null;
+  height_mm: number | null;
+  pos_x_pct: number;
+  pos_y_pct: number;
+  width_pct: number;
+  height_pct: number;
+};
 
 export function ProductConfigurator({
   product,
@@ -94,12 +104,18 @@ export function ProductConfigurator({
             />
           )}
           {product.personalizable && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-56 h-56 rounded-full bg-terracotta/90 border-2 border-dashed border-cream-light/60 flex flex-col items-center justify-center text-cream-light text-center px-6 shadow-xl">
-                <span className="text-xl mb-2">{monogram}</span>
-                <span className="font-serif text-lg leading-tight">{names || "Your names"}</span>
-                <span className="text-xs mt-2 tracking-wide">{formattedDate}</span>
-              </div>
+            <div
+              className="absolute pointer-events-none flex flex-col items-center justify-center rounded-2xl bg-terracotta/90 border-2 border-dashed border-cream-light/60 text-cream-light text-center px-3 shadow-xl"
+              style={{
+                left: `${zone?.pos_x_pct ?? 30}%`,
+                top: `${zone?.pos_y_pct ?? 35}%`,
+                width: `${zone?.width_pct ?? 40}%`,
+                height: `${zone?.height_pct ?? 25}%`,
+              }}
+            >
+              <span className="text-xl mb-1">{monogram}</span>
+              <span className="font-serif text-lg leading-tight">{names || "Your names"}</span>
+              <span className="text-xs mt-1 tracking-wide">{formattedDate}</span>
             </div>
           )}
           <span className="absolute bottom-3 left-3 text-[11px] bg-cream-light/90 px-3 py-1 rounded-full flex items-center gap-1.5">

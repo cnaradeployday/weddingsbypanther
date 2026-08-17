@@ -181,6 +181,7 @@ export type Database = {
           logo_url: string | null
           profile_id: string | null
           slug: string
+          status: string
           tagline: string | null
           theme_dark: boolean
         }
@@ -194,6 +195,7 @@ export type Database = {
           logo_url?: string | null
           profile_id?: string | null
           slug: string
+          status?: string
           tagline?: string | null
           theme_dark?: boolean
         }
@@ -207,6 +209,7 @@ export type Database = {
           logo_url?: string | null
           profile_id?: string | null
           slug?: string
+          status?: string
           tagline?: string | null
           theme_dark?: boolean
         }
@@ -284,30 +287,42 @@ export type Database = {
       product_print_zones: {
         Row: {
           height_mm: number | null
+          height_pct: number
           id: string
           label: string
           max_chars_per_line: number | null
           max_lines: number
+          pos_x_pct: number
+          pos_y_pct: number
           product_id: string | null
           width_mm: number | null
+          width_pct: number
         }
         Insert: {
           height_mm?: number | null
+          height_pct?: number
           id?: string
           label: string
           max_chars_per_line?: number | null
           max_lines?: number
+          pos_x_pct?: number
+          pos_y_pct?: number
           product_id?: string | null
           width_mm?: number | null
+          width_pct?: number
         }
         Update: {
           height_mm?: number | null
+          height_pct?: number
           id?: string
           label?: string
           max_chars_per_line?: number | null
           max_lines?: number
+          pos_x_pct?: number
+          pos_y_pct?: number
           product_id?: string | null
           width_mm?: number | null
+          width_pct?: number
         }
         Relationships: [
           {
@@ -538,6 +553,7 @@ export type Database = {
           profile_id: string | null
           since_year: number | null
           slug: string
+          status: string
         }
         Insert: {
           business_name: string
@@ -546,6 +562,7 @@ export type Database = {
           profile_id?: string | null
           since_year?: number | null
           slug: string
+          status?: string
         }
         Update: {
           business_name?: string
@@ -554,6 +571,7 @@ export type Database = {
           profile_id?: string | null
           since_year?: number | null
           slug?: string
+          status?: string
         }
         Relationships: [
           {

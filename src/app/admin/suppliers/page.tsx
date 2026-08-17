@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
+import { VettingStatusControl } from "@/components/VettingStatusControl";
 
 export default async function AdminSuppliersPage() {
   const session = await getSessionProfile();
@@ -22,6 +23,7 @@ export default async function AdminSuppliersPage() {
               <th className="px-5 py-3 font-medium">Company</th>
               <th className="px-5 py-3 font-medium">Since</th>
               <th className="px-5 py-3 font-medium">Products</th>
+              <th className="px-5 py-3 font-medium">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -30,6 +32,9 @@ export default async function AdminSuppliersPage() {
                 <td className="px-5 py-4 font-medium">{s.business_name}</td>
                 <td className="px-5 py-4 text-muted">{s.since_year ?? "—"}</td>
                 <td className="px-5 py-4">{s.products?.[0]?.count ?? 0}</td>
+                <td className="px-5 py-4">
+                  <VettingStatusControl table="suppliers" id={s.id} status={s.status} />
+                </td>
               </tr>
             ))}
           </tbody>

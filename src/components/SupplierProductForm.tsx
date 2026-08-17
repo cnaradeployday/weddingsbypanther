@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { PrintAreaTool } from "./PrintAreaTool";
 
 const TECHNIQUES = ["Foil stamp", "Laser engrave", "Screen print", "Letterpress", "UV print", "Embroidery", "Wax seal"];
 
@@ -33,7 +34,15 @@ export type InitialProduct = {
   status: string;
   reviewerNote: string | null;
   techniques: string[];
-  zone: { width: number; height: number; maxChars: number } | null;
+  zone: {
+    width: number;
+    height: number;
+    maxChars: number;
+    posX: number;
+    posY: number;
+    widthPct: number;
+    heightPct: number;
+  } | null;
   images: ExistingImage[];
 };
 
@@ -66,6 +75,12 @@ export function SupplierProductForm({
   const [zoneWidth, setZoneWidth] = useState(initial?.zone?.width ?? 60);
   const [zoneHeight, setZoneHeight] = useState(initial?.zone?.height ?? 30);
   const [maxChars, setMaxChars] = useState(initial?.zone?.maxChars ?? 24);
+  const [zonePos, setZonePos] = useState({
+    posX: initial?.zone?.posX ?? 30,
+    posY: initial?.zone?.posY ?? 35,
+    width: initial?.zone?.widthPct ?? 40,
+    height: initial?.zone?.heightPct ?? 25,
+  });
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [existingImages, setExistingImages] = useState<ExistingImage[]>(initial?.images ?? []);
@@ -191,6 +206,10 @@ export function SupplierProductForm({
         height_mm: zoneHeight,
         max_chars_per_line: maxChars,
         max_lines: 2,
+        pos_x_pct: zonePos.posX,
+        pos_y_pct: zonePos.posY,
+        width_pct: zonePos.width,
+        height_pct: zonePos.height,
       });
     }
 
@@ -372,8 +391,15 @@ export function SupplierProductForm({
 
         {personalizable && (
           <div>
-            <p className="text-xs uppercase tracking-wide text-muted mb-2">Print area</p>
-            <div className="grid grid-cols-3 gap-3">
+            <p className="text-xs uppercase tracking-wide text-muted mb-2">
+              Print area — drag to position, drag the corner to resize
+            </p>
+            <PrintAreaTool
+              imageUrl={existingImages[0]?.url ?? previews[0] ?? null}
+              zone={zonePos}
+              onChange={setZonePos}
+            />
+            <div className="grid grid-cols-3 gap-3 mt-3">
               <div>
                 <label className="text-xs text-muted block mb-1">Width (mm)</label>
                 <input
