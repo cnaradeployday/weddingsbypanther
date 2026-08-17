@@ -5,16 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-function slugify(input: string) {
-  const base = input
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-  const suffix = Math.random().toString(36).slice(2, 6);
-  return `${base || "studio"}-${suffix}`;
-}
-
 export default function SignupPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -25,42 +15,31 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
 
-    const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { role, full_name: fullName, business_name: businessName },
+      },
+    });
+
     if (signUpError || !data.user) {
       setError(signUpError?.message ?? "Could not create account.");
       setSubmitting(false);
       return;
     }
 
-    const userId = data.user.id;
-
-    const { error: profileError } = await supabase.from("profiles").insert({
-      id: userId,
-      role,
-      full_name: fullName,
-      email,
-    });
-    if (profileError) {
-      setError(profileError.message);
-      setSubmitting(false);
-      return;
-    }
-
-    const slug = slugify(businessName);
-    const { error: bizError } =
-      role === "planner"
-        ? await supabase
-            .from("planners")
-            .insert({ profile_id: userId, business_name: businessName, slug, tagline: "Wedding Studio" })
-        : await supabase.from("suppliers").insert({ profile_id: userId, business_name: businessName, slug });
-    if (bizError) {
-      setError(bizError.message);
+    // A database trigger provisions the profile (and planner/supplier record)
+    // from the signup metadata as soon as the auth.users row is created.
+    if (!data.session) {
+      setNeedsConfirmation(true);
       setSubmitting(false);
       return;
     }
@@ -68,6 +47,23 @@ export default function SignupPage() {
     router.push(`/${role}`);
     router.refresh();
   };
+
+  if (needsConfirmation) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-cream px-6 text-center">
+        <div className="max-w-sm">
+          <h1 className="font-serif text-2xl mb-3">Check your email</h1>
+          <p className="text-muted">
+            We sent a confirmation link to {email}. Click it to activate your account, then
+            sign in.
+          </p>
+          <Link href="/login" className="inline-block mt-6 text-terracotta font-medium">
+            Go to sign in
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-cream px-6 py-16">
