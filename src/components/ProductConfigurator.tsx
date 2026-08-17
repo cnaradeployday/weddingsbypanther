@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { formatUSD } from "@/lib/format";
 import { applyMarkup } from "@/lib/format";
 import { useCart } from "@/lib/cart";
+import { AiRenderPanel } from "./AiRenderPanel";
 
 const MONOGRAMS = ["✦", "❀", "❖", "⬥", "✿", "☙"];
 
@@ -313,6 +314,10 @@ export function ProductConfigurator({
               ))}
             </div>
           </div>
+        )}
+
+        {product.personalizable && (
+          <AiRenderPanel productId={product.id} names={names} date={date} monogram={monogram} />
         )}
 
         <div className="mb-8">
