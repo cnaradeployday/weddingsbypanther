@@ -55,6 +55,7 @@ export function AiRenderPanel({
   vAlign = "center",
   images = [],
   defaultImageId = null,
+  unlimited = false,
 }: {
   productId: string;
   names: string;
@@ -65,6 +66,7 @@ export function AiRenderPanel({
   vAlign?: string;
   images?: { id: string; url: string }[];
   defaultImageId?: string | null;
+  unlimited?: boolean;
 }) {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -78,7 +80,7 @@ export function AiRenderPanel({
     return Number(sessionStorage.getItem(sessionKey(productId)) ?? "0");
   });
 
-  const remaining = MAX_RENDERS_PER_PRODUCT - usedCount;
+  const remaining = unlimited ? Infinity : MAX_RENDERS_PER_PRODUCT - usedCount;
 
   const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -115,9 +117,11 @@ export function AiRenderPanel({
       if (!res.ok) throw new Error(json.error ?? "Could not generate a preview.");
       setResult(json.imageDataUrl);
       setContextResult(json.contextImageDataUrl ?? null);
-      const next = usedCount + 1;
-      setUsedCount(next);
-      sessionStorage.setItem(sessionKey(productId), String(next));
+      if (!unlimited) {
+        const next = usedCount + 1;
+        setUsedCount(next);
+        sessionStorage.setItem(sessionKey(productId), String(next));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not generate a preview.");
     } finally {
@@ -135,8 +139,8 @@ export function AiRenderPanel({
       </div>
       <p className="text-xs text-muted mb-4">
         Optional — upload your own logo, or leave it blank to use the names/monogram above. We&apos;ll
-        generate a close-up product preview and a wedding lifestyle shot. {remaining} of{" "}
-        {MAX_RENDERS_PER_PRODUCT} left this session.
+        generate a close-up product preview and a wedding lifestyle shot.{" "}
+        {unlimited ? "Unlimited renders for your account." : `${remaining} of ${MAX_RENDERS_PER_PRODUCT} left this session.`}
       </p>
 
       {images.length > 1 && (

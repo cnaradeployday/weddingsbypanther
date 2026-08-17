@@ -6,8 +6,6 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PrintAreaTool } from "./PrintAreaTool";
 
-const TECHNIQUES = ["Foil stamp", "Laser engrave", "Screen print", "Letterpress", "UV print", "Embroidery", "Wax seal"];
-
 function slugify(input: string) {
   const base = input
     .toLowerCase()
@@ -42,6 +40,7 @@ export type InitialProduct = {
     posY: number;
     widthPct: number;
     heightPct: number;
+    rotation: number;
     imageId: string | null;
   } | null;
   images: ExistingImage[];
@@ -82,10 +81,12 @@ function newVariantRow(): VariantRow {
 export function SupplierProductForm({
   supplierId,
   categories,
+  techniqueOptions,
   initial,
 }: {
   supplierId: string;
   categories: { id: string; name: string }[];
+  techniqueOptions: string[];
   initial?: InitialProduct;
 }) {
   const router = useRouter();
@@ -113,6 +114,7 @@ export function SupplierProductForm({
     posY: initial?.zone?.posY ?? 35,
     width: initial?.zone?.widthPct ?? 40,
     height: initial?.zone?.heightPct ?? 25,
+    rotation: initial?.zone?.rotation ?? 0,
   });
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -297,6 +299,7 @@ export function SupplierProductForm({
         pos_y_pct: zonePos.posY,
         width_pct: zonePos.width,
         height_pct: zonePos.height,
+        rotation_deg: zonePos.rotation,
         image_id: resolvedZoneImageId,
       });
     }
@@ -491,7 +494,7 @@ export function SupplierProductForm({
       <div className="rounded-xl border border-line bg-white p-6 space-y-5">
         <p className="text-xs uppercase tracking-wide text-muted">Print techniques</p>
         <div className="flex flex-wrap gap-2">
-          {TECHNIQUES.map((t) => (
+          {techniqueOptions.map((t) => (
             <button
               key={t}
               type="button"
@@ -550,7 +553,7 @@ export function SupplierProductForm({
               </div>
             )}
             <p className="text-xs uppercase tracking-wide text-muted mb-2">
-              Print area — drag to position, drag the corner to resize
+              Print area — drag to position, drag the corner to resize, drag the top handle to rotate
             </p>
             <PrintAreaTool
               imageUrl={
@@ -565,7 +568,7 @@ export function SupplierProductForm({
               onChange={setZonePos}
               sizeLabel={`${zoneWidth} × ${zoneHeight}mm`}
             />
-            <div className="grid grid-cols-3 gap-3 mt-3">
+            <div className="grid grid-cols-4 gap-3 mt-3">
               <div>
                 <label className="text-xs text-muted block mb-1">Width (mm)</label>
                 <input
@@ -590,6 +593,15 @@ export function SupplierProductForm({
                   type="number"
                   value={maxChars}
                   onChange={(e) => setMaxChars(Number(e.target.value))}
+                  className="w-full rounded-lg border border-line px-3 py-2 focus:outline-none focus:border-dark"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted block mb-1">Rotation (°)</label>
+                <input
+                  type="number"
+                  value={zonePos.rotation}
+                  onChange={(e) => setZonePos((z) => ({ ...z, rotation: Number(e.target.value) }))}
                   className="w-full rounded-lg border border-line px-3 py-2 focus:outline-none focus:border-dark"
                 />
               </div>

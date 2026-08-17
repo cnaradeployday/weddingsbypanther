@@ -42,35 +42,38 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
     setError(null);
 
     try {
-      const { data: order, error: orderError } = await supabase
-        .from("orders")
-        .insert({
-          planner_id: plannerId,
-          customer_name: `${form.firstName} ${form.lastName}`.trim(),
-          customer_email: form.email,
-          shipping_address: {
-            address: form.address,
-            city: form.city,
-            state: form.state,
-            zip: form.zip,
-            country: form.country,
-            phone: form.phone,
-          },
-          subtotal,
-          personalization_fee: personalizationFee,
-          shipping_fee: shipping,
-          tax: 0,
-          total,
-          payment_status: "paid_test",
-          status: "pending_proof",
-        })
-        .select()
-        .single();
+      // Checkout has no customer login (buyers are anonymous), and RLS only
+      // lets an order be read back by its planner/supplier/admin — not by
+      // whoever just created it. Generating the id client-side means we
+      // never need to SELECT the row back after insert, which would
+      // otherwise fail under RLS for every anonymous order.
+      const orderId = crypto.randomUUID();
+      const { error: orderError } = await supabase.from("orders").insert({
+        id: orderId,
+        planner_id: plannerId,
+        customer_name: `${form.firstName} ${form.lastName}`.trim(),
+        customer_email: form.email,
+        shipping_address: {
+          address: form.address,
+          city: form.city,
+          state: form.state,
+          zip: form.zip,
+          country: form.country,
+          phone: form.phone,
+        },
+        subtotal,
+        personalization_fee: personalizationFee,
+        shipping_fee: shipping,
+        tax: 0,
+        total,
+        payment_status: "paid_test",
+        status: "pending_proof",
+      });
 
-      if (orderError || !order) throw orderError ?? new Error("Could not create order");
+      if (orderError) throw orderError;
 
       const orderItems = items.map((item) => ({
-        order_id: order.id,
+        order_id: orderId,
         product_id: item.productId,
         quantity: item.quantity,
         unit_price: item.unitPrice,
@@ -83,7 +86,7 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
       if (itemsError) throw itemsError;
 
       clear();
-      router.push(`/store/${plannerSlug}/checkout/success?order=${order.id}`);
+      router.push(`/store/${plannerSlug}/checkout/success?order=${orderId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong placing your order.");
       setSubmitting(false);

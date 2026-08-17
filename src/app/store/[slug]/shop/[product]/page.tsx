@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getStorefrontProduct } from "@/lib/queries";
+import { getSessionProfile } from "@/lib/supabase/server";
 import { ProductConfigurator } from "@/components/ProductConfigurator";
 
 export default async function ProductPage({
@@ -8,11 +9,17 @@ export default async function ProductPage({
   params: Promise<{ slug: string; product: string }>;
 }) {
   const { slug, product: productSlug } = await params;
-  const product = await getStorefrontProduct(slug, productSlug);
+  const [product, session] = await Promise.all([
+    getStorefrontProduct(slug, productSlug),
+    getSessionProfile(),
+  ]);
   if (!product) notFound();
+
+  const unlimitedRenders = session?.profile.role === "admin";
 
   return (
     <ProductConfigurator
+      unlimitedRenders={unlimitedRenders}
       product={{
         id: product.id,
         slug: product.slug,

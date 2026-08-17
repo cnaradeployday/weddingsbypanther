@@ -19,14 +19,17 @@ export default async function EditSupplierProductPage({
     .maybeSingle();
   if (!supplier) redirect("/login");
 
-  const { data: categories } = await supabase.from("categories").select("id, name").order("sort_order");
+  const [{ data: categories }, { data: techniques }] = await Promise.all([
+    supabase.from("categories").select("id, name").order("sort_order"),
+    supabase.from("print_techniques").select("name").order("sort_order"),
+  ]);
 
   const { data: product } = await supabase
     .from("products")
     .select(
       `*, images:product_images(id, url, sort_order),
        techniques:product_print_techniques(technique),
-       zones:product_print_zones(width_mm, height_mm, max_chars_per_line, pos_x_pct, pos_y_pct, width_pct, height_pct, image_id),
+       zones:product_print_zones(width_mm, height_mm, max_chars_per_line, pos_x_pct, pos_y_pct, width_pct, height_pct, rotation_deg, image_id),
        variants:product_variants(id, label, sku, price_delta, stock_on_hand, image_url, sort_order)`
     )
     .eq("id", id)
@@ -60,6 +63,7 @@ export default async function EditSupplierProductPage({
           posY: zone.pos_y_pct,
           widthPct: zone.width_pct,
           heightPct: zone.height_pct,
+          rotation: zone.rotation_deg,
           imageId: zone.image_id,
         }
       : null,
@@ -84,7 +88,12 @@ export default async function EditSupplierProductPage({
     <div>
       <h1 className="font-serif text-3xl mb-1">{product.name}</h1>
       <p className="text-muted mb-8">Edit this product.</p>
-      <SupplierProductForm supplierId={supplier.id} categories={categories ?? []} initial={initial} />
+      <SupplierProductForm
+        supplierId={supplier.id}
+        categories={categories ?? []}
+        techniqueOptions={(techniques ?? []).map((t) => t.name)}
+        initial={initial}
+      />
     </div>
   );
 }

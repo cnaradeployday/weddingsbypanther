@@ -30,6 +30,7 @@ type Zone = {
   pos_y_pct: number;
   width_pct: number;
   height_pct: number;
+  rotation_deg: number | null;
   image_id: string | null;
 };
 
@@ -54,7 +55,9 @@ function useElementSize<T extends HTMLElement>() {
 
 export function ProductConfigurator({
   product,
+  unlimitedRenders = false,
 }: {
+  unlimitedRenders?: boolean;
   product: {
     id: string;
     slug: string;
@@ -167,6 +170,7 @@ export function ProductConfigurator({
                 height: `${zone.height_pct}%`,
                 justifyContent: vAlign === "top" ? "flex-start" : vAlign === "bottom" ? "flex-end" : "center",
                 alignItems: hAlign === "left" ? "flex-start" : hAlign === "right" ? "flex-end" : "center",
+                transform: zone.rotation_deg ? `rotate(${zone.rotation_deg}deg)` : undefined,
               }}
             >
               {monogram && (
@@ -405,6 +409,7 @@ export function ProductConfigurator({
             vAlign={vAlign}
             images={product.images}
             defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
+            unlimited={unlimitedRenders}
           />
         )}
 

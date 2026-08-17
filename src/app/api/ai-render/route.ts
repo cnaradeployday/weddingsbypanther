@@ -6,35 +6,8 @@ import { supabase } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
-const TECHNIQUE_FINISH: Record<string, string> = {
-  "Foil stamp": "a metallic foil finish that catches light with a subtle reflective sheen",
-  "Laser engrave": "a subtly debossed, burned-in engraved look with soft inner shadow, no ink color",
-  "Screen print": "a flat, matte, opaque layer of ink sitting on the surface",
-  Letterpress: "a gently pressed impression into the material with soft shadowed edges",
-  "UV print": "a glossy, slightly raised printed finish",
-  Embroidery: "a stitched thread texture with visible individual stitches and slight dimensional thickness",
-  "Wax seal": "an embossed wax seal texture in a solid wax color",
-};
-
-// How much of the source artwork's original color/detail should survive the
-// print technique. Most physical techniques cannot reproduce full-color
-// photography, so uploaded photos/logos must be reduced accordingly.
-const TECHNIQUE_COLOR_MODE: Record<string, string> = {
-  "Foil stamp":
-    "Render the artwork as a single solid metallic tone (gold, silver, or rose gold — pick whichever fits the product) with no gradients. Completely discard the original artwork's colors, including any skin tones, background colors, or photo shading.",
-  "Laser engrave":
-    "Render the artwork as a monochrome engraved mark in the product material's own color (burned/etched, no ink, no color). Completely discard the original artwork's colors, including any skin tones, background colors, or photo shading — a photo becomes a grayscale-derived engraved silhouette/line art, never a color image.",
-  "Screen print":
-    "Reduce the artwork to 1-2 flat solid spot colors, as real screen printing would use. Do not attempt full photographic color or smooth gradients.",
-  Letterpress:
-    "Render the artwork as a single-color pressed impression (ink or blind emboss). Completely discard the original artwork's colors.",
-  "UV print":
-    "Reproduce the artwork in full, accurate photographic color and detail — UV printing supports true color reproduction.",
-  Embroidery:
-    "Simplify the artwork into a stitched design using at most 4-6 thread colors with visible thread texture. Do not attempt photographic detail, fine gradients, or the original color palette.",
-  "Wax seal":
-    "Render the artwork as a raised, monochrome wax-seal impression in a single wax color. Completely discard the original artwork's colors.",
-};
+const FALLBACK_FINISH = "a clean printed finish";
+const FALLBACK_COLOR_MODE = "Match the color treatment to a realistic printed finish.";
 
 // Any output must be a single, edge-to-edge photograph — image-editing
 // models will sometimes "helpfully" produce a moodboard/collage of several
@@ -42,7 +15,13 @@ const TECHNIQUE_COLOR_MODE: Record<string, string> = {
 const SINGLE_IMAGE_RULE =
   "Output exactly ONE photograph that fills the entire frame edge-to-edge. Never produce a collage, grid, moodboard, multiple thumbnails, side-by-side variations, empty margins/borders, or any UI chrome — just one single, full-bleed photo.";
 
-type PrintZone = { pos_x_pct: number; pos_y_pct: number; width_pct: number; height_pct: number };
+type PrintZone = {
+  pos_x_pct: number;
+  pos_y_pct: number;
+  width_pct: number;
+  height_pct: number;
+  rotation_deg: number | null;
+};
 type ImagePayload = { data: string; mimeType: string };
 
 // Matches the aspect-[4/5] + object-cover box used everywhere the product
@@ -100,6 +79,9 @@ async function withPrintAreaGuide(base: ImagePayload, zone: PrintZone | undefine
     const rectW = Math.max(1, Math.round((zone.width_pct / 100) * width));
     const rectH = Math.max(1, Math.round((zone.height_pct / 100) * height));
     const strokeWidth = Math.max(3, Math.round(width * 0.004));
+    const rotation = zone.rotation_deg ?? 0;
+    const cx = x + rectW / 2;
+    const cy = y + rectH / 2;
 
     // No fill — only a thin dashed outline. A filled tint gave the model a
     // colored patch to (sometimes) leave a residue of in the output; an
@@ -107,6 +89,7 @@ async function withPrintAreaGuide(base: ImagePayload, zone: PrintZone | undefine
     // easier for the model to fully erase.
     const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
       <rect x="${x}" y="${y}" width="${rectW}" height="${rectH}"
+        transform="rotate(${rotation} ${cx} ${cy})"
         fill="none" stroke="rgb(255,0,80)" stroke-width="${strokeWidth}"
         stroke-dasharray="${strokeWidth * 4},${strokeWidth * 2.5}" />
     </svg>`;
@@ -204,16 +187,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing productId." }, { status: 400 });
   }
 
-  const { data: product } = await supabase
-    .from("products")
-    .select(
-      `name,
-       images:product_images ( id, url, sort_order ),
-       zones:product_print_zones ( image_id, pos_x_pct, pos_y_pct, width_pct, height_pct, width_mm, height_mm ),
-       techniques:product_print_techniques ( technique, is_default )`
-    )
-    .eq("id", productId)
-    .maybeSingle();
+  const [{ data: product }, { data: techniqueCatalog }] = await Promise.all([
+    supabase
+      .from("products")
+      .select(
+        `name,
+         images:product_images ( id, url, sort_order ),
+         zones:product_print_zones ( image_id, pos_x_pct, pos_y_pct, width_pct, height_pct, rotation_deg, width_mm, height_mm ),
+         techniques:product_print_techniques ( technique, is_default )`
+      )
+      .eq("id", productId)
+      .maybeSingle(),
+    supabase.from("print_techniques").select("name, finish_description, color_mode_description"),
+  ]);
 
   if (!product) {
     return NextResponse.json({ error: "Product not found." }, { status: 404 });
@@ -241,11 +227,11 @@ export async function POST(req: NextRequest) {
     if (match) logoImage = { mimeType: match[1], data: match[2] };
   }
 
-  const finish = technique ? TECHNIQUE_FINISH[technique.technique] ?? "a clean printed finish" : "a clean printed finish";
-  const colorMode = technique
-    ? TECHNIQUE_COLOR_MODE[technique.technique] ??
-      "Match the color treatment to a realistic version of this print technique."
-    : "Match the color treatment to a realistic printed finish.";
+  const techniqueMeta = technique
+    ? (techniqueCatalog ?? []).find((t) => t.name === technique.technique)
+    : undefined;
+  const finish = techniqueMeta?.finish_description ?? FALLBACK_FINISH;
+  const colorMode = techniqueMeta?.color_mode_description ?? FALLBACK_COLOR_MODE;
   const alignPhrase =
     hAlign === "center" && vAlign === "center"
       ? "centered within that rectangle"
@@ -253,8 +239,16 @@ export async function POST(req: NextRequest) {
           vAlign !== "center" && hAlign !== "center" ? "-" : ""
         }${hAlign !== "center" ? hAlign : ""} of that rectangle rather than centered, leaving the rest of the rectangle's area empty`;
 
+  const rotation = zone?.rotation_deg ?? 0;
+  const rotationPhrase =
+    Math.abs(rotation) >= 1
+      ? ` The rectangle itself is drawn rotated ${Math.abs(rotation)}° ${
+          rotation > 0 ? "clockwise" : "counter-clockwise"
+        } to match the angle of that surface in the photo (e.g. a lid or panel shown at an angle) — the personalization must follow that same rotated angle, sitting flush and flat on that surface exactly as the rotated rectangle shows, not upright relative to the overall photo frame.`
+      : "";
+
   const region = zone
-    ? `The input photo has a dashed magenta/pink guide OUTLINE (no fill) marking the exact printable area. That marked rectangle is the ONLY place the personalization may appear — it must not extend past the rectangle's edges in any direction, even if that means rendering the personalization smaller than you otherwise would. Place the personalization ${alignPhrase}. The rectangle corresponds to a real printable zone of ${
+    ? `The input photo has a dashed magenta/pink guide OUTLINE (no fill) marking the exact printable area. That marked rectangle is the ONLY place the personalization may appear — it must not extend past the rectangle's edges in any direction, even if that means rendering the personalization smaller than you otherwise would. Place the personalization ${alignPhrase}.${rotationPhrase} The rectangle corresponds to a real printable zone of ${
         zone.width_mm ?? "?"
       }mm by ${
         zone.height_mm ?? "?"
@@ -299,7 +293,9 @@ ${contentInstruction}
 
 ${region}
 
-Render the personalization with ${finish}, matching the print technique "${technique?.technique ?? "printed"}". ${colorMode}
+Render the personalization with ${finish}, matching the print technique "${technique?.technique ?? "printed"}".
+
+CRITICAL COLOR RULE: ${colorMode}
 
 The result must look like authentic, unedited product photography — same framing as the input, not zoomed in or cropped — with no trace of the guide rectangle. Respect the surface curvature, lighting direction, and material of the product in the original photo.
 

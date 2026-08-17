@@ -14,13 +14,20 @@ export default async function NewSupplierProductPage() {
     .maybeSingle();
   if (!supplier) redirect("/login");
 
-  const { data: categories } = await supabase.from("categories").select("id, name").order("sort_order");
+  const [{ data: categories }, { data: techniques }] = await Promise.all([
+    supabase.from("categories").select("id, name").order("sort_order"),
+    supabase.from("print_techniques").select("name").order("sort_order"),
+  ]);
 
   return (
     <div>
       <h1 className="font-serif text-3xl mb-1">Add product</h1>
       <p className="text-muted mb-8">Submit a new product for admin approval.</p>
-      <SupplierProductForm supplierId={supplier.id} categories={categories ?? []} />
+      <SupplierProductForm
+        supplierId={supplier.id}
+        categories={categories ?? []}
+        techniqueOptions={(techniques ?? []).map((t) => t.name)}
+      />
     </div>
   );
 }

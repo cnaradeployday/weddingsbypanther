@@ -265,6 +265,33 @@ export type Database = {
           },
         ]
       }
+      print_techniques: {
+        Row: {
+          color_mode_description: string
+          created_at: string
+          finish_description: string
+          id: string
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          color_mode_description?: string
+          created_at?: string
+          finish_description?: string
+          id?: string
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          color_mode_description?: string
+          created_at?: string
+          finish_description?: string
+          id?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
       product_print_techniques: {
         Row: {
           extra_price: number
@@ -309,6 +336,7 @@ export type Database = {
           pos_x_pct: number
           pos_y_pct: number
           product_id: string | null
+          rotation_deg: number
           width_mm: number | null
           width_pct: number
         }
@@ -323,6 +351,7 @@ export type Database = {
           pos_x_pct?: number
           pos_y_pct?: number
           product_id?: string | null
+          rotation_deg?: number
           width_mm?: number | null
           width_pct?: number
         }
@@ -337,6 +366,7 @@ export type Database = {
           pos_x_pct?: number
           pos_y_pct?: number
           product_id?: string | null
+          rotation_deg?: number
           width_mm?: number | null
           width_pct?: number
         }

@@ -7,16 +7,21 @@ export default async function NewAdminProductPage() {
   if (!session) redirect("/login");
   const supabase = await createClient();
 
-  const [{ data: suppliers }, { data: categories }] = await Promise.all([
+  const [{ data: suppliers }, { data: categories }, { data: techniques }] = await Promise.all([
     supabase.from("suppliers").select("id, business_name").order("business_name"),
     supabase.from("categories").select("id, name").order("sort_order"),
+    supabase.from("print_techniques").select("name").order("sort_order"),
   ]);
 
   return (
     <div>
       <h1 className="font-serif text-3xl mb-1">Add product</h1>
       <p className="text-muted mb-8">Publish a product directly — no approval step needed.</p>
-      <AdminProductForm suppliers={suppliers ?? []} categories={categories ?? []} />
+      <AdminProductForm
+        suppliers={suppliers ?? []}
+        categories={categories ?? []}
+        techniqueOptions={(techniques ?? []).map((t) => t.name)}
+      />
     </div>
   );
 }

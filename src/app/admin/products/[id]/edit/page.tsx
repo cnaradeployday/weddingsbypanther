@@ -13,9 +13,10 @@ export default async function EditAdminProductPage({
   if (!session) redirect("/login");
   const supabase = await createClient();
 
-  const [{ data: suppliers }, { data: categories }] = await Promise.all([
+  const [{ data: suppliers }, { data: categories }, { data: techniques }] = await Promise.all([
     supabase.from("suppliers").select("id, business_name").order("business_name"),
     supabase.from("categories").select("id, name").order("sort_order"),
+    supabase.from("print_techniques").select("name").order("sort_order"),
   ]);
 
   const { data: product } = await supabase
@@ -23,7 +24,7 @@ export default async function EditAdminProductPage({
     .select(
       `*, images:product_images(id, url, sort_order),
        techniques:product_print_techniques(technique),
-       zones:product_print_zones(width_mm, height_mm, max_chars_per_line, pos_x_pct, pos_y_pct, width_pct, height_pct, image_id),
+       zones:product_print_zones(width_mm, height_mm, max_chars_per_line, pos_x_pct, pos_y_pct, width_pct, height_pct, rotation_deg, image_id),
        variants:product_variants(id, label, sku, price_delta, stock_on_hand, image_url, sort_order)`
     )
     .eq("id", id)
@@ -56,6 +57,7 @@ export default async function EditAdminProductPage({
           posY: zone.pos_y_pct,
           widthPct: zone.width_pct,
           heightPct: zone.height_pct,
+          rotation: zone.rotation_deg,
           imageId: zone.image_id,
         }
       : null,
@@ -83,6 +85,7 @@ export default async function EditAdminProductPage({
       <AdminProductForm
         suppliers={suppliers ?? []}
         categories={categories ?? []}
+        techniqueOptions={(techniques ?? []).map((t) => t.name)}
         initial={initial}
         initialSupplierId={product.supplier_id ?? undefined}
       />
