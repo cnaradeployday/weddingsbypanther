@@ -92,6 +92,7 @@ export type Database = {
         Row: {
           created_at: string
           customer_email: string
+          customer_id: string | null
           customer_name: string
           id: string
           payment_status: string
@@ -107,6 +108,7 @@ export type Database = {
         Insert: {
           created_at?: string
           customer_email: string
+          customer_id?: string | null
           customer_name: string
           id?: string
           payment_status?: string
@@ -122,6 +124,7 @@ export type Database = {
         Update: {
           created_at?: string
           customer_email?: string
+          customer_id?: string | null
           customer_name?: string
           id?: string
           payment_status?: string
@@ -140,6 +143,13 @@ export type Database = {
             columns: ["planner_id"]
             isOneToOne: false
             referencedRelation: "planners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]

@@ -23,12 +23,20 @@ export default async function CheckoutSuccessPage({
       {order && (
         <p className="text-xs text-muted mb-8">Order reference: {order.slice(0, 8).toUpperCase()}</p>
       )}
-      <Link
-        href={`/store/${slug}/shop`}
-        className="inline-block px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors"
-      >
-        Continue shopping
-      </Link>
+      <div className="flex items-center justify-center gap-4">
+        <Link
+          href={`/store/${slug}/shop`}
+          className="inline-block px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors"
+        >
+          Continue shopping
+        </Link>
+        <Link
+          href={`/store/${slug}/orders`}
+          className="inline-block px-6 py-3 rounded-full border border-line text-sm font-medium hover:border-dark transition-colors"
+        >
+          Track your order
+        </Link>
+      </div>
     </div>
   );
 }
