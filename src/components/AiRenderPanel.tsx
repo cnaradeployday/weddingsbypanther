@@ -51,15 +51,24 @@ export function AiRenderPanel({
   date,
   monogram,
   sizeScale = 1,
+  hAlign = "center",
+  vAlign = "center",
+  images = [],
+  defaultImageId = null,
 }: {
   productId: string;
   names: string;
   date: string;
   monogram: string;
   sizeScale?: number;
+  hAlign?: string;
+  vAlign?: string;
+  images?: { id: string; url: string }[];
+  defaultImageId?: string | null;
 }) {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [imageId, setImageId] = useState<string | null>(defaultImageId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
@@ -90,7 +99,17 @@ export function AiRenderPanel({
       const res = await fetch("/api/ai-render", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, names, date, monogram, logoDataUrl, sizeScale }),
+        body: JSON.stringify({
+          productId,
+          names,
+          date,
+          monogram,
+          logoDataUrl,
+          sizeScale,
+          hAlign,
+          vAlign,
+          imageId,
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Could not generate a preview.");
@@ -119,6 +138,26 @@ export function AiRenderPanel({
         generate a close-up product preview and a wedding lifestyle shot. {remaining} of{" "}
         {MAX_RENDERS_PER_PRODUCT} left this session.
       </p>
+
+      {images.length > 1 && (
+        <div className="mb-4">
+          <p className="text-xs uppercase tracking-wide text-muted mb-2">Render on this photo</p>
+          <div className="flex gap-2 flex-wrap">
+            {images.map((img) => (
+              <button
+                key={img.id}
+                type="button"
+                onClick={() => setImageId(img.id)}
+                className={`relative h-12 w-12 rounded-lg overflow-hidden border-2 ${
+                  imageId === img.id ? "border-terracotta" : "border-transparent"
+                }`}
+              >
+                <Image src={img.url} alt="" fill className="object-cover" unoptimized />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center gap-3 mb-4">
         <label className="relative h-14 w-14 rounded-lg overflow-hidden border border-line cursor-pointer bg-white shrink-0">

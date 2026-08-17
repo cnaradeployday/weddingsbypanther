@@ -83,6 +83,8 @@ export function ProductConfigurator({
   const [date, setDate] = useState("2026-06-14");
   const [monogram, setMonogram] = useState("");
   const [sizeScale, setSizeScale] = useState(1);
+  const [hAlign, setHAlign] = useState<"left" | "center" | "right">("center");
+  const [vAlign, setVAlign] = useState<"top" | "center" | "bottom">("center");
   const [techniqueId, setTechniqueId] = useState(
     product.techniques.find((t) => t.is_default)?.id ?? product.techniques[0]?.id ?? ""
   );
@@ -142,7 +144,7 @@ export function ProductConfigurator({
       variantId: variant?.id,
       variantLabel: variant?.label,
       personalization: product.personalizable
-        ? { names, date, monogram, technique: technique?.technique, sizeScale }
+        ? { names, date, monogram, technique: technique?.technique, sizeScale, hAlign, vAlign }
         : undefined,
     });
     setJustAdded(true);
@@ -157,12 +159,14 @@ export function ProductConfigurator({
           {product.personalizable && zone && showOverlayHere && (
             <div
               ref={zoneRef}
-              className="absolute pointer-events-none flex flex-col items-center justify-center rounded-2xl bg-cream-light/10 border-2 border-dashed border-cream-light/70 text-dark text-center px-3 overflow-hidden"
+              className="absolute pointer-events-none flex flex-col rounded-2xl bg-cream-light/10 border-2 border-dashed border-cream-light/70 text-dark text-center px-3 overflow-hidden"
               style={{
                 left: `${zone.pos_x_pct}%`,
                 top: `${zone.pos_y_pct}%`,
                 width: `${zone.width_pct}%`,
                 height: `${zone.height_pct}%`,
+                justifyContent: vAlign === "top" ? "flex-start" : vAlign === "bottom" ? "flex-end" : "center",
+                alignItems: hAlign === "left" ? "flex-start" : hAlign === "right" ? "flex-end" : "center",
               }}
             >
               {monogram && (
@@ -336,6 +340,33 @@ export function ProductConfigurator({
                 </button>
               </div>
             </div>
+            <div>
+              <label className="text-xs uppercase tracking-wide text-muted block mb-2">Position</label>
+              <div className="grid grid-cols-3 gap-1.5 w-28">
+                {(["top", "center", "bottom"] as const).map((v) =>
+                  (["left", "center", "right"] as const).map((h) => (
+                    <button
+                      key={`${v}-${h}`}
+                      type="button"
+                      onClick={() => {
+                        setVAlign(v);
+                        setHAlign(h);
+                      }}
+                      aria-label={`${v} ${h}`}
+                      className={`h-8 w-8 rounded-md border flex items-center justify-center ${
+                        vAlign === v && hAlign === h ? "border-dark bg-dark" : "border-line"
+                      }`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          vAlign === v && hAlign === h ? "bg-cream-light" : "bg-muted/50"
+                        }`}
+                      />
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         )}
 
@@ -370,6 +401,10 @@ export function ProductConfigurator({
             date={date}
             monogram={monogram}
             sizeScale={sizeScale}
+            hAlign={hAlign}
+            vAlign={vAlign}
+            images={product.images}
+            defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
           />
         )}
 

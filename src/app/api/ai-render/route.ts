@@ -101,9 +101,13 @@ async function withPrintAreaGuide(base: ImagePayload, zone: PrintZone | undefine
     const rectH = Math.max(1, Math.round((zone.height_pct / 100) * height));
     const strokeWidth = Math.max(3, Math.round(width * 0.004));
 
+    // No fill — only a thin dashed outline. A filled tint gave the model a
+    // colored patch to (sometimes) leave a residue of in the output; an
+    // outline-only guide is both enough to communicate the boundary and
+    // easier for the model to fully erase.
     const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
       <rect x="${x}" y="${y}" width="${rectW}" height="${rectH}"
-        fill="rgba(255,0,80,0.10)" stroke="rgb(255,0,80)" stroke-width="${strokeWidth}"
+        fill="none" stroke="rgb(255,0,80)" stroke-width="${strokeWidth}"
         stroke-dasharray="${strokeWidth * 4},${strokeWidth * 2.5}" />
     </svg>`;
 
@@ -192,6 +196,9 @@ export async function POST(req: NextRequest) {
   const monogram: string = body?.monogram ?? "";
   const logoDataUrl: string | undefined = body?.logoDataUrl;
   const sizeScale: number = typeof body?.sizeScale === "number" ? body.sizeScale : 1;
+  const hAlign: string = body?.hAlign ?? "center";
+  const vAlign: string = body?.vAlign ?? "center";
+  const requestedImageId: string | undefined = body?.imageId;
 
   if (!productId) {
     return NextResponse.json({ error: "Missing productId." }, { status: 400 });
@@ -214,7 +221,8 @@ export async function POST(req: NextRequest) {
 
   const images = (product.images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
   const zone = product.zones?.[0];
-  const referenceImage = images.find((i) => i.id === zone?.image_id) ?? images[0];
+  const referenceImage =
+    images.find((i) => i.id === requestedImageId) ?? images.find((i) => i.id === zone?.image_id) ?? images[0];
   if (!referenceImage) {
     return NextResponse.json({ error: "This product has no photo to render on." }, { status: 400 });
   }
@@ -238,12 +246,19 @@ export async function POST(req: NextRequest) {
     ? TECHNIQUE_COLOR_MODE[technique.technique] ??
       "Match the color treatment to a realistic version of this print technique."
     : "Match the color treatment to a realistic printed finish.";
+  const alignPhrase =
+    hAlign === "center" && vAlign === "center"
+      ? "centered within that rectangle"
+      : `positioned toward the ${vAlign !== "center" ? vAlign : ""}${
+          vAlign !== "center" && hAlign !== "center" ? "-" : ""
+        }${hAlign !== "center" ? hAlign : ""} of that rectangle rather than centered, leaving the rest of the rectangle's area empty`;
+
   const region = zone
-    ? `The input photo has a dashed magenta/pink guide rectangle marking the exact printable area. That marked rectangle is the ONLY place the personalization may appear — it must not extend past the rectangle's edges in any direction, even if that means rendering the personalization smaller than you otherwise would. The rectangle corresponds to a real printable zone of ${
+    ? `The input photo has a dashed magenta/pink guide OUTLINE (no fill) marking the exact printable area. That marked rectangle is the ONLY place the personalization may appear — it must not extend past the rectangle's edges in any direction, even if that means rendering the personalization smaller than you otherwise would. Place the personalization ${alignPhrase}. The rectangle corresponds to a real printable zone of ${
         zone.width_mm ?? "?"
       }mm by ${
         zone.height_mm ?? "?"
-      }mm, so keep the personalization's scale proportionate to that rectangle. The guide rectangle itself is only a temporary annotation: it must NOT appear in your output image — remove it completely and replace that area with the product's real material/surface plus the personalization.${
+      }mm, so keep the personalization's scale proportionate to that rectangle.${
         sizeScale > 1.05
           ? ` The customer asked for the personalization to be rendered larger than the default fit — size it to about ${Math.round(
               sizeScale * 100
@@ -253,7 +268,7 @@ export async function POST(req: NextRequest) {
               sizeScale * 100
             )}% of the default scale.`
           : ""
-      }`
+      } CRITICAL: the dashed magenta guide line is only a temporary annotation for you, the editor — it must be 100% absent from your output. Do not leave any dashed line, solid line, colored tint, faint outline, or box-shaped discoloration anywhere in the image. The area inside and around where the guide was must show only the product's real, undisturbed material, color, and lighting, exactly matching the untouched surrounding surface, with the personalization sitting directly on top of it as if it were physically printed there.`
     : "Place the personalization in the natural, obvious spot for this kind of product.";
 
   const hasText = names.trim().length > 0 || date.trim().length > 0;

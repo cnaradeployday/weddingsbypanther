@@ -20,6 +20,8 @@ export type CartItem = {
     technique?: string;
     extraPrice?: number;
     sizeScale?: number;
+    hAlign?: string;
+    vAlign?: string;
   };
 };
 
