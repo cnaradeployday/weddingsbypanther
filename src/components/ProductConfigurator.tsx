@@ -16,22 +16,14 @@ const MONOGRAMS = ["✦", "❀", "❖", "⬥", "✿", "☙"];
 // preview — a plain color swap for printed techniques, plus a debossed
 // highlight/shadow pairing for engrave so it reads as cut into the material
 // rather than printed on top of it.
+// Flat ink color per technique, no drop-shadow/bevel tricks — those read as
+// a stray white smudge/halo behind the text more often than they read as
+// "engraved," so the manual preview keeps it simple and lets color alone
+// carry the technique's look.
 function techniqueTextStyle(techniqueName?: string): React.CSSProperties {
   const color = techniqueInkColor(techniqueName);
-  if (techniqueName === "Laser engrave") {
-    return {
-      color,
-      textShadow: "0 1px 0 rgba(255,255,255,0.6), 0 -1px 1px rgba(0,0,0,0.5)",
-      fontWeight: 500,
-    };
-  }
-  if (techniqueName === "Foil stamp") {
-    return { color, textShadow: "0 1px 3px rgba(0,0,0,0.3), 0 0 1px rgba(255,255,255,0.5)", fontWeight: 500 };
-  }
-  if (techniqueName === "Embroidery") {
-    return { color, textShadow: "0 1px 0 rgba(255,255,255,0.45)", fontWeight: 600 };
-  }
-  return { color };
+  const fontWeight = techniqueName === "Laser engrave" || techniqueName === "Foil stamp" ? 500 : techniqueName === "Embroidery" ? 600 : undefined;
+  return fontWeight ? { color, fontWeight } : { color };
 }
 
 type Technique = { id: string; technique: string; extra_price: number; is_default: boolean };
@@ -152,6 +144,15 @@ export function ProductConfigurator({
   const [logoRotationOffset, setLogoRotationOffset] = useState(0);
   const [positions, setPositions] = useState<Record<ElemKey, ElemPos>>(DEFAULT_POSITIONS);
   const dragState = useRef<{ key: ElemKey; startX: number; startY: number; orig: ElemPos } | null>(null);
+  const logoAdjustState = useRef<{
+    mode: "resize" | "rotate";
+    centerX: number;
+    centerY: number;
+    startDist: number;
+    startAngle: number;
+    startScale: number;
+    startRotation: number;
+  } | null>(null);
   const [techniqueId, setTechniqueId] = useState(
     product.techniques.find((t) => t.is_default)?.id ?? product.techniques[0]?.id ?? ""
   );
@@ -204,6 +205,58 @@ export function ProductConfigurator({
       dragState.current = { key, startX: e.clientX, startY: e.clientY, orig: positions[key] };
     },
     [positions]
+  );
+
+  // Direct-manipulation resize/rotate for the logo, mirroring the drag-to-
+  // move interaction: a handle at the box's corner scales it, a handle
+  // above it rotates it, both tracked from the box's own on-screen center
+  // (its own bounding rect, so it works regardless of current rotation).
+  const logoBoxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handleMove = (e: PointerEvent) => {
+      const state = logoAdjustState.current;
+      if (!state) return;
+      if (state.mode === "resize") {
+        const dist = Math.hypot(e.clientX - state.centerX, e.clientY - state.centerY);
+        const ratio = state.startDist > 0 ? dist / state.startDist : 1;
+        setLogoScale(Math.max(0.4, Math.min(2, state.startScale * ratio)));
+      } else {
+        const angle = (Math.atan2(e.clientY - state.centerY, e.clientX - state.centerX) * 180) / Math.PI;
+        const delta = angle - state.startAngle;
+        setLogoRotationOffset(Math.max(-45, Math.min(45, state.startRotation + delta)));
+      }
+    };
+    const handleUp = () => {
+      logoAdjustState.current = null;
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+  }, []);
+
+  const startLogoAdjust = useCallback(
+    (mode: "resize" | "rotate") => (e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const box = logoBoxRef.current;
+      if (!box) return;
+      const rect = box.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      logoAdjustState.current = {
+        mode,
+        centerX,
+        centerY,
+        startDist: Math.hypot(e.clientX - centerX, e.clientY - centerY),
+        startAngle: (Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180) / Math.PI,
+        startScale: logoScale,
+        startRotation: logoRotationOffset,
+      };
+    },
+    [logoScale, logoRotationOffset]
   );
 
   const technique = product.techniques.find((t) => t.id === techniqueId);
@@ -449,6 +502,7 @@ export function ProductConfigurator({
             >
               {logoPreview && (
                 <div
+                  ref={logoBoxRef}
                   onPointerDown={startDrag("logo")}
                   className="absolute pointer-events-auto cursor-move touch-none"
                   style={{
@@ -462,6 +516,21 @@ export function ProductConfigurator({
                   <div className="relative w-full h-full pointer-events-none">
                     <Image src={logoPreview} alt="" fill className="object-contain" unoptimized />
                   </div>
+                  {/* Direct-manipulation handles, same idea as dragging to
+                      reposition: grab the corner to resize, the dot above
+                      to rotate. */}
+                  <div
+                    onPointerDown={startLogoAdjust("resize")}
+                    className="absolute -right-2 -bottom-2 h-4 w-4 rounded-full bg-white border-2 border-terracotta cursor-nwse-resize touch-none pointer-events-auto"
+                  />
+                  <div
+                    onPointerDown={startLogoAdjust("rotate")}
+                    className="absolute left-1/2 -top-7 h-4 w-4 -translate-x-1/2 rounded-full bg-white border-2 border-terracotta cursor-grab touch-none pointer-events-auto"
+                  />
+                  <span className="absolute left-1/2 -bottom-6 -translate-x-1/2 whitespace-nowrap text-[10px] font-medium bg-cream-light/95 text-dark px-2 py-0.5 rounded-full pointer-events-none">
+                    {Math.round(logoScale * 100)}% · {logoRotationOffset > 0 ? "+" : ""}
+                    {logoRotationOffset}°
+                  </span>
                 </div>
               )}
               {monogram && (

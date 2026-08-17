@@ -11,9 +11,6 @@ import {
 
 export const runtime = "nodejs";
 
-const FALLBACK_FINISH = "a clean printed finish";
-const FALLBACK_COLOR_MODE = "Match the color treatment to a realistic printed finish.";
-
 // Any output must be a single, edge-to-edge photograph — image-editing
 // models will sometimes "helpfully" produce a moodboard/collage of several
 // small mockups instead of one edited photo, which is unusable here.
@@ -57,18 +54,6 @@ async function callGemini(
   } catch (err) {
     return { error: err instanceof Error ? err.message : "AI render failed." };
   }
-}
-
-function buildLogoRestylePrompt(finish: string, colorMode: string, techniqueName: string) {
-  return `You are preparing artwork for physical ${techniqueName} printing. The attached image is source artwork (it may be a logo, illustration, or photo).
-
-Redraw it as it would look rendered with ${finish}, matching the ${techniqueName} technique.
-
-CRITICAL COLOR RULE: ${colorMode}
-
-Output ONLY the artwork itself: tightly cropped to its content with a small margin, centered, on a plain flat WHITE background. Do not include any product, mockup, scene, shadow, or extra elements — just the standalone artwork on white, as print-ready camera-ready art.
-
-${SINGLE_IMAGE_RULE}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -142,26 +127,17 @@ export async function POST(req: NextRequest) {
   if (logoImage && techniqueMeta?.strip_source_color) {
     logoImage = await toGrayscale(logoImage);
   }
-  const finish = techniqueMeta?.finish_description ?? FALLBACK_FINISH;
-  const colorMode = techniqueMeta?.color_mode_description ?? FALLBACK_COLOR_MODE;
   const inkColor = techniqueInkColor(technique?.technique);
 
-  // Restyling just the logo (a small, well-scoped image-to-image task) is
-  // far more reliable for the model than editing the whole product photo
-  // and hoping it respects placement. If this call fails, fall back to the
-  // (already grayscaled, if applicable) original logo rather than failing
-  // the whole render.
-  let artworkLogoImage: ImagePayload | null = null;
-  if (logoImage) {
-    const restylePrompt = buildLogoRestylePrompt(finish, colorMode, technique?.technique ?? "printed");
-    const restyleResult = await callGemini(apiKey, restylePrompt, [logoImage]);
-    artworkLogoImage = "image" in restyleResult ? restyleResult.image : logoImage;
-  }
-
+  // The logo is composited exactly as uploaded (grayscaled above when the
+  // technique calls for it) — no generative "redraw it in this finish"
+  // pass. Asking an image model to redraw arbitrary source artwork risks
+  // it hallucinating/garbling any text baked into the logo, which is worse
+  // than skipping the cosmetic restyle.
   const productResultImage = await composeProductPersonalization({
     referenceImageUrl: referenceImage.url,
     zone,
-    logoImage: artworkLogoImage,
+    logoImage,
     positions,
     names,
     date,
@@ -179,9 +155,9 @@ export async function POST(req: NextRequest) {
 
   // Second pass: place the now-personalized product (accurately composited,
   // not AI-guessed) into a realistic wedding lifestyle scene.
-  const contextPrompt = `You are a product photographer for a wedding merchandise brand. The attached image is a personalized product that has already been finalized — its shape, material, color, and personalization must be reproduced exactly as shown, pixel-faithful, with the personalization clearly legible.
+  const contextPrompt = `You are a product photographer for a wedding merchandise brand. The attached image is a personalized product that has already been finalized and approved — do not redraw, regenerate, restyle, or "improve" the product itself, its surface, or any text/monogram/logo printed on it. Treat the product exactly as a fixed photographic cutout: composite it, unaltered pixel-for-pixel in every detail including the exact wording and letterforms of any text, into a new background.
 
-Reimagine this exact product inside a realistic, elegant wedding lifestyle scene appropriate for this kind of item — for example displayed on a reception or welcome table with soft natural light and understated floral styling, or naturally held/used during a wedding moment. Keep the product and its personalization completely unchanged; only the surrounding environment, framing, and lighting context should differ from the input.
+Place this exact, unmodified product cutout inside a realistic, elegant wedding lifestyle scene appropriate for this kind of item — for example displayed on a reception or welcome table with soft natural light and understated floral styling, or naturally held/used during a wedding moment. Only the surrounding environment, framing, and lighting should be new; the product itself must remain byte-for-byte recognizable, not reinterpreted.
 
 ${SINGLE_IMAGE_RULE} No text captions, no watermarks, no collage of multiple angles — one full-bleed lifestyle photograph.`;
 
