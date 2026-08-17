@@ -33,6 +33,36 @@ export function UserAccessForm({
   const [newPlannerName, setNewPlannerName] = useState("");
   const [newSupplierName, setNewSupplierName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [newTempPassword, setNewTempPassword] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const resetPassword = async () => {
+    if (!confirm(`Generate a new temporary password for ${profile.email}? They'll be required to set their own password on next sign-in.`))
+      return;
+    setResetting(true);
+    setResetError(null);
+    setNewTempPassword(null);
+    const res = await fetch("/api/admin/users/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: profile.id }),
+    });
+    const json = await res.json();
+    setResetting(false);
+    if (!res.ok) {
+      setResetError(json.error ?? "Could not reset the password.");
+      return;
+    }
+    setNewTempPassword(json.tempPassword);
+  };
+
+  const copyTempPassword = async () => {
+    if (!newTempPassword) return;
+    await navigator.clipboard.writeText(newTempPassword);
+    setCopied(true);
+  };
 
   const saveRole = async () => {
     setSaving(true);
@@ -125,6 +155,48 @@ export function UserAccessForm({
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-line bg-white p-6">
+        <p className="text-xs uppercase tracking-wide text-muted mb-3">Password</p>
+        {newTempPassword ? (
+          <div>
+            <p className="text-sm text-muted mb-3">
+              Share this with {profile.email}. They&apos;ll be required to set their own password on
+              next sign-in.
+            </p>
+            <div className="rounded-lg bg-cream border border-line p-4 mb-3">
+              <p className="text-xs text-muted uppercase tracking-wide">Temporary password</p>
+              <p className="text-sm font-mono font-medium">{newTempPassword}</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={copyTempPassword}
+                className="flex-1 px-4 py-2.5 rounded-full border border-line text-sm font-medium hover:bg-cream transition-colors"
+              >
+                {copied ? "Copied!" : "Copy password"}
+              </button>
+              <button
+                onClick={() => setNewTempPassword(null)}
+                className="flex-1 px-4 py-2.5 rounded-full bg-dark text-cream-light text-sm font-medium hover:bg-dark-soft transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted">Reset their password to a new temporary one.</p>
+            <button
+              onClick={resetPassword}
+              disabled={resetting}
+              className="px-5 py-2.5 rounded-full border border-dark text-sm font-medium disabled:opacity-50 shrink-0"
+            >
+              {resetting ? "Resetting…" : "Reset password"}
+            </button>
+          </div>
+        )}
+        {resetError && <p className="text-sm text-terracotta-dark mt-2">{resetError}</p>}
       </div>
 
       <div className="rounded-xl border border-line bg-white p-6">

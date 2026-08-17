@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
+import { getBackofficePermissions } from "@/lib/permissions";
 import { UserAccessForm } from "@/components/UserAccessForm";
 
 export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
@@ -7,6 +8,8 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
   const session = await getSessionProfile();
   if (!session) redirect("/login");
   const supabase = await createClient();
+  const perms = await getBackofficePermissions(supabase, session.profile);
+  if (!perms.users.write) redirect("/admin/users");
 
   const [{ data: profile }, { data: roles }, { data: planner }, { data: supplier }] = await Promise.all([
     supabase.from("profiles").select("*").eq("id", id).maybeSingle(),
