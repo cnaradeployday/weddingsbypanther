@@ -156,7 +156,7 @@ export function ProductConfigurator({
           {product.personalizable && zone && showOverlayHere && (
             <div
               ref={zoneRef}
-              className="absolute pointer-events-none flex flex-col items-center justify-center rounded-2xl bg-terracotta/90 border-2 border-dashed border-cream-light/60 text-cream-light text-center px-3 shadow-xl overflow-hidden"
+              className="absolute pointer-events-none flex flex-col items-center justify-center rounded-2xl bg-cream-light/10 border-2 border-dashed border-cream-light/70 text-dark text-center px-3 overflow-hidden"
               style={{
                 left: `${zone.pos_x_pct}%`,
                 top: `${zone.pos_y_pct}%`,
@@ -164,16 +164,16 @@ export function ProductConfigurator({
                 height: `${zone.height_pct}%`,
               }}
             >
-              <span style={{ fontSize: monogramFontPx }} className="mb-1">
+              <span style={{ fontSize: monogramFontPx, textShadow: "0 1px 4px rgba(255,255,255,0.85)" }} className="mb-1">
                 {monogram}
               </span>
               <span
-                style={{ fontSize: nameFontPx }}
+                style={{ fontSize: nameFontPx, textShadow: "0 1px 4px rgba(255,255,255,0.85)" }}
                 className="font-serif leading-tight line-clamp-2"
               >
                 {names || "Your names"}
               </span>
-              <span style={{ fontSize: dateFontPx }} className="mt-1 tracking-wide">
+              <span style={{ fontSize: dateFontPx, textShadow: "0 1px 4px rgba(255,255,255,0.85)" }} className="mt-1 tracking-wide">
                 {formattedDate}
               </span>
             </div>
