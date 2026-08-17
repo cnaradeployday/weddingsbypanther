@@ -80,7 +80,7 @@ export function PrintAreaTool({
   return (
     <div
       ref={containerRef}
-      className="relative aspect-square rounded-lg overflow-hidden bg-cream border border-line select-none"
+      className="relative aspect-[4/5] rounded-lg overflow-hidden bg-cream border border-line select-none"
     >
       {imageUrl ? (
         <Image src={imageUrl} alt="" fill className="object-cover pointer-events-none" unoptimized />

@@ -45,6 +45,44 @@ const SINGLE_IMAGE_RULE =
 type PrintZone = { pos_x_pct: number; pos_y_pct: number; width_pct: number; height_pct: number };
 type ImagePayload = { data: string; mimeType: string };
 
+// Matches the aspect-[4/5] + object-cover box used everywhere the product
+// photo is shown (the admin print-area tool and the storefront product
+// page). pos_x_pct/width_pct etc. are calibrated by eye against that
+// cropped view, not the raw uploaded photo, so this same center-crop must
+// be applied before those percentages are turned into pixels — otherwise
+// the guide rectangle (and therefore the AI render) lands on a different
+// part of the photo than what was actually configured.
+const STOREFRONT_ASPECT = 4 / 5;
+
+async function cropToStorefrontAspect(base: ImagePayload): Promise<ImagePayload> {
+  try {
+    const buffer = Buffer.from(base.data, "base64");
+    const image = sharp(buffer);
+    const { width, height } = await image.metadata();
+    if (!width || !height) return base;
+
+    let cropW = width;
+    let cropH = height;
+    const currentAspect = width / height;
+    if (currentAspect > STOREFRONT_ASPECT) {
+      cropW = Math.round(height * STOREFRONT_ASPECT);
+    } else if (currentAspect < STOREFRONT_ASPECT) {
+      cropH = Math.round(width / STOREFRONT_ASPECT);
+    }
+    const left = Math.max(0, Math.round((width - cropW) / 2));
+    const top = Math.max(0, Math.round((height - cropH) / 2));
+
+    const cropped = await image
+      .extract({ left, top, width: cropW, height: cropH })
+      .png()
+      .toBuffer();
+
+    return { data: cropped.toString("base64"), mimeType: "image/png" };
+  } catch {
+    return base;
+  }
+}
+
 // Draws a visible dashed guide rectangle over the printable area on the base
 // photo. Image-editing models follow a visual mask far more reliably than a
 // text description of percentages, so this is what keeps the AI render
@@ -153,6 +191,7 @@ export async function POST(req: NextRequest) {
   const date: string = body?.date ?? "";
   const monogram: string = body?.monogram ?? "";
   const logoDataUrl: string | undefined = body?.logoDataUrl;
+  const sizeScale: number = typeof body?.sizeScale === "number" ? body.sizeScale : 1;
 
   if (!productId) {
     return NextResponse.json({ error: "Missing productId." }, { status: 400 });
@@ -185,7 +224,8 @@ export async function POST(req: NextRequest) {
   if (!baseImage) {
     return NextResponse.json({ error: "Could not load the product photo." }, { status: 502 });
   }
-  const guidedImage = await withPrintAreaGuide(baseImage, zone);
+  const croppedBase = await cropToStorefrontAspect(baseImage);
+  const guidedImage = await withPrintAreaGuide(croppedBase, zone);
 
   let logoImage: ImagePayload | null = null;
   if (logoDataUrl?.startsWith("data:")) {
@@ -203,7 +243,17 @@ export async function POST(req: NextRequest) {
         zone.width_mm ?? "?"
       }mm by ${
         zone.height_mm ?? "?"
-      }mm, so keep the personalization's scale proportionate to that rectangle. The guide rectangle itself is only a temporary annotation: it must NOT appear in your output image — remove it completely and replace that area with the product's real material/surface plus the personalization.`
+      }mm, so keep the personalization's scale proportionate to that rectangle. The guide rectangle itself is only a temporary annotation: it must NOT appear in your output image — remove it completely and replace that area with the product's real material/surface plus the personalization.${
+        sizeScale > 1.05
+          ? ` The customer asked for the personalization to be rendered larger than the default fit — size it to about ${Math.round(
+              sizeScale * 100
+            )}% of the default scale while still staying fully inside the rectangle.`
+          : sizeScale < 0.95
+          ? ` The customer asked for the personalization to be rendered smaller than the default fit — size it to about ${Math.round(
+              sizeScale * 100
+            )}% of the default scale.`
+          : ""
+      }`
     : "Place the personalization in the natural, obvious spot for this kind of product.";
 
   const hasText = names.trim().length > 0 || date.trim().length > 0;

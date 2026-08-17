@@ -19,6 +19,7 @@ export type CartItem = {
     monogram?: string;
     technique?: string;
     extraPrice?: number;
+    sizeScale?: number;
   };
 };
 

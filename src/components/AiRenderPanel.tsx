@@ -50,11 +50,13 @@ export function AiRenderPanel({
   names,
   date,
   monogram,
+  sizeScale = 1,
 }: {
   productId: string;
   names: string;
   date: string;
   monogram: string;
+  sizeScale?: number;
 }) {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -88,7 +90,7 @@ export function AiRenderPanel({
       const res = await fetch("/api/ai-render", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, names, date, monogram, logoDataUrl }),
+        body: JSON.stringify({ productId, names, date, monogram, logoDataUrl, sizeScale }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Could not generate a preview.");

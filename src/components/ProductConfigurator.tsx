@@ -82,6 +82,7 @@ export function ProductConfigurator({
   const [names, setNames] = useState("Amelia & Ravi");
   const [date, setDate] = useState("2026-06-14");
   const [monogram, setMonogram] = useState("");
+  const [sizeScale, setSizeScale] = useState(1);
   const [techniqueId, setTechniqueId] = useState(
     product.techniques.find((t) => t.is_default)?.id ?? product.techniques[0]?.id ?? ""
   );
@@ -113,9 +114,9 @@ export function ProductConfigurator({
     return zone.width_mm / zoneSize.width;
   }, [zone?.width_mm, zoneSize.width]);
   const pxPerMm = mmPerPx ? 1 / mmPerPx : null;
-  const nameFontPx = pxPerMm ? Math.max(10, Math.min(28, pxPerMm * 5)) : 18;
-  const monogramFontPx = pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20;
-  const dateFontPx = pxPerMm ? Math.max(8, Math.min(14, pxPerMm * 2.4)) : 11;
+  const nameFontPx = (pxPerMm ? Math.max(10, Math.min(28, pxPerMm * 5)) : 18) * sizeScale;
+  const monogramFontPx = (pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20) * sizeScale;
+  const dateFontPx = (pxPerMm ? Math.max(8, Math.min(14, pxPerMm * 2.4)) : 11) * sizeScale;
 
   const formattedDate = useMemo(() => {
     if (!date) return "";
@@ -141,7 +142,7 @@ export function ProductConfigurator({
       variantId: variant?.id,
       variantLabel: variant?.label,
       personalization: product.personalizable
-        ? { names, date, monogram, technique: technique?.technique }
+        ? { names, date, monogram, technique: technique?.technique, sizeScale }
         : undefined,
     });
     setJustAdded(true);
@@ -304,6 +305,37 @@ export function ProductConfigurator({
                 ))}
               </div>
             </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs uppercase tracking-wide text-muted">Text size</label>
+                <span className="text-xs text-muted">{Math.round(sizeScale * 100)}%</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSizeScale((s) => Math.max(0.6, Math.round((s - 0.1) * 10) / 10))}
+                  className="h-9 w-9 shrink-0 rounded-full border border-line flex items-center justify-center text-sm"
+                >
+                  −
+                </button>
+                <input
+                  type="range"
+                  min={0.6}
+                  max={1.8}
+                  step={0.1}
+                  value={sizeScale}
+                  onChange={(e) => setSizeScale(Number(e.target.value))}
+                  className="w-full accent-terracotta"
+                />
+                <button
+                  type="button"
+                  onClick={() => setSizeScale((s) => Math.min(1.8, Math.round((s + 0.1) * 10) / 10))}
+                  className="h-9 w-9 shrink-0 rounded-full border border-line flex items-center justify-center text-sm"
+                >
+                  +
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -332,7 +364,13 @@ export function ProductConfigurator({
         )}
 
         {product.personalizable && (
-          <AiRenderPanel productId={product.id} names={names} date={date} monogram={monogram} />
+          <AiRenderPanel
+            productId={product.id}
+            names={names}
+            date={date}
+            monogram={monogram}
+            sizeScale={sizeScale}
+          />
         )}
 
         <div className="mb-8">
