@@ -24,6 +24,7 @@ export type CartItem = {
     hasLogo?: boolean;
     renderUrl?: string;
     renderContextUrl?: string;
+    snapshotUrl?: string;
   };
 };
 

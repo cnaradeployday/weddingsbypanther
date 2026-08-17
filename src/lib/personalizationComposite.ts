@@ -1,0 +1,261 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import sharp from "sharp";
+
+// Deterministic (non-AI) compositing of a customer's personalization onto
+// the real product photo. Shared by the AI-render route (which layers a
+// Gemini logo restyle + wedding-context shot on top) and the plain snapshot
+// route (which just needs "what did the customer configure", fast and free,
+// for every add-to-cart — not only when they used the AI preview).
+
+export type Corner = { x: number; y: number };
+export type PrintZone = { corners_pct: Corner[] };
+export type ImagePayload = { data: string; mimeType: string };
+
+// Matches the aspect-[4/5] + object-cover box used everywhere the product
+// photo is shown (the admin print-area tool and the storefront product
+// page), so pixel math derived from corners_pct lines up with what was
+// actually configured.
+const STOREFRONT_ASPECT = 4 / 5;
+
+export async function cropToStorefrontAspect(base: ImagePayload): Promise<ImagePayload> {
+  try {
+    const buffer = Buffer.from(base.data, "base64");
+    const image = sharp(buffer);
+    const { width, height } = await image.metadata();
+    if (!width || !height) return base;
+
+    let cropW = width;
+    let cropH = height;
+    const currentAspect = width / height;
+    if (currentAspect > STOREFRONT_ASPECT) {
+      cropW = Math.round(height * STOREFRONT_ASPECT);
+    } else if (currentAspect < STOREFRONT_ASPECT) {
+      cropH = Math.round(width / STOREFRONT_ASPECT);
+    }
+    const left = Math.max(0, Math.round((width - cropW) / 2));
+    const top = Math.max(0, Math.round((height - cropH) / 2));
+
+    const cropped = await image
+      .extract({ left, top, width: cropW, height: cropH })
+      .png()
+      .toBuffer();
+
+    return { data: cropped.toString("base64"), mimeType: "image/png" };
+  } catch {
+    return base;
+  }
+}
+
+// Prompt instructions alone weren't reliably enough to keep small artwork
+// details (a logo's brand-color accent dot, an icon fragment) from leaking
+// through unconverted on color-incapable techniques like laser engraving.
+// Stripping color from the source pixels here removes the possibility
+// entirely — there is no color left for the model (or the plain snapshot)
+// to (mis)reproduce.
+export async function toGrayscale(image: ImagePayload): Promise<ImagePayload> {
+  try {
+    const buffer = Buffer.from(image.data, "base64");
+    const gray = await sharp(buffer).grayscale().png().toBuffer();
+    return { data: gray.toString("base64"), mimeType: "image/png" };
+  } catch {
+    return image;
+  }
+}
+
+export async function loadImageAsBase64(url: string): Promise<ImagePayload | null> {
+  try {
+    if (url.startsWith("/")) {
+      const filePath = path.join(process.cwd(), "public", url);
+      const bytes = await readFile(filePath);
+      const ext = path.extname(url).toLowerCase();
+      const mimeType = ext === ".png" ? "image/png" : "image/jpeg";
+      return { data: bytes.toString("base64"), mimeType };
+    }
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    const mimeType = res.headers.get("content-type") ?? "image/jpeg";
+    return { data: Buffer.from(buf).toString("base64"), mimeType };
+  } catch {
+    return null;
+  }
+}
+
+function escapeXml(s: string) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+export function boundingBoxPx(corners: Corner[], width: number, height: number) {
+  const xs = corners.map((c) => (c.x / 100) * width);
+  const ys = corners.map((c) => (c.y / 100) * height);
+  const left = Math.min(...xs);
+  const top = Math.min(...ys);
+  return { left, top, width: Math.max(...xs) - left, height: Math.max(...ys) - top };
+}
+
+export function clampInt(v: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, Math.round(v)));
+}
+
+// Builds the personalization as its own flat image (white background, logo
+// + text laid out exactly where the customer dragged each element) rather
+// than asking an image-editing model to place things on the real product
+// photo. Placement here is plain arithmetic, so it can't drift the way an
+// AI edit of the whole photo could.
+export async function buildArtworkImage({
+  canvasW,
+  canvasH,
+  logoImage,
+  positions,
+  names,
+  date,
+  monogram,
+  inkColor,
+}: {
+  canvasW: number;
+  canvasH: number;
+  logoImage: ImagePayload | null;
+  positions: Record<string, { x: number; y: number }>;
+  names: string;
+  date: string;
+  monogram: string;
+  inkColor: string;
+}): Promise<Buffer> {
+  const pos = (key: string, fallback: Corner) => positions[key] ?? fallback;
+
+  let logoElement = "";
+  if (logoImage) {
+    const boxSize = Math.round(canvasW * 0.45);
+    const fitted = await sharp(Buffer.from(logoImage.data, "base64"))
+      .resize(boxSize, boxSize, { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 1 } })
+      .png()
+      .toBuffer();
+    const p = pos("logo", { x: 50, y: 35 });
+    const x = Math.round((p.x / 100) * canvasW - boxSize / 2);
+    const y = Math.round((p.y / 100) * canvasH - boxSize / 2);
+    logoElement = `<image x="${x}" y="${y}" width="${boxSize}" height="${boxSize}" href="data:image/png;base64,${fitted.toString(
+      "base64"
+    )}" />`;
+  }
+
+  const textElements: string[] = [];
+  if (monogram.trim()) {
+    const p = pos("monogram", { x: 50, y: 15 });
+    textElements.push(
+      `<text x="${(p.x / 100) * canvasW}" y="${(p.y / 100) * canvasH}" font-size="${canvasH * 0.14}" font-family="Georgia, 'Times New Roman', serif" fill="${inkColor}" text-anchor="middle" dominant-baseline="central">${escapeXml(monogram)}</text>`
+    );
+  }
+  if (names.trim()) {
+    const p = pos("names", { x: 50, y: 65 });
+    textElements.push(
+      `<text x="${(p.x / 100) * canvasW}" y="${(p.y / 100) * canvasH}" font-size="${canvasH * 0.11}" font-family="Georgia, 'Times New Roman', serif" fill="${inkColor}" text-anchor="middle" dominant-baseline="central">${escapeXml(names.trim())}</text>`
+    );
+  }
+  if (date.trim()) {
+    const p = pos("date", { x: 50, y: 82 });
+    textElements.push(
+      `<text x="${(p.x / 100) * canvasW}" y="${(p.y / 100) * canvasH}" font-size="${canvasH * 0.05}" font-family="Georgia, 'Times New Roman', serif" letter-spacing="1" fill="${inkColor}" text-anchor="middle" dominant-baseline="central">${escapeXml(date.trim())}</text>`
+    );
+  }
+
+  const svg = `<svg width="${canvasW}" height="${canvasH}" xmlns="http://www.w3.org/2000/svg">
+    <rect x="0" y="0" width="${canvasW}" height="${canvasH}" fill="white" />
+    ${logoElement}
+    ${textElements.join("\n")}
+  </svg>`;
+
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+// Multiply-blends the artwork onto the real product photo at the exact
+// print-area location — the same trick mockup generators use so the
+// product's own lighting/texture shows through the "ink", and white stays
+// invisible. This is deterministic pixel math, not a model guessing.
+//
+// The artwork buffer must already be rendered at (targetW x targetH) — do
+// not resize it here. Rendering the SVG text/logo directly at final size
+// (rather than rendering big and downscaling with Lanczos) avoids the
+// resize-kernel ringing/haloing that leaves a faint white "shadow" around
+// engraved text edges.
+export async function compositePersonalization(
+  base: ImagePayload,
+  artwork: Buffer,
+  box: { left: number; top: number; width: number; height: number },
+  targetW: number,
+  targetH: number
+): Promise<ImagePayload> {
+  const buffer = Buffer.from(base.data, "base64");
+  const image = sharp(buffer);
+  const meta = await image.metadata();
+  const width = meta.width ?? Math.round(box.left + box.width);
+  const height = meta.height ?? Math.round(box.top + box.height);
+
+  const cx = box.left + box.width / 2;
+  const cy = box.top + box.height / 2;
+  const left = clampInt(cx - targetW / 2, 0, Math.max(0, width - targetW));
+  const top = clampInt(cy - targetH / 2, 0, Math.max(0, height - targetH));
+
+  const composited = await image
+    .composite([{ input: artwork, left, top, blend: "multiply" }])
+    .png()
+    .toBuffer();
+
+  return { data: composited.toString("base64"), mimeType: "image/png" };
+}
+
+// Full deterministic pipeline: load the reference photo, crop it to the
+// storefront aspect, lay out the logo/text artwork exactly where the
+// customer positioned it, and composite it on — no AI calls at all. Used
+// both as the base step before the AI-render route's Gemini passes, and as
+// the whole pipeline for the always-on cart snapshot.
+export async function composeProductPersonalization({
+  referenceImageUrl,
+  zone,
+  logoImage,
+  positions,
+  names,
+  date,
+  monogram,
+  inkColor,
+  sizeScale,
+}: {
+  referenceImageUrl: string;
+  zone: PrintZone | undefined;
+  logoImage: ImagePayload | null;
+  positions: Record<string, { x: number; y: number }>;
+  names: string;
+  date: string;
+  monogram: string;
+  inkColor: string;
+  sizeScale: number;
+}): Promise<ImagePayload | null> {
+  const baseImage = await loadImageAsBase64(referenceImageUrl);
+  if (!baseImage) return null;
+  const croppedBase = await cropToStorefrontAspect(baseImage);
+
+  const photoMeta = await sharp(Buffer.from(croppedBase.data, "base64")).metadata();
+  const photoW = photoMeta.width ?? 1000;
+  const photoH = photoMeta.height ?? 1250;
+
+  const box =
+    zone && zone.corners_pct.length === 4
+      ? boundingBoxPx(zone.corners_pct, photoW, photoH)
+      : { left: photoW * 0.25, top: photoH * 0.3, width: photoW * 0.5, height: photoH * 0.3 };
+
+  const targetW = Math.max(1, Math.round(box.width * sizeScale));
+  const targetH = Math.max(1, Math.round(box.height * sizeScale));
+
+  const artworkBuffer = await buildArtworkImage({
+    canvasW: targetW,
+    canvasH: targetH,
+    logoImage,
+    positions,
+    names,
+    date,
+    monogram,
+    inkColor,
+  });
+
+  return compositePersonalization(croppedBase, artworkBuffer, box, targetW, targetH);
+}

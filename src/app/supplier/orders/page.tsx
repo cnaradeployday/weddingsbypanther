@@ -1,6 +1,20 @@
 import { redirect } from "next/navigation";
+import Image from "next/image";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
+import { formatUSD } from "@/lib/format";
 import { OrderStatusSelect } from "@/components/OrderStatusSelect";
+
+type Personalization = {
+  names?: string;
+  date?: string;
+  monogram?: string;
+  technique?: string;
+  sizeScale?: number;
+  hasLogo?: boolean;
+  renderUrl?: string;
+  renderContextUrl?: string;
+  snapshotUrl?: string;
+};
 
 export default async function SupplierOrdersPage() {
   const session = await getSessionProfile();
@@ -25,9 +39,9 @@ export default async function SupplierOrdersPage() {
     ? await supabase
         .from("order_items")
         .select(
-          `id, quantity, unit_price, personalization,
+          `id, quantity, unit_price, variant_label, personalization,
            product:products ( name ),
-           order:orders ( id, customer_name, status, created_at )`
+           order:orders ( id, customer_name, customer_email, status, created_at )`
         )
         .in("product_id", ids)
         .order("id", { ascending: false })
@@ -41,33 +55,98 @@ export default async function SupplierOrdersPage() {
       {!items || items.length === 0 ? (
         <p className="text-muted">No orders yet.</p>
       ) : (
-        <div className="rounded-xl border border-line bg-white overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
-                <th className="px-5 py-3 font-medium">Product</th>
-                <th className="px-5 py-3 font-medium">Customer</th>
-                <th className="px-5 py-3 font-medium">Qty</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Placed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id} className="border-b border-line last:border-0">
-                  <td className="px-5 py-4 font-medium">{item.product?.name}</td>
-                  <td className="px-5 py-4 text-muted">{item.order?.customer_name}</td>
-                  <td className="px-5 py-4">{item.quantity}</td>
-                  <td className="px-5 py-4">
-                    {item.order && <OrderStatusSelect orderId={item.order.id} status={item.order.status} />}
-                  </td>
-                  <td className="px-5 py-4 text-muted">
-                    {item.order?.created_at ? new Date(item.order.created_at).toLocaleDateString() : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-4">
+          {items.map((item) => {
+            const p = (item.personalization ?? null) as Personalization | null;
+            const previewUrl = p?.snapshotUrl ?? p?.renderUrl;
+            return (
+              <div key={item.id} className="rounded-xl border border-line bg-white p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
+                  <div>
+                    <p className="font-medium">
+                      {item.product?.name ?? "Deleted product"}
+                      {item.variant_label ? ` — ${item.variant_label}` : ""}
+                    </p>
+                    <p className="text-sm text-muted">
+                      {item.order?.customer_name} · {item.order?.customer_email}
+                    </p>
+                    <p className="text-sm text-muted">
+                      {item.quantity} × {formatUSD(item.unit_price)} ·{" "}
+                      {item.order?.created_at ? new Date(item.order.created_at).toLocaleDateString() : "—"}
+                    </p>
+                  </div>
+                  {item.order && <OrderStatusSelect orderId={item.order.id} status={item.order.status} />}
+                </div>
+
+                {p && (
+                  <div className="rounded-lg bg-cream p-4 text-sm flex flex-wrap gap-4">
+                    <div className="space-y-1 min-w-[180px]">
+                      <p className="text-xs uppercase tracking-wide text-muted mb-1">Personalization</p>
+                      {p.names && (
+                        <p>
+                          <span className="text-muted">Text:</span> {p.names}
+                        </p>
+                      )}
+                      {p.date && (
+                        <p>
+                          <span className="text-muted">Date:</span> {p.date}
+                        </p>
+                      )}
+                      {p.monogram && (
+                        <p>
+                          <span className="text-muted">Monogram:</span> {p.monogram}
+                        </p>
+                      )}
+                      {p.technique && (
+                        <p>
+                          <span className="text-muted">Technique:</span> {p.technique}
+                        </p>
+                      )}
+                      {p.sizeScale && p.sizeScale !== 1 && (
+                        <p>
+                          <span className="text-muted">Text size:</span> {Math.round(p.sizeScale * 100)}%
+                        </p>
+                      )}
+                      {p.hasLogo && (
+                        <p>
+                          <span className="text-muted">Logo:</span> Customer uploaded a custom logo
+                        </p>
+                      )}
+                    </div>
+                    {(previewUrl || p.renderContextUrl) && (
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted mb-2">
+                          {p.snapshotUrl && !p.renderUrl ? "Configuration snapshot" : "AI render"}
+                        </p>
+                        <div className="flex gap-3">
+                          {previewUrl && (
+                            <a
+                              href={previewUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="relative h-24 w-24 rounded-lg overflow-hidden border border-line bg-white shrink-0"
+                            >
+                              <Image src={previewUrl} alt="Configured product" fill className="object-contain" unoptimized />
+                            </a>
+                          )}
+                          {p.renderContextUrl && (
+                            <a
+                              href={p.renderContextUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="relative h-24 w-24 rounded-lg overflow-hidden border border-line bg-white shrink-0"
+                            >
+                              <Image src={p.renderContextUrl} alt="Wedding context render" fill className="object-contain" unoptimized />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

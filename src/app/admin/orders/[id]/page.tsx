@@ -16,6 +16,7 @@ type Personalization = {
   hasLogo?: boolean;
   renderUrl?: string;
   renderContextUrl?: string;
+  snapshotUrl?: string;
 };
 
 export default async function AdminOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -108,13 +109,15 @@ export default async function AdminOrderDetailPage({ params }: { params: Promise
                         <span className="text-muted">Logo:</span> Customer uploaded a custom logo
                       </p>
                     )}
-                    {(p.renderUrl || p.renderContextUrl) && (
+                    {(p.renderUrl || p.renderContextUrl || p.snapshotUrl) && (
                       <div className="pt-2">
-                        <p className="text-xs uppercase tracking-wide text-muted mb-2">AI render</p>
+                        <p className="text-xs uppercase tracking-wide text-muted mb-2">
+                          {p.renderUrl ? "AI render" : "Configuration snapshot"}
+                        </p>
                         <div className="flex gap-3">
-                          {p.renderUrl && (
-                            <a href={p.renderUrl} target="_blank" rel="noreferrer" className="relative h-24 w-24 rounded-lg overflow-hidden border border-line bg-white shrink-0">
-                              <Image src={p.renderUrl} alt="Product render" fill className="object-contain" unoptimized />
+                          {(p.renderUrl ?? p.snapshotUrl) && (
+                            <a href={p.renderUrl ?? p.snapshotUrl} target="_blank" rel="noreferrer" className="relative h-24 w-24 rounded-lg overflow-hidden border border-line bg-white shrink-0">
+                              <Image src={p.renderUrl ?? p.snapshotUrl!} alt="Configured product" fill className="object-contain" unoptimized />
                             </a>
                           )}
                           {p.renderContextUrl && (

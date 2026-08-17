@@ -258,31 +258,62 @@ export function ProductConfigurator({
     // planner/supplier/admin need to see it later against the real order.
     let renderUrl: string | undefined;
     let renderContextUrl: string | undefined;
+    const client = createClient();
+    const uploadBase = `${product.plannerSlug}/${product.id}/${crypto.randomUUID()}`;
     if (latestRender) {
       try {
-        const client = createClient();
-        const base = `${product.plannerSlug}/${product.id}/${crypto.randomUUID()}`;
         const productBlob = await dataUrlToBlob(latestRender.imageDataUrl);
         const { error: uploadError } = await client.storage
           .from("personalization-renders")
-          .upload(`${base}-product.png`, productBlob, { contentType: "image/png" });
+          .upload(`${uploadBase}-product.png`, productBlob, { contentType: "image/png" });
         if (!uploadError) {
-          renderUrl = client.storage.from("personalization-renders").getPublicUrl(`${base}-product.png`)
+          renderUrl = client.storage.from("personalization-renders").getPublicUrl(`${uploadBase}-product.png`)
             .data.publicUrl;
         }
         if (latestRender.contextImageDataUrl) {
           const contextBlob = await dataUrlToBlob(latestRender.contextImageDataUrl);
           const { error: contextError } = await client.storage
             .from("personalization-renders")
-            .upload(`${base}-context.png`, contextBlob, { contentType: "image/png" });
+            .upload(`${uploadBase}-context.png`, contextBlob, { contentType: "image/png" });
           if (!contextError) {
             renderContextUrl = client.storage
               .from("personalization-renders")
-              .getPublicUrl(`${base}-context.png`).data.publicUrl;
+              .getPublicUrl(`${uploadBase}-context.png`).data.publicUrl;
           }
         }
       } catch {
         // Best-effort — still add to cart even if the upload fails.
+      }
+    }
+
+    // Always capture a plain (non-AI) snapshot of exactly what the customer
+    // configured — photo, text, positions, technique — so the supplier and
+    // admin have a visual record even when the customer skipped the
+    // optional AI preview. Reuse the AI render if one was already made
+    // (it's the same configuration, already uploaded).
+    let snapshotUrl: string | undefined = renderUrl;
+    const hasPersonalizationContent = !!(names.trim() || date.trim() || monogram.trim() || logoFile);
+    if (!snapshotUrl && product.personalizable && zone && hasPersonalizationContent) {
+      try {
+        const logoDataUrl = logoFile ? await fileToDataUrl(logoFile) : undefined;
+        const res = await fetch("/api/personalization-snapshot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productId: product.id, names, date, monogram, logoDataUrl, sizeScale, positions }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const blob = await dataUrlToBlob(json.imageDataUrl);
+          const { error: uploadError } = await client.storage
+            .from("personalization-renders")
+            .upload(`${uploadBase}-snapshot.png`, blob, { contentType: "image/png" });
+          if (!uploadError) {
+            snapshotUrl = client.storage.from("personalization-renders").getPublicUrl(`${uploadBase}-snapshot.png`)
+              .data.publicUrl;
+          }
+        }
+      } catch {
+        // Best-effort — still add to cart even if the snapshot fails.
       }
     }
 
@@ -308,6 +339,7 @@ export function ProductConfigurator({
             hasLogo: !!logoFile,
             renderUrl,
             renderContextUrl,
+            snapshotUrl,
           }
         : undefined,
     });
