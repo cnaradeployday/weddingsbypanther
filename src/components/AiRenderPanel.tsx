@@ -50,9 +50,9 @@ export function AiRenderPanel({
   names,
   date,
   monogram,
+  logoFile = null,
   sizeScale = 1,
-  hAlign = "center",
-  vAlign = "center",
+  positions,
   images = [],
   defaultImageId = null,
   unlimited = false,
@@ -61,15 +61,13 @@ export function AiRenderPanel({
   names: string;
   date: string;
   monogram: string;
+  logoFile?: File | null;
   sizeScale?: number;
-  hAlign?: string;
-  vAlign?: string;
+  positions?: Record<string, { x: number; y: number }>;
   images?: { id: string; url: string }[];
   defaultImageId?: string | null;
   unlimited?: boolean;
 }) {
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [imageId, setImageId] = useState<string | null>(defaultImageId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,13 +79,6 @@ export function AiRenderPanel({
   });
 
   const remaining = unlimited ? Infinity : MAX_RENDERS_PER_PRODUCT - usedCount;
-
-  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setLogoFile(file);
-    setLogoPreview(await fileToDataUrl(file));
-  };
 
   const handleGenerate = async () => {
     if (remaining <= 0) return;
@@ -108,8 +99,7 @@ export function AiRenderPanel({
           monogram,
           logoDataUrl,
           sizeScale,
-          hAlign,
-          vAlign,
+          positions,
           imageId,
         }),
       });
@@ -138,8 +128,8 @@ export function AiRenderPanel({
         </span>
       </div>
       <p className="text-xs text-muted mb-4">
-        Optional — upload your own logo, or leave it blank to use the names/monogram above. We&apos;ll
-        generate a close-up product preview and a wedding lifestyle shot.{" "}
+        Uses the logo (or names/monogram) from above and generates a close-up product preview plus a
+        wedding lifestyle shot.{" "}
         {unlimited ? "Unlimited renders for your account." : `${remaining} of ${MAX_RENDERS_PER_PRODUCT} left this session.`}
       </p>
 
@@ -163,26 +153,14 @@ export function AiRenderPanel({
         </div>
       )}
 
-      <div className="flex items-center gap-3 mb-4">
-        <label className="relative h-14 w-14 rounded-lg overflow-hidden border border-line cursor-pointer bg-white shrink-0">
-          {logoPreview ? (
-            <Image src={logoPreview} alt="" fill className="object-contain" unoptimized />
-          ) : (
-            <span className="absolute inset-0 flex items-center justify-center text-[10px] text-muted text-center px-1">
-              Upload logo
-            </span>
-          )}
-          <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
-        </label>
-        <button
-          type="button"
-          onClick={handleGenerate}
-          disabled={loading || remaining <= 0}
-          className="px-5 py-3 rounded-full bg-dark text-cream-light text-sm font-medium hover:bg-dark-soft transition-colors disabled:opacity-50"
-        >
-          {loading ? "Generating…" : remaining <= 0 ? "Limit reached" : "Generate AI preview"}
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={handleGenerate}
+        disabled={loading || remaining <= 0}
+        className="px-5 py-3 rounded-full bg-dark text-cream-light text-sm font-medium hover:bg-dark-soft transition-colors disabled:opacity-50 mb-4"
+      >
+        {loading ? "Generating…" : remaining <= 0 ? "Limit reached" : "Generate AI preview"}
+      </button>
 
       {error && <p className="text-sm text-terracotta-dark mb-3">{error}</p>}
 

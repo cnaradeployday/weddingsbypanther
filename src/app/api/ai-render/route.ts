@@ -194,8 +194,7 @@ export async function POST(req: NextRequest) {
   const monogram: string = body?.monogram ?? "";
   const logoDataUrl: string | undefined = body?.logoDataUrl;
   const sizeScale: number = typeof body?.sizeScale === "number" ? body.sizeScale : 1;
-  const hAlign: string = body?.hAlign ?? "center";
-  const vAlign: string = body?.vAlign ?? "center";
+  const positions: Record<string, { x: number; y: number }> = body?.positions ?? {};
   const requestedImageId: string | undefined = body?.imageId;
 
   if (!productId) {
@@ -251,12 +250,50 @@ export async function POST(req: NextRequest) {
   }
   const finish = techniqueMeta?.finish_description ?? FALLBACK_FINISH;
   const colorMode = techniqueMeta?.color_mode_description ?? FALLBACK_COLOR_MODE;
+  // The customer drags each element (logo, monogram, names, date)
+  // independently on a live preview of the print area, so their exact
+  // relative position within that rectangle is described per-element here
+  // rather than as one shared alignment for the whole personalization.
+  function bucketH(pct: number): "left" | "center" | "right" {
+    if (pct < 33) return "left";
+    if (pct > 66) return "right";
+    return "center";
+  }
+  function bucketV(pct: number): "top" | "center" | "bottom" {
+    if (pct < 33) return "top";
+    if (pct > 66) return "bottom";
+    return "center";
+  }
+  function describePos(pos?: { x: number; y: number }): string {
+    if (!pos) return "centered";
+    const h = bucketH(pos.x);
+    const v = bucketV(pos.y);
+    if (h === "center" && v === "center") return "centered";
+    if (v === "center") return `toward the ${h} side`;
+    if (h === "center") return `toward the ${v}`;
+    return `toward the ${v}-${h}`;
+  }
+
+  const elementDescriptions: string[] = [];
+  if (logoDataUrl && positions.logo) {
+    elementDescriptions.push(`the logo/artwork is placed ${describePos(positions.logo)} of the rectangle`);
+  }
+  if (monogram.trim() && positions.monogram) {
+    elementDescriptions.push(`the monogram is placed ${describePos(positions.monogram)} of the rectangle`);
+  }
+  if (names.trim() && positions.names) {
+    elementDescriptions.push(`the text "${names.trim()}" is placed ${describePos(positions.names)} of the rectangle`);
+  }
+  if (date.trim() && positions.date) {
+    elementDescriptions.push(`the date is placed ${describePos(positions.date)} of the rectangle`);
+  }
+
   const alignPhrase =
-    hAlign === "center" && vAlign === "center"
-      ? "centered within that rectangle"
-      : `positioned toward the ${vAlign !== "center" ? vAlign : ""}${
-          vAlign !== "center" && hAlign !== "center" ? "-" : ""
-        }${hAlign !== "center" ? hAlign : ""} of that rectangle rather than centered, leaving the rest of the rectangle's area empty`;
+    elementDescriptions.length > 0
+      ? `Each personalization element keeps its own exact relative position within that rectangle, matching what the customer arranged: ${elementDescriptions.join(
+          "; "
+        )}. Preserve the relative spacing between elements — do not merge, center, or re-stack them together`
+      : "centered within that rectangle";
 
   const rotation = zone?.rotation_deg ?? 0;
   const rotationPhrase =

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { formatUSD } from "@/lib/format";
@@ -33,6 +33,29 @@ type Zone = {
   rotation_deg: number | null;
   image_id: string | null;
 };
+
+type ElemKey = "logo" | "monogram" | "names" | "date";
+type ElemPos = { x: number; y: number };
+
+const DEFAULT_POSITIONS: Record<ElemKey, ElemPos> = {
+  monogram: { x: 50, y: 15 },
+  logo: { x: 50, y: 35 },
+  names: { x: 50, y: 65 },
+  date: { x: 50, y: 82 },
+};
+
+function clampPct(v: number) {
+  return Math.min(100, Math.max(0, v));
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 // Measures the rendered zone box so text/logo sizing can be derived from the
 // product's real print-area dimensions (mm), not a guessed fixed size.
@@ -85,9 +108,11 @@ export function ProductConfigurator({
   const [names, setNames] = useState("Amelia & Ravi");
   const [date, setDate] = useState("2026-06-14");
   const [monogram, setMonogram] = useState("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [sizeScale, setSizeScale] = useState(1);
-  const [hAlign, setHAlign] = useState<"left" | "center" | "right">("center");
-  const [vAlign, setVAlign] = useState<"top" | "center" | "bottom">("center");
+  const [positions, setPositions] = useState<Record<ElemKey, ElemPos>>(DEFAULT_POSITIONS);
+  const dragState = useRef<{ key: ElemKey; startX: number; startY: number; orig: ElemPos } | null>(null);
   const [techniqueId, setTechniqueId] = useState(
     product.techniques.find((t) => t.is_default)?.id ?? product.techniques[0]?.id ?? ""
   );
@@ -100,6 +125,42 @@ export function ProductConfigurator({
   const [activeImage, setActiveImage] = useState(zoneImageIndex >= 0 ? zoneImageIndex : 0);
 
   const [zoneRef, zoneSize] = useElementSize<HTMLDivElement>();
+
+  // Lets the customer drag the logo, monogram, names, and date independently
+  // within the print area. Listeners stay attached for the component's
+  // lifetime and no-op unless a drag is in progress.
+  useEffect(() => {
+    const handleMove = (e: PointerEvent) => {
+      const state = dragState.current;
+      const container = zoneRef.current;
+      if (!state || !container) return;
+      const rect = container.getBoundingClientRect();
+      const dxPct = ((e.clientX - state.startX) / rect.width) * 100;
+      const dyPct = ((e.clientY - state.startY) / rect.height) * 100;
+      setPositions((prev) => ({
+        ...prev,
+        [state.key]: { x: clampPct(state.orig.x + dxPct), y: clampPct(state.orig.y + dyPct) },
+      }));
+    };
+    const handleUp = () => {
+      dragState.current = null;
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+  }, [zoneRef]);
+
+  const startDrag = useCallback(
+    (key: ElemKey) => (e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragState.current = { key, startX: e.clientX, startY: e.clientY, orig: positions[key] };
+    },
+    [positions]
+  );
 
   const technique = product.techniques.find((t) => t.id === techniqueId);
   const variant = product.variants.find((v) => v.id === variantId);
@@ -134,6 +195,18 @@ export function ProductConfigurator({
 
   const quickQuantities = [product.minOrder, product.minOrder * 2, product.minOrder * 4, product.minOrder * 8];
 
+  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoFile(file);
+    setLogoPreview(await fileToDataUrl(file));
+  };
+
+  const clearLogo = () => {
+    setLogoFile(null);
+    setLogoPreview(null);
+  };
+
   const handleAddToCart = () => {
     addItem({
       key: `${product.id}:${variantId}:${names}:${date}:${monogram}:${techniqueId}`,
@@ -147,7 +220,15 @@ export function ProductConfigurator({
       variantId: variant?.id,
       variantLabel: variant?.label,
       personalization: product.personalizable
-        ? { names, date, monogram, technique: technique?.technique, sizeScale, hAlign, vAlign }
+        ? {
+            names,
+            date,
+            monogram,
+            technique: technique?.technique,
+            sizeScale,
+            positions,
+            hasLogo: !!logoFile,
+          }
         : undefined,
     });
     setJustAdded(true);
@@ -162,34 +243,77 @@ export function ProductConfigurator({
           {product.personalizable && zone && showOverlayHere && (
             <div
               ref={zoneRef}
-              className="absolute pointer-events-none flex flex-col rounded-2xl bg-cream-light/10 border-2 border-dashed border-cream-light/70 text-dark text-center px-3 overflow-hidden"
+              className="absolute pointer-events-none rounded-2xl border-2 border-dashed border-cream-light/70 text-dark text-center overflow-hidden"
               style={{
                 left: `${zone.pos_x_pct}%`,
                 top: `${zone.pos_y_pct}%`,
                 width: `${zone.width_pct}%`,
                 height: `${zone.height_pct}%`,
-                justifyContent: vAlign === "top" ? "flex-start" : vAlign === "bottom" ? "flex-end" : "center",
-                alignItems: hAlign === "left" ? "flex-start" : hAlign === "right" ? "flex-end" : "center",
                 transform: zone.rotation_deg ? `rotate(${zone.rotation_deg}deg)` : undefined,
               }}
             >
+              {logoPreview && (
+                <div
+                  onPointerDown={startDrag("logo")}
+                  className="absolute pointer-events-auto cursor-move touch-none"
+                  style={{
+                    left: `${positions.logo.x}%`,
+                    top: `${positions.logo.y}%`,
+                    width: "45%",
+                    aspectRatio: "1",
+                    transform: "translate(-50%, -50%)",
+                  }}
+                >
+                  <div className="relative w-full h-full pointer-events-none">
+                    <Image src={logoPreview} alt="" fill className="object-contain" unoptimized />
+                  </div>
+                </div>
+              )}
               {monogram && (
-                <span
-                  style={{ fontSize: monogramFontPx, textShadow: "0 1px 4px rgba(255,255,255,0.85)" }}
-                  className="mb-1"
+                <div
+                  onPointerDown={startDrag("monogram")}
+                  className="absolute pointer-events-auto cursor-move touch-none select-none whitespace-nowrap"
+                  style={{
+                    left: `${positions.monogram.x}%`,
+                    top: `${positions.monogram.y}%`,
+                    transform: "translate(-50%, -50%)",
+                    fontSize: monogramFontPx,
+                    textShadow: "0 1px 4px rgba(255,255,255,0.85)",
+                  }}
                 >
                   {monogram}
-                </span>
+                </div>
               )}
-              <span
-                style={{ fontSize: nameFontPx, textShadow: "0 1px 4px rgba(255,255,255,0.85)" }}
-                className="font-serif leading-tight line-clamp-2"
-              >
-                {names || "Your names"}
-              </span>
-              <span style={{ fontSize: dateFontPx, textShadow: "0 1px 4px rgba(255,255,255,0.85)" }} className="mt-1 tracking-wide">
-                {formattedDate}
-              </span>
+              {names && (
+                <div
+                  onPointerDown={startDrag("names")}
+                  className="absolute pointer-events-auto cursor-move touch-none select-none font-serif whitespace-nowrap"
+                  style={{
+                    left: `${positions.names.x}%`,
+                    top: `${positions.names.y}%`,
+                    transform: "translate(-50%, -50%)",
+                    fontSize: nameFontPx,
+                    textShadow: "0 1px 4px rgba(255,255,255,0.85)",
+                  }}
+                >
+                  {names}
+                </div>
+              )}
+              {date && (
+                <div
+                  onPointerDown={startDrag("date")}
+                  className="absolute pointer-events-auto cursor-move touch-none select-none tracking-wide whitespace-nowrap"
+                  style={{
+                    left: `${positions.date.x}%`,
+                    top: `${positions.date.y}%`,
+                    transform: "translate(-50%, -50%)",
+                    fontSize: dateFontPx,
+                    textShadow: "0 1px 4px rgba(255,255,255,0.85)",
+                  }}
+                >
+                  {formattedDate}
+                </div>
+              )}
             </div>
           )}
           <span className="absolute bottom-3 left-3 text-[11px] bg-cream-light/90 px-3 py-1 rounded-full flex items-center gap-1.5">
@@ -271,6 +395,32 @@ export function ProductConfigurator({
           <div className="space-y-6 mb-8">
             <div>
               <label className="text-xs uppercase tracking-wide text-muted block mb-2">
+                Your logo <span className="normal-case text-muted/70">(optional)</span>
+              </label>
+              <div className="flex items-center gap-3">
+                <label className="relative h-16 w-16 rounded-lg overflow-hidden border border-line cursor-pointer bg-white shrink-0">
+                  {logoPreview ? (
+                    <Image src={logoPreview} alt="" fill className="object-contain" unoptimized />
+                  ) : (
+                    <span className="absolute inset-0 flex items-center justify-center text-[10px] text-muted text-center px-1">
+                      Upload
+                    </span>
+                  )}
+                  <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
+                </label>
+                {logoPreview && (
+                  <button
+                    type="button"
+                    onClick={clearLogo}
+                    className="text-xs text-terracotta-dark font-medium"
+                  >
+                    Remove logo
+                  </button>
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wide text-muted block mb-2">
                 Your names or event text
               </label>
               <input
@@ -344,32 +494,17 @@ export function ProductConfigurator({
                 </button>
               </div>
             </div>
-            <div>
-              <label className="text-xs uppercase tracking-wide text-muted block mb-2">Position</label>
-              <div className="grid grid-cols-3 gap-1.5 w-28">
-                {(["top", "center", "bottom"] as const).map((v) =>
-                  (["left", "center", "right"] as const).map((h) => (
-                    <button
-                      key={`${v}-${h}`}
-                      type="button"
-                      onClick={() => {
-                        setVAlign(v);
-                        setHAlign(h);
-                      }}
-                      aria-label={`${v} ${h}`}
-                      className={`h-8 w-8 rounded-md border flex items-center justify-center ${
-                        vAlign === v && hAlign === h ? "border-dark bg-dark" : "border-line"
-                      }`}
-                    >
-                      <span
-                        className={`h-1.5 w-1.5 rounded-full ${
-                          vAlign === v && hAlign === h ? "bg-cream-light" : "bg-muted/50"
-                        }`}
-                      />
-                    </button>
-                  ))
-                )}
-              </div>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted">
+                Drag the logo, text, date, or monogram directly on the photo to position each one.
+              </p>
+              <button
+                type="button"
+                onClick={() => setPositions(DEFAULT_POSITIONS)}
+                className="text-xs text-terracotta-dark font-medium shrink-0 ml-3"
+              >
+                Reset positions
+              </button>
             </div>
           </div>
         )}
@@ -404,9 +539,9 @@ export function ProductConfigurator({
             names={names}
             date={date}
             monogram={monogram}
+            logoFile={logoFile}
             sizeScale={sizeScale}
-            hAlign={hAlign}
-            vAlign={vAlign}
+            positions={positions}
             images={product.images}
             defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
             unlimited={unlimitedRenders}
