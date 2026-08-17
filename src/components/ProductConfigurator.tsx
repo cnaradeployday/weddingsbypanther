@@ -31,7 +31,7 @@ function techniqueTextStyle(techniqueName?: string): React.CSSProperties {
   if (techniqueName === "Embroidery") {
     return { color, textShadow: "0 1px 0 rgba(255,255,255,0.45)", fontWeight: 600 };
   }
-  return { color, textShadow: "0 1px 4px rgba(255,255,255,0.85)" };
+  return { color };
 }
 
 type Technique = { id: string; technique: string; extra_price: number; is_default: boolean };
@@ -148,6 +148,8 @@ export function ProductConfigurator({
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [sizeScale, setSizeScale] = useState(1);
   const [rotationOffset, setRotationOffset] = useState(0);
+  const [logoScale, setLogoScale] = useState(1);
+  const [logoRotationOffset, setLogoRotationOffset] = useState(0);
   const [positions, setPositions] = useState<Record<ElemKey, ElemPos>>(DEFAULT_POSITIONS);
   const dragState = useRef<{ key: ElemKey; startX: number; startY: number; orig: ElemPos } | null>(null);
   const [techniqueId, setTechniqueId] = useState(
@@ -246,8 +248,9 @@ export function ProductConfigurator({
   }, [zone, zoneBox, zoneSize.width, zoneSize.height]);
   // Customers can nudge rotation further on top of the auto-matched angle
   // (e.g. the quad only approximates the surface, or they simply prefer it
-  // off-axis).
-  const zoneRotationDeg = autoRotationDeg + rotationOffset;
+  // off-axis) — text and logo each get their own independent offset.
+  const textRotationDeg = autoRotationDeg + rotationOffset;
+  const logoRotationDeg = autoRotationDeg + logoRotationOffset;
 
   // Real px-per-mm for the currently rendered zone box, so text/logo sizing
   // reflects the product's actual printable area instead of a fixed guess.
@@ -259,6 +262,23 @@ export function ProductConfigurator({
   const nameFontPx = (pxPerMm ? Math.max(10, Math.min(28, pxPerMm * 5)) : 18) * sizeScale;
   const monogramFontPx = (pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20) * sizeScale;
   const dateFontPx = (pxPerMm ? Math.max(8, Math.min(14, pxPerMm * 2.4)) : 11) * sizeScale;
+
+  // Default logo footprint: 45% of the print area's smaller physical
+  // dimension (width_mm/height_mm, entered when the product was set up) —
+  // not a flat percentage of the box — so it's proportionate whether the
+  // zone is small or large, wide or tall. Mirrors defaultLogoBoxSize() in
+  // the server-side compositor. logoScale is the customer's own on-top
+  // multiplier.
+  const logoWidthPct = useMemo(() => {
+    const fallbackPct = 45 * logoScale;
+    if (!zone?.width_mm || !zone?.height_mm || !zoneSize.width || !zoneSize.height) return fallbackPct;
+    const pxPerMmX = zoneSize.width / zone.width_mm;
+    const pxPerMmY = zoneSize.height / zone.height_mm;
+    const scale = Math.min(pxPerMmX, pxPerMmY);
+    const smallerMm = Math.min(zone.width_mm, zone.height_mm);
+    const logoBoxPx = scale * smallerMm * 0.45 * logoScale;
+    return Math.min(95, (logoBoxPx / zoneSize.width) * 100);
+  }, [zone, zoneSize.width, zoneSize.height, logoScale]);
 
   const formattedDate = useMemo(() => {
     if (!date) return "";
@@ -340,7 +360,9 @@ export function ProductConfigurator({
             logoDataUrl,
             sizeScale,
             positions,
-            rotationOffsetDeg: rotationOffset,
+            textRotationOffsetDeg: rotationOffset,
+            logoRotationOffsetDeg: logoRotationOffset,
+            logoScale,
           }),
         });
         if (res.ok) {
@@ -379,6 +401,8 @@ export function ProductConfigurator({
             sizeScale,
             positions,
             rotationOffset,
+            logoScale,
+            logoRotationOffset,
             hasLogo: !!logoFile,
             renderUrl,
             renderContextUrl,
@@ -430,9 +454,9 @@ export function ProductConfigurator({
                   style={{
                     left: `${positions.logo.x}%`,
                     top: `${positions.logo.y}%`,
-                    width: "45%",
+                    width: `${logoWidthPct}%`,
                     aspectRatio: "1",
-                    transform: `translate(-50%, -50%) rotate(${zoneRotationDeg}deg)`,
+                    transform: `translate(-50%, -50%) rotate(${logoRotationDeg}deg)`,
                   }}
                 >
                   <div className="relative w-full h-full pointer-events-none">
@@ -447,7 +471,7 @@ export function ProductConfigurator({
                   style={{
                     left: `${positions.monogram.x}%`,
                     top: `${positions.monogram.y}%`,
-                    transform: `translate(-50%, -50%) rotate(${zoneRotationDeg}deg)`,
+                    transform: `translate(-50%, -50%) rotate(${textRotationDeg}deg)`,
                     fontSize: monogramFontPx,
                     ...techniqueTextStyle(technique?.technique),
                   }}
@@ -462,7 +486,7 @@ export function ProductConfigurator({
                   style={{
                     left: `${positions.names.x}%`,
                     top: `${positions.names.y}%`,
-                    transform: `translate(-50%, -50%) rotate(${zoneRotationDeg}deg)`,
+                    transform: `translate(-50%, -50%) rotate(${textRotationDeg}deg)`,
                     fontSize: nameFontPx,
                     ...techniqueTextStyle(technique?.technique),
                   }}
@@ -477,7 +501,7 @@ export function ProductConfigurator({
                   style={{
                     left: `${positions.date.x}%`,
                     top: `${positions.date.y}%`,
-                    transform: `translate(-50%, -50%) rotate(${zoneRotationDeg}deg)`,
+                    transform: `translate(-50%, -50%) rotate(${textRotationDeg}deg)`,
                     fontSize: dateFontPx,
                     ...techniqueTextStyle(technique?.technique),
                   }}
@@ -589,6 +613,43 @@ export function ProductConfigurator({
                   </button>
                 )}
               </div>
+              {logoPreview && (
+                <div className="mt-4 grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] uppercase tracking-wide text-muted">Logo size</span>
+                      <span className="text-[11px] text-muted">{Math.round(logoScale * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0.4}
+                      max={2}
+                      step={0.05}
+                      value={logoScale}
+                      onChange={(e) => setLogoScale(Number(e.target.value))}
+                      className="w-full accent-terracotta"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] uppercase tracking-wide text-muted">Logo rotation</span>
+                      <span className="text-[11px] text-muted">
+                        {logoRotationOffset > 0 ? "+" : ""}
+                        {logoRotationOffset}°
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-45}
+                      max={45}
+                      step={1}
+                      value={logoRotationOffset}
+                      onChange={(e) => setLogoRotationOffset(Number(e.target.value))}
+                      className="w-full accent-terracotta"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
             <div>
               <label className="text-xs uppercase tracking-wide text-muted block mb-2">
@@ -711,6 +772,8 @@ export function ProductConfigurator({
                 onClick={() => {
                   setPositions(DEFAULT_POSITIONS);
                   setRotationOffset(0);
+                  setLogoScale(1);
+                  setLogoRotationOffset(0);
                 }}
                 className="text-xs text-terracotta-dark font-medium shrink-0 ml-3"
               >
@@ -754,6 +817,8 @@ export function ProductConfigurator({
             sizeScale={sizeScale}
             positions={positions}
             rotationOffset={rotationOffset}
+            logoScale={logoScale}
+            logoRotationOffset={logoRotationOffset}
             images={product.images}
             defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
             unlimited={unlimitedRenders}

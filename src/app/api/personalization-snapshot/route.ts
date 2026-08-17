@@ -18,7 +18,11 @@ export async function POST(req: NextRequest) {
   const logoDataUrl: string | undefined = body?.logoDataUrl;
   const sizeScale: number = typeof body?.sizeScale === "number" ? body.sizeScale : 1;
   const positions: Record<string, Corner> = body?.positions ?? {};
-  const rotationOffsetDeg: number = typeof body?.rotationOffsetDeg === "number" ? body.rotationOffsetDeg : 0;
+  const textRotationOffsetDeg: number =
+    typeof body?.textRotationOffsetDeg === "number" ? body.textRotationOffsetDeg : 0;
+  const logoRotationOffsetDeg: number =
+    typeof body?.logoRotationOffsetDeg === "number" ? body.logoRotationOffsetDeg : 0;
+  const logoScale: number = typeof body?.logoScale === "number" ? body.logoScale : 1;
   const requestedImageId: string | undefined = body?.imageId;
 
   if (!productId) {
@@ -30,7 +34,7 @@ export async function POST(req: NextRequest) {
       .from("products")
       .select(
         `images:product_images ( id, url, sort_order ),
-         zones:product_print_zones ( image_id, corners_pct ),
+         zones:product_print_zones ( image_id, corners_pct, width_mm, height_mm ),
          techniques:product_print_techniques ( technique, is_default )`
       )
       .eq("id", productId)
@@ -45,7 +49,7 @@ export async function POST(req: NextRequest) {
   const images = (product.images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
   const rawZone = product.zones?.[0];
   const zone: PrintZone | undefined = rawZone
-    ? { corners_pct: (rawZone.corners_pct as Corner[] | null) ?? [] }
+    ? { corners_pct: (rawZone.corners_pct as Corner[] | null) ?? [], width_mm: rawZone.width_mm, height_mm: rawZone.height_mm }
     : undefined;
   const referenceImage =
     images.find((i) => i.id === requestedImageId) ?? images.find((i) => i.id === rawZone?.image_id) ?? images[0];
@@ -76,7 +80,9 @@ export async function POST(req: NextRequest) {
     monogram,
     inkColor,
     sizeScale,
-    rotationOffsetDeg,
+    logoScale,
+    textRotationOffsetDeg,
+    logoRotationOffsetDeg,
   });
   if (!result) {
     return NextResponse.json({ error: "Could not load the product photo." }, { status: 502 });

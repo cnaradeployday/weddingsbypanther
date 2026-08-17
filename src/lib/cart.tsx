@@ -21,6 +21,8 @@ export type CartItem = {
     extraPrice?: number;
     sizeScale?: number;
     rotationOffset?: number;
+    logoScale?: number;
+    logoRotationOffset?: number;
     positions?: Record<string, { x: number; y: number }>;
     hasLogo?: boolean;
     renderUrl?: string;

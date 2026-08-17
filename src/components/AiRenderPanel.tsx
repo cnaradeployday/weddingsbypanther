@@ -54,6 +54,8 @@ export function AiRenderPanel({
   sizeScale = 1,
   positions,
   rotationOffset = 0,
+  logoScale = 1,
+  logoRotationOffset = 0,
   images = [],
   defaultImageId = null,
   unlimited = false,
@@ -67,6 +69,8 @@ export function AiRenderPanel({
   sizeScale?: number;
   positions?: Record<string, { x: number; y: number }>;
   rotationOffset?: number;
+  logoScale?: number;
+  logoRotationOffset?: number;
   images?: { id: string; url: string }[];
   defaultImageId?: string | null;
   unlimited?: boolean;
@@ -104,7 +108,9 @@ export function AiRenderPanel({
           logoDataUrl,
           sizeScale,
           positions,
-          rotationOffsetDeg: rotationOffset,
+          textRotationOffsetDeg: rotationOffset,
+          logoRotationOffsetDeg: logoRotationOffset,
+          logoScale,
           imageId,
         }),
       });
