@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { VettingStatusControl } from "@/components/VettingStatusControl";
+import { NewSupplierForm } from "@/components/NewSupplierForm";
 import { getBackofficePermissions } from "@/lib/permissions";
 
 export default async function AdminSuppliersPage() {
@@ -16,8 +17,13 @@ export default async function AdminSuppliersPage() {
 
   return (
     <div>
-      <h1 className="font-serif text-3xl mb-1">Suppliers</h1>
-      <p className="text-muted mb-8">{suppliers?.length ?? 0} suppliers on the marketplace</p>
+      <div className="flex items-start justify-between gap-4 mb-8">
+        <div>
+          <h1 className="font-serif text-3xl mb-1">Suppliers</h1>
+          <p className="text-muted">{suppliers?.length ?? 0} suppliers on the marketplace</p>
+        </div>
+        {perms.suppliers.write && <NewSupplierForm />}
+      </div>
       <div className="rounded-xl border border-line bg-white overflow-x-auto">
         <table className="w-full text-sm">
           <thead>

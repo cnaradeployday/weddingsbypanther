@@ -163,11 +163,27 @@ export async function POST(req: NextRequest) {
       }mm, so keep the personalization's scale proportionate to that rectangle. The guide rectangle itself is only a temporary annotation: it must NOT appear in your output image — remove it completely and replace that area with the product's real material/surface plus the personalization.`
     : "Place the personalization in the natural, obvious spot for this kind of product.";
 
-  const contentInstruction = logoImage
-    ? "The second attached image is source artwork to personalize the product with (it may be a logo, illustration, or photo, e.g. of a couple). Extract its shape and content, then re-render it directly onto the product using the print technique described below — do not simply paste, overlay, or sticker the original image's pixels, colors, or shading onto the product."
-    : `Add the following text onto the product, in an elegant serif style consistent with wedding stationery: "${names}"${
-        date ? ` and the date "${date}"` : ""
-      }${monogram ? `, near a small monogram-style ornament` : ""}.`;
+  const hasText = names.trim().length > 0 || date.trim().length > 0;
+  const textPieces = [names.trim() && `the text "${names.trim()}"`, date.trim() && `the date "${date.trim()}"`].filter(
+    Boolean
+  );
+
+  let contentInstruction: string;
+  if (logoImage) {
+    contentInstruction =
+      "The second attached image is source artwork to personalize the product with (it may be a logo, illustration, or photo, e.g. of a couple). Extract its shape and content, then re-render it directly onto the product using the print technique described below — do not simply paste, overlay, or sticker the original image's pixels, colors, or shading onto the product.";
+    if (hasText) {
+      contentInstruction += ` Also add ${textPieces.join(
+        " and "
+      )} as elegant serif text, arranged naturally alongside the artwork (e.g. beneath or beside it) within the same printable area${
+        monogram ? ", near a small monogram-style ornament" : ""
+      } — do not omit this text.`;
+    }
+  } else {
+    contentInstruction = `Add the following onto the product, in an elegant serif style consistent with wedding stationery: ${
+      textPieces.join(" and ") || `the text "${names}"`
+    }${monogram ? `, near a small monogram-style ornament` : ""}.`;
+  }
 
   const prompt = `You are editing a real product photography image for a wedding merchandise brand. Do not change anything about the product, background, lighting, shadows, or composition except for: removing the guide rectangle described below, and adding the personalization described below strictly inside it.
 

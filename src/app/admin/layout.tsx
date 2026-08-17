@@ -18,6 +18,7 @@ const NAV: { href: string; label: string; section: BackofficeSection }[] = [
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getSessionProfile();
   if (!session) redirect("/login");
+  if (session.profile.must_change_password) redirect("/change-password");
 
   const supabase = await createClient();
   const perms = await getBackofficePermissions(supabase, session.profile);

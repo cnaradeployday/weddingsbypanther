@@ -12,6 +12,7 @@ const NAV = [
 export default async function SupplierLayout({ children }: { children: React.ReactNode }) {
   const session = await getSessionProfile();
   if (!session) redirect("/login");
+  if (session.profile.must_change_password) redirect("/change-password");
 
   const supabase = await createClient();
   const { data: supplier } = await supabase
