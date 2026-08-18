@@ -239,9 +239,9 @@ export async function getRelatedProducts(
       `markup_pct, enabled,
        product:products (
          id, slug, name, factory_price, min_order, personalizable, status,
-         images:product_images ( url, sort_order ),
+         images:product_images ( id, url, sort_order ),
          techniques:product_print_techniques ( technique, is_default ),
-         zones:product_print_zones ( width_mm, height_mm, corners_pct )
+         zones:product_print_zones ( width_mm, height_mm, corners_pct, image_id )
        )`
     )
     .eq("planner_id", planner.id)
@@ -255,6 +255,12 @@ export async function getRelatedProducts(
       const images = (p.images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
       const defaultTechnique = (p.techniques ?? []).find((t) => t.is_default) ?? p.techniques?.[0];
       const zone = p.zones?.[0];
+      // The personalization overlay's corners_pct are percentages of
+      // whichever photo was picked as the print-area reference in the admin
+      // tool — not necessarily the product's first/main photo. Using the
+      // wrong image here is what put the logo over a commercial shot the
+      // print area was never positioned against.
+      const referenceImage = images.find((img) => img.id === zone?.image_id) ?? images[0];
       return {
         id: p.id,
         slug: p.slug,
@@ -262,7 +268,7 @@ export async function getRelatedProducts(
         price: applyMarkup(p.factory_price, row.markup_pct),
         minOrder: p.min_order,
         personalizable: p.personalizable,
-        image: images[0]?.url ?? null,
+        image: referenceImage?.url ?? null,
         zone: zone
           ? {
               width_mm: zone.width_mm,

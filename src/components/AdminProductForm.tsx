@@ -357,7 +357,7 @@ export function AdminProductForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-3xl grid md:grid-cols-2 gap-8">
+    <form onSubmit={handleSubmit} className="max-w-5xl grid md:grid-cols-2 gap-6">
       <div className="rounded-xl border border-line bg-white p-6 space-y-4">
         <p className="text-xs uppercase tracking-wide text-muted">Basics</p>
         <select
@@ -406,7 +406,7 @@ export function AdminProductForm({
             className="rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
           />
         </div>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-4 gap-3 items-end">
           <div>
             <label className="text-xs text-muted block mb-1">Factory price</label>
             <input
@@ -436,7 +436,7 @@ export function AdminProductForm({
             />
           </div>
           <div>
-            <label className="text-xs text-muted block mb-1">Most popular qty</label>
+            <label className="text-xs text-muted block mb-1 whitespace-nowrap">Popular qty</label>
             <input
               type="number"
               placeholder="Optional"
@@ -663,7 +663,7 @@ export function AdminProductForm({
         )}
       </div>
 
-      <div className="md:col-span-2 rounded-xl border border-line bg-white p-6 space-y-3">
+      <div className="md:col-start-2 rounded-xl border border-line bg-white p-6 space-y-3">
         <p className="text-xs uppercase tracking-wide text-muted">
           Related products{" "}
           <span className="normal-case text-muted/70">
