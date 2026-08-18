@@ -27,6 +27,13 @@ export default async function ShopPage({
   const activeCategory = categories.find((c) => c.slug === category);
   const base = `/store/${slug}`;
 
+  const categoriesWithCounts = categories.map((cat) => ({
+    id: cat.id,
+    slug: cat.slug,
+    name: cat.name,
+    count: allProducts.filter((p) => p.categorySlug === cat.slug).length,
+  }));
+
   return (
     <div className="mx-auto max-w-7xl px-6 py-10">
       <p className="text-sm text-muted mb-2">
@@ -37,40 +44,13 @@ export default async function ShopPage({
         {activeCategory ? activeCategory.name : "All Products"}
       </h1>
 
-      <div className="grid md:grid-cols-[220px_1fr] gap-10">
-        <aside>
-          <p className="text-xs uppercase tracking-wide text-muted mb-3">Category</p>
-          <ul className="space-y-2 text-sm">
-            <li>
-              <Link
-                href={`${base}/shop`}
-                className={!category ? "font-semibold text-terracotta" : "text-dark/80 hover:text-terracotta"}
-              >
-                All ({allProducts.length})
-              </Link>
-            </li>
-            {categories.map((cat) => {
-              const count = allProducts.filter((p) => p.categorySlug === cat.slug).length;
-              return (
-                <li key={cat.id}>
-                  <Link
-                    href={`${base}/shop?category=${cat.slug}`}
-                    className={
-                      category === cat.slug
-                        ? "font-semibold text-terracotta"
-                        : "text-dark/80 hover:text-terracotta"
-                    }
-                  >
-                    {cat.name} ({count})
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </aside>
-
-        <CatalogSearch products={products} base={base} />
-      </div>
+      <CatalogSearch
+        products={products}
+        base={base}
+        categories={categoriesWithCounts}
+        activeCategorySlug={category}
+        totalCount={allProducts.length}
+      />
     </div>
   );
 }

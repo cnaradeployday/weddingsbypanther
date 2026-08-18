@@ -31,10 +31,20 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
         <p className="text-muted mb-8">{items.length} items · {totalPieces} pieces</p>
 
         <div className="divide-y divide-line">
-          {items.map((item) => (
+          {items.map((item) => {
+            const previewUrl = item.personalization?.snapshotUrl ?? item.personalization?.renderUrl ?? item.image;
+            return (
             <div key={item.key} className="py-6 flex gap-4">
               <div className="relative h-24 w-24 rounded-lg overflow-hidden bg-cream shrink-0">
-                {item.image && <Image src={item.image} alt={item.name} fill className="object-cover" />}
+                {previewUrl && (
+                  <Image
+                    src={previewUrl}
+                    alt={item.name}
+                    fill
+                    className={item.personalization?.snapshotUrl || item.personalization?.renderUrl ? "object-contain" : "object-cover"}
+                    unoptimized={!!(item.personalization?.snapshotUrl ?? item.personalization?.renderUrl)}
+                  />
+                )}
               </div>
               <div className="flex-1">
                 <div className="flex justify-between">
@@ -72,7 +82,8 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
