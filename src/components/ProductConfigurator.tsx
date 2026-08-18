@@ -8,15 +8,8 @@ import { applyMarkup } from "@/lib/format";
 import { useCart } from "@/lib/cart";
 import { createClient } from "@/lib/supabase/client";
 import { techniqueInkColor } from "@/lib/printTechniqueColors";
+import { MONOGRAM_OPTIONS, monogramSvgInner } from "@/lib/monograms";
 import { AiRenderPanel } from "./AiRenderPanel";
-
-// Wedding-appropriate monogram accents — kept to monochrome glyphs (not
-// full-color emoji) so they still respect the selected print technique's
-// ink color, the same as the surrounding text. Limited to widely-supported
-// Unicode blocks (Dingbats / general punctuation) — rarer symbol blocks
-// (e.g. the marriage-rings glyph) render as blank "tofu" boxes on the
-// server's font stack, which is used for the AI render and snapshot.
-const MONOGRAMS = ["♥", "∞", "❀", "✦", "✿", "❖", "⬥"];
 
 // Approximates how each print technique looks on the manual (non-AI) live
 // preview — a plain color swap for printed techniques, plus a debossed
@@ -618,16 +611,24 @@ export function ProductConfigurator({
                 <div
                   ref={setElemBoxRef("monogram")}
                   onPointerDown={startDrag("monogram")}
-                  className="absolute pointer-events-auto cursor-move touch-none select-none whitespace-nowrap"
+                  className="absolute pointer-events-auto cursor-move touch-none select-none"
                   style={{
                     left: `${positions.monogram.x}%`,
                     top: `${positions.monogram.y}%`,
+                    width: monogramFontPx,
+                    height: monogramFontPx,
                     transform: `translate(-50%, -50%) rotate(${elemRotationDeg.monogram}deg)`,
-                    fontSize: monogramFontPx,
-                    ...techniqueTextStyle(technique?.technique),
                   }}
                 >
-                  {monogram}
+                  <svg
+                    viewBox="0 0 24 24"
+                    width={monogramFontPx}
+                    height={monogramFontPx}
+                    className="pointer-events-none"
+                    dangerouslySetInnerHTML={{
+                      __html: monogramSvgInner(monogram, techniqueInkColor(technique?.technique)),
+                    }}
+                  />
                   {activeElem === "monogram" && (
                     <AdjustHandles
                       onResizeStart={startElemAdjust("monogram", "resize")}
@@ -827,15 +828,21 @@ export function ProductConfigurator({
                 >
                   None
                 </button>
-                {MONOGRAMS.map((m) => (
+                {MONOGRAM_OPTIONS.map((opt) => (
                   <button
-                    key={m}
-                    onClick={() => setMonogram(m)}
-                    className={`h-11 w-11 rounded-lg border flex items-center justify-center text-lg ${
-                      monogram === m ? "border-dark bg-dark text-cream-light" : "border-line"
+                    key={opt.id}
+                    onClick={() => setMonogram(opt.id)}
+                    title={opt.label}
+                    className={`h-11 w-11 rounded-lg border flex items-center justify-center ${
+                      monogram === opt.id ? "border-dark bg-dark text-cream-light" : "border-line text-dark"
                     }`}
                   >
-                    {m}
+                    <svg
+                      viewBox="0 0 24 24"
+                      width={18}
+                      height={18}
+                      dangerouslySetInnerHTML={{ __html: monogramSvgInner(opt.id, "currentColor") }}
+                    />
                   </button>
                 ))}
               </div>

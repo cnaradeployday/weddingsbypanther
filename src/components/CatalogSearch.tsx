@@ -6,15 +6,22 @@ import Link from "next/link";
 import { formatUSD } from "@/lib/format";
 import type { CatalogProduct } from "@/lib/queries";
 
+type Category = { id: string; slug: string; name: string; count: number };
+
 export function CatalogSearch({
   products,
   base,
+  categories,
+  activeCategorySlug,
+  totalCount,
 }: {
   products: CatalogProduct[];
   base: string;
+  categories: Category[];
+  activeCategorySlug?: string;
+  totalCount: number;
 }) {
   const [query, setQuery] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [maxMinOrder, setMaxMinOrder] = useState("");
@@ -53,32 +60,45 @@ export function CatalogSearch({
   }, [products, query, minPrice, maxPrice, maxMinOrder, personalizableOnly]);
 
   return (
-    <div>
-      <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
-        <p className="text-sm text-muted">{filtered.length} products</p>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowFilters((s) => !s)}
-            className={`text-sm px-4 py-2 rounded-full border ${
-              activeFilterCount > 0 ? "border-terracotta text-terracotta-dark" : "border-line text-dark/80"
-            }`}
-          >
-            Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
-          </button>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={`Search ${products.length} products`}
-            className="w-full max-w-xs rounded-full border border-line px-4 py-2 text-sm focus:outline-none focus:border-dark"
-          />
-        </div>
-      </div>
+    <div className="grid md:grid-cols-[220px_1fr] gap-10">
+      <aside>
+        <p className="text-xs uppercase tracking-wide text-muted mb-3">Category</p>
+        <ul className="space-y-2 text-sm mb-8">
+          <li>
+            <Link
+              href={`${base}/shop`}
+              className={!activeCategorySlug ? "font-semibold text-terracotta" : "text-dark/80 hover:text-terracotta"}
+            >
+              All ({totalCount})
+            </Link>
+          </li>
+          {categories.map((cat) => (
+            <li key={cat.id}>
+              <Link
+                href={`${base}/shop?category=${cat.slug}`}
+                className={
+                  activeCategorySlug === cat.slug
+                    ? "font-semibold text-terracotta"
+                    : "text-dark/80 hover:text-terracotta"
+                }
+              >
+                {cat.name} ({cat.count})
+              </Link>
+            </li>
+          ))}
+        </ul>
 
-      {showFilters && (
-        <div className="rounded-xl border border-line bg-cream p-5 mb-6 grid sm:grid-cols-4 gap-4 items-end">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs uppercase tracking-wide text-muted">Filters</p>
+          {activeFilterCount > 0 && (
+            <button type="button" onClick={clearFilters} className="text-xs text-terracotta-dark">
+              Clear
+            </button>
+          )}
+        </div>
+        <div className="space-y-4">
           <div>
-            <label className="text-xs uppercase tracking-wide text-muted block mb-1">Min price</label>
+            <label className="text-xs text-muted block mb-1">Min price</label>
             <input
               type="number"
               min={0}
@@ -89,7 +109,7 @@ export function CatalogSearch({
             />
           </div>
           <div>
-            <label className="text-xs uppercase tracking-wide text-muted block mb-1">Max price</label>
+            <label className="text-xs text-muted block mb-1">Max price</label>
             <input
               type="number"
               min={0}
@@ -100,7 +120,7 @@ export function CatalogSearch({
             />
           </div>
           <div>
-            <label className="text-xs uppercase tracking-wide text-muted block mb-1">Max min. order</label>
+            <label className="text-xs text-muted block mb-1">Max min. order</label>
             <input
               type="number"
               min={0}
@@ -110,53 +130,58 @@ export function CatalogSearch({
               className="w-full rounded-lg border border-line px-3 py-2 text-sm bg-white focus:outline-none focus:border-dark"
             />
           </div>
-          <div className="flex items-center justify-between gap-3">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={personalizableOnly}
-                onChange={(e) => setPersonalizableOnly(e.target.checked)}
-              />
-              Personalizable
-            </label>
-            {activeFilterCount > 0 && (
-              <button type="button" onClick={clearFilters} className="text-xs text-terracotta-dark whitespace-nowrap">
-                Clear
-              </button>
-            )}
-          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={personalizableOnly}
+              onChange={(e) => setPersonalizableOnly(e.target.checked)}
+            />
+            Personalizable only
+          </label>
         </div>
-      )}
+      </aside>
 
-      {filtered.length === 0 ? (
-        <p className="text-muted text-sm py-10 text-center">
-          No products match {query ? `"${query}"` : "these filters"}.
-        </p>
-      ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-10">
-          {filtered.map((p) => (
-            <Link key={p.id} href={`${base}/shop/${p.slug}`} className="group">
-              <div className="relative aspect-square rounded-xl overflow-hidden mb-3 bg-cream">
-                {p.image && (
-                  <Image
-                    src={p.image}
-                    alt={p.name}
-                    fill
-                    className="object-cover transition-transform duration-300 group-hover:scale-105"
-                  />
-                )}
-                <span className="absolute top-3 left-3 text-[10px] uppercase tracking-wide bg-cream-light/90 px-2 py-1 rounded-full">
-                  {p.categoryName}
-                </span>
-              </div>
-              <p className="font-medium text-sm">{p.name}</p>
-              <p className="text-sm text-muted">
-                From {formatUSD(p.price)} · min {p.minOrder}
-              </p>
-            </Link>
-          ))}
+      <div>
+        <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
+          <p className="text-sm text-muted">{filtered.length} products</p>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={`Search ${products.length} products`}
+            className="w-full max-w-xs rounded-full border border-line px-4 py-2 text-sm focus:outline-none focus:border-dark"
+          />
         </div>
-      )}
+
+        {filtered.length === 0 ? (
+          <p className="text-muted text-sm py-10 text-center">
+            No products match {query ? `"${query}"` : "these filters"}.
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-10">
+            {filtered.map((p) => (
+              <Link key={p.id} href={`${base}/shop/${p.slug}`} className="group">
+                <div className="relative aspect-square rounded-xl overflow-hidden mb-3 bg-cream">
+                  {p.image && (
+                    <Image
+                      src={p.image}
+                      alt={p.name}
+                      fill
+                      className="object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                  )}
+                  <span className="absolute top-3 left-3 text-[10px] uppercase tracking-wide bg-cream-light/90 px-2 py-1 rounded-full">
+                    {p.categoryName}
+                  </span>
+                </div>
+                <p className="font-medium text-sm">{p.name}</p>
+                <p className="text-sm text-muted">
+                  From {formatUSD(p.price)} · min {p.minOrder}
+                </p>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

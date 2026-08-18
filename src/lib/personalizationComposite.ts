@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { monogramSvgInner } from "./monograms";
 
 // Deterministic (non-AI) compositing of a customer's personalization onto
 // the real product photo. Shared by the AI-render route (which layers a
@@ -172,12 +173,18 @@ export async function buildArtworkImage({
 
   const textElements: string[] = [];
   if (monogram.trim()) {
+    // Rendered as a plain vector shape (see monograms.ts), not a font
+    // glyph — the decorative symbols aren't reliably present in whatever
+    // font the server's sharp/librsvg resolves to, and were rendering as
+    // blank "tofu" boxes.
     const p = pos("monogram", { x: 50, y: 15 });
     const cx = (p.x / 100) * canvasW;
     const cy = (p.y / 100) * canvasH;
-    const fontSize = canvasH * 0.14 * (fontScale.monogram ?? 1);
+    const size = canvasH * 0.14 * (fontScale.monogram ?? 1);
+    const inner = monogramSvgInner(monogram, inkColor);
+    const monogramDeg = rotations.monogram ?? 0;
     textElements.push(
-      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="Georgia, 'Times New Roman', serif" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "monogram")}>${escapeXml(monogram)}</text>`
+      `<g transform="translate(${cx} ${cy}) rotate(${monogramDeg}) scale(${size / 24}) translate(-12 -12)">${inner}</g>`
     );
   }
   if (names.trim()) {
