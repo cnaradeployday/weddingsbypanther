@@ -159,7 +159,9 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
   const images = (p.images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
   const techniques = (p.techniques ?? []).map((t) => ({
     ...t,
-    stripSourceColor: (techniqueCatalog ?? []).find((tc) => tc.name === t.technique)?.strip_source_color ?? false,
+    stripSourceColor:
+      (techniqueCatalog ?? []).find((tc) => tc.name.trim().toLowerCase() === t.technique.trim().toLowerCase())
+        ?.strip_source_color ?? false,
   }));
   const zones = (p.zones ?? []).map((z) => ({
     ...z,

@@ -9,6 +9,7 @@ import { useCart } from "@/lib/cart";
 import { createClient } from "@/lib/supabase/client";
 import { techniqueInkColor } from "@/lib/printTechniqueColors";
 import { MONOGRAM_OPTIONS, monogramSvgInner } from "@/lib/monograms";
+import { fitTextFontSize } from "@/lib/textFit";
 import { AiRenderPanel } from "./AiRenderPanel";
 
 // Approximates how each print technique looks on the manual (non-AI) live
@@ -277,9 +278,13 @@ export function ProductConfigurator({
       setActiveElem(key);
       const box = elemBoxRefs.current[key];
       const zoneRect = zoneRef.current?.getBoundingClientRect();
-      const boxRect = box?.getBoundingClientRect();
-      const marginXPct = zoneRect && boxRect && zoneRect.width > 0 ? Math.min(50, ((boxRect.width / 2) / zoneRect.width) * 100) : 0;
-      const marginYPct = zoneRect && boxRect && zoneRect.height > 0 ? Math.min(50, ((boxRect.height / 2) / zoneRect.height) * 100) : 0;
+      // offsetWidth/Height (the element's own untransformed layout size),
+      // not getBoundingClientRect (which inflates once the element is
+      // rotated to match an angled print area) — using the rotated AABB
+      // here overstated the margin and could pin the element off-center or
+      // let it clip the zone edge once rotated.
+      const marginXPct = zoneRect && box && zoneRect.width > 0 ? Math.min(50, ((box.offsetWidth / 2) / zoneRect.width) * 100) : 0;
+      const marginYPct = zoneRect && box && zoneRect.height > 0 ? Math.min(50, ((box.offsetHeight / 2) / zoneRect.height) * 100) : 0;
       dragState.current = { key, startX: e.clientX, startY: e.clientY, orig: positions[key], marginXPct, marginYPct };
     },
     [positions, zoneRef]
@@ -338,14 +343,21 @@ export function ProductConfigurator({
       // Cap growth at the print area's own footprint (with a little
       // breathing room) rather than an arbitrary fixed multiplier — so an
       // element can be enlarged right up to filling the print area, and no
-      // further.
+      // further. Measured against offsetWidth/Height (the element's own
+      // untransformed layout size) rather than the rotated
+      // getBoundingClientRect — once an element is tilted to match an
+      // angled print area, its rotated AABB is larger than its true
+      // footprint, which was silently collapsing this ceiling down to the
+      // current size (no further growth allowed at all).
       const zoneRect = zoneRef.current?.getBoundingClientRect();
       const currentScale = elemScale[key] || 1;
+      const naturalW = box.offsetWidth;
+      const naturalH = box.offsetHeight;
       const maxScale =
-        zoneRect && rect.width > 0 && rect.height > 0
+        zoneRect && naturalW > 0 && naturalH > 0
           ? Math.max(
               currentScale,
-              currentScale * Math.min((zoneRect.width * 0.95) / rect.width, (zoneRect.height * 0.95) / rect.height)
+              currentScale * Math.min((zoneRect.width * 0.95) / naturalW, (zoneRect.height * 0.95) / naturalH)
             )
           : 4;
       elemAdjustState.current = {
@@ -421,9 +433,25 @@ export function ProductConfigurator({
     return zone.width_mm / zoneSize.width;
   }, [zone, zoneSize.width]);
   const pxPerMm = mmPerPx ? 1 / mmPerPx : null;
-  const nameFontPx = (pxPerMm ? Math.max(10, Math.min(28, pxPerMm * 5)) : 18) * elemScale.names;
+  // Capped to the zone's own rendered width (not just a fixed mm-derived
+  // size) so long names/dates shrink to fit instead of overflowing the
+  // print area — the same fit heuristic used server-side, so the AI render
+  // and cart snapshot match what's shown here.
+  const availableTextWidth = zoneSize.width * 0.92;
+  const nameFontPx = fitTextFontSize(
+    names,
+    (pxPerMm ? Math.max(10, Math.min(28, pxPerMm * 5)) : 18) * elemScale.names,
+    availableTextWidth
+  );
   const monogramFontPx = (pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20) * elemScale.monogram;
-  const dateFontPx = (pxPerMm ? Math.max(8, Math.min(14, pxPerMm * 2.4)) : 11) * elemScale.date;
+  // formattedDate isn't declared yet at this point in the component, but
+  // it's always exactly 10 characters ("DD·MM·YYYY"), so that's used
+  // directly rather than reordering declarations.
+  const dateFontPx = fitTextFontSize(
+    "0000000000",
+    (pxPerMm ? Math.max(8, Math.min(14, pxPerMm * 2.4)) : 11) * elemScale.date,
+    availableTextWidth
+  );
 
   // Default logo footprint: 45% of the print area's smaller physical
   // dimension (width_mm/height_mm, entered when the product was set up) —
