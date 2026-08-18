@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { techniqueInkColor } from "@/lib/printTechniqueColors";
-import { type Corner, type ImagePayload, type PrintZone, toGrayscale, composeProductPersonalization } from "@/lib/personalizationComposite";
+import { type Corner, type ImagePayload, type PrintZone, type ElemKey, toGrayscale, composeProductPersonalization } from "@/lib/personalizationComposite";
 
 export const runtime = "nodejs";
 
@@ -16,13 +16,9 @@ export async function POST(req: NextRequest) {
   const date: string = body?.date ?? "";
   const monogram: string = body?.monogram ?? "";
   const logoDataUrl: string | undefined = body?.logoDataUrl;
-  const sizeScale: number = typeof body?.sizeScale === "number" ? body.sizeScale : 1;
   const positions: Record<string, Corner> = body?.positions ?? {};
-  const textRotationOffsetDeg: number =
-    typeof body?.textRotationOffsetDeg === "number" ? body.textRotationOffsetDeg : 0;
-  const logoRotationOffsetDeg: number =
-    typeof body?.logoRotationOffsetDeg === "number" ? body.logoRotationOffsetDeg : 0;
-  const logoScale: number = typeof body?.logoScale === "number" ? body.logoScale : 1;
+  const elemScale: Partial<Record<ElemKey, number>> = body?.elemScale ?? {};
+  const elemRotationOffsetDeg: Partial<Record<ElemKey, number>> = body?.elemRotationOffsetDeg ?? {};
   const requestedImageId: string | undefined = body?.imageId;
 
   if (!productId) {
@@ -79,10 +75,8 @@ export async function POST(req: NextRequest) {
     date,
     monogram,
     inkColor,
-    sizeScale,
-    logoScale,
-    textRotationOffsetDeg,
-    logoRotationOffsetDeg,
+    elemScale,
+    elemRotationOffsetDeg,
   });
   if (!result) {
     return NextResponse.json({ error: "Could not load the product photo." }, { status: 502 });

@@ -51,11 +51,9 @@ export function AiRenderPanel({
   date,
   monogram,
   logoFile = null,
-  sizeScale = 1,
   positions,
-  rotationOffset = 0,
-  logoScale = 1,
-  logoRotationOffset = 0,
+  elemScale = {},
+  elemRotationOffset = {},
   images = [],
   defaultImageId = null,
   unlimited = false,
@@ -66,11 +64,9 @@ export function AiRenderPanel({
   date: string;
   monogram: string;
   logoFile?: File | null;
-  sizeScale?: number;
   positions?: Record<string, { x: number; y: number }>;
-  rotationOffset?: number;
-  logoScale?: number;
-  logoRotationOffset?: number;
+  elemScale?: Record<string, number>;
+  elemRotationOffset?: Record<string, number>;
   images?: { id: string; url: string }[];
   defaultImageId?: string | null;
   unlimited?: boolean;
@@ -106,11 +102,9 @@ export function AiRenderPanel({
           date,
           monogram,
           logoDataUrl,
-          sizeScale,
           positions,
-          textRotationOffsetDeg: rotationOffset,
-          logoRotationOffsetDeg: logoRotationOffset,
-          logoScale,
+          elemScale,
+          elemRotationOffsetDeg: elemRotationOffset,
           imageId,
         }),
       });

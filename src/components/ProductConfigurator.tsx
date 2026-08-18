@@ -10,7 +10,10 @@ import { createClient } from "@/lib/supabase/client";
 import { techniqueInkColor } from "@/lib/printTechniqueColors";
 import { AiRenderPanel } from "./AiRenderPanel";
 
-const MONOGRAMS = ["✦", "❀", "❖", "⬥", "✿", "☙"];
+// Wedding-appropriate monogram accents — kept to monochrome glyphs (not
+// full-color emoji) so they still respect the selected print technique's
+// ink color, the same as the surrounding text.
+const MONOGRAMS = ["♥", "⚭", "❧", "∞", "❀", "✦", "☙", "✿"];
 
 // Approximates how each print technique looks on the manual (non-AI) live
 // preview — a plain color swap for printed techniques, plus a debossed
@@ -60,12 +63,49 @@ function boundingBox(corners: { x: number; y: number }[]) {
 type ElemKey = "logo" | "monogram" | "names" | "date";
 type ElemPos = { x: number; y: number };
 
+// Direct-manipulation resize/rotate handles shared by all four
+// personalization elements: drag the corner dot to scale (uniformly, never
+// distorting), drag the dot above to rotate, both in place on the element
+// itself rather than a slider elsewhere on the page. A small live readout
+// always shows the current size/rotation.
+function AdjustHandles({
+  scale,
+  rotationOffset,
+  onResizeStart,
+  onRotateStart,
+}: {
+  scale: number;
+  rotationOffset: number;
+  onResizeStart: (e: React.PointerEvent) => void;
+  onRotateStart: (e: React.PointerEvent) => void;
+}) {
+  return (
+    <>
+      <div
+        onPointerDown={onResizeStart}
+        className="absolute -right-2 -bottom-2 h-4 w-4 rounded-full bg-white border-2 border-terracotta cursor-nwse-resize touch-none pointer-events-auto"
+      />
+      <div
+        onPointerDown={onRotateStart}
+        className="absolute left-1/2 -top-7 h-4 w-4 -translate-x-1/2 rounded-full bg-white border-2 border-terracotta cursor-grab touch-none pointer-events-auto"
+      />
+      <span className="absolute left-1/2 -bottom-6 -translate-x-1/2 whitespace-nowrap text-[10px] font-medium bg-cream-light/95 text-dark px-2 py-0.5 rounded-full pointer-events-none">
+        {Math.round(scale * 100)}% · {rotationOffset > 0 ? "+" : ""}
+        {rotationOffset}°
+      </span>
+    </>
+  );
+}
+
 const DEFAULT_POSITIONS: Record<ElemKey, ElemPos> = {
   monogram: { x: 50, y: 15 },
   logo: { x: 50, y: 35 },
   names: { x: 50, y: 65 },
   date: { x: 50, y: 82 },
 };
+
+const DEFAULT_SCALES: Record<ElemKey, number> = { logo: 1, monogram: 1, names: 1, date: 1 };
+const DEFAULT_ROTATIONS: Record<ElemKey, number> = { logo: 0, monogram: 0, names: 0, date: 0 };
 
 function clampPct(v: number) {
   return Math.min(100, Math.max(0, v));
@@ -138,13 +178,15 @@ export function ProductConfigurator({
   const [monogram, setMonogram] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [sizeScale, setSizeScale] = useState(1);
-  const [rotationOffset, setRotationOffset] = useState(0);
-  const [logoScale, setLogoScale] = useState(1);
-  const [logoRotationOffset, setLogoRotationOffset] = useState(0);
   const [positions, setPositions] = useState<Record<ElemKey, ElemPos>>(DEFAULT_POSITIONS);
+  // Each element (logo, monogram, names, date) gets its own independent
+  // size and rotation, adjusted with on-canvas drag handles right on the
+  // element — not shared sliders elsewhere in the page.
+  const [elemScale, setElemScale] = useState<Record<ElemKey, number>>(DEFAULT_SCALES);
+  const [elemRotationOffset, setElemRotationOffset] = useState<Record<ElemKey, number>>(DEFAULT_ROTATIONS);
   const dragState = useRef<{ key: ElemKey; startX: number; startY: number; orig: ElemPos } | null>(null);
-  const logoAdjustState = useRef<{
+  const elemAdjustState = useRef<{
+    key: ElemKey;
     mode: "resize" | "rotate";
     centerX: number;
     centerY: number;
@@ -207,27 +249,38 @@ export function ProductConfigurator({
     [positions]
   );
 
-  // Direct-manipulation resize/rotate for the logo, mirroring the drag-to-
-  // move interaction: a handle at the box's corner scales it, a handle
-  // above it rotates it, both tracked from the box's own on-screen center
-  // (its own bounding rect, so it works regardless of current rotation).
-  const logoBoxRef = useRef<HTMLDivElement>(null);
+  // Direct-manipulation resize/rotate for each element, mirroring the
+  // drag-to-move interaction: a handle at the element's corner scales it,
+  // a handle above it rotates it, both tracked from the element's own
+  // on-screen center (its own bounding rect, so it works regardless of
+  // current rotation). One ref map covers all four elements.
+  const elemBoxRefs = useRef<Partial<Record<ElemKey, HTMLDivElement>>>({});
+  const setElemBoxRef = useCallback(
+    (key: ElemKey) => (el: HTMLDivElement | null) => {
+      if (el) elemBoxRefs.current[key] = el;
+      else delete elemBoxRefs.current[key];
+    },
+    []
+  );
+
   useEffect(() => {
     const handleMove = (e: PointerEvent) => {
-      const state = logoAdjustState.current;
+      const state = elemAdjustState.current;
       if (!state) return;
       if (state.mode === "resize") {
         const dist = Math.hypot(e.clientX - state.centerX, e.clientY - state.centerY);
         const ratio = state.startDist > 0 ? dist / state.startDist : 1;
-        setLogoScale(Math.max(0.4, Math.min(2, state.startScale * ratio)));
+        const next = Math.max(0.4, Math.min(2, state.startScale * ratio));
+        setElemScale((prev) => ({ ...prev, [state.key]: next }));
       } else {
         const angle = (Math.atan2(e.clientY - state.centerY, e.clientX - state.centerX) * 180) / Math.PI;
         const delta = angle - state.startAngle;
-        setLogoRotationOffset(Math.max(-45, Math.min(45, state.startRotation + delta)));
+        const next = Math.max(-45, Math.min(45, state.startRotation + delta));
+        setElemRotationOffset((prev) => ({ ...prev, [state.key]: next }));
       }
     };
     const handleUp = () => {
-      logoAdjustState.current = null;
+      elemAdjustState.current = null;
     };
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
@@ -237,26 +290,27 @@ export function ProductConfigurator({
     };
   }, []);
 
-  const startLogoAdjust = useCallback(
-    (mode: "resize" | "rotate") => (e: React.PointerEvent) => {
+  const startElemAdjust = useCallback(
+    (key: ElemKey, mode: "resize" | "rotate") => (e: React.PointerEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      const box = logoBoxRef.current;
+      const box = elemBoxRefs.current[key];
       if (!box) return;
       const rect = box.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
-      logoAdjustState.current = {
+      elemAdjustState.current = {
+        key,
         mode,
         centerX,
         centerY,
         startDist: Math.hypot(e.clientX - centerX, e.clientY - centerY),
         startAngle: (Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180) / Math.PI,
-        startScale: logoScale,
-        startRotation: logoRotationOffset,
+        startScale: elemScale[key],
+        startRotation: elemRotationOffset[key],
       };
     },
-    [logoScale, logoRotationOffset]
+    [elemScale, elemRotationOffset]
   );
 
   const technique = product.techniques.find((t) => t.id === techniqueId);
@@ -301,9 +355,14 @@ export function ProductConfigurator({
   }, [zone, zoneBox, zoneSize.width, zoneSize.height]);
   // Customers can nudge rotation further on top of the auto-matched angle
   // (e.g. the quad only approximates the surface, or they simply prefer it
-  // off-axis) — text and logo each get their own independent offset.
-  const textRotationDeg = autoRotationDeg + rotationOffset;
-  const logoRotationDeg = autoRotationDeg + logoRotationOffset;
+  // off-axis) — each element gets its own independent offset via its own
+  // on-canvas rotate handle.
+  const elemRotationDeg: Record<ElemKey, number> = {
+    logo: autoRotationDeg + elemRotationOffset.logo,
+    monogram: autoRotationDeg + elemRotationOffset.monogram,
+    names: autoRotationDeg + elemRotationOffset.names,
+    date: autoRotationDeg + elemRotationOffset.date,
+  };
 
   // Real px-per-mm for the currently rendered zone box, so text/logo sizing
   // reflects the product's actual printable area instead of a fixed guess.
@@ -312,26 +371,26 @@ export function ProductConfigurator({
     return zone.width_mm / zoneSize.width;
   }, [zone, zoneSize.width]);
   const pxPerMm = mmPerPx ? 1 / mmPerPx : null;
-  const nameFontPx = (pxPerMm ? Math.max(10, Math.min(28, pxPerMm * 5)) : 18) * sizeScale;
-  const monogramFontPx = (pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20) * sizeScale;
-  const dateFontPx = (pxPerMm ? Math.max(8, Math.min(14, pxPerMm * 2.4)) : 11) * sizeScale;
+  const nameFontPx = (pxPerMm ? Math.max(10, Math.min(28, pxPerMm * 5)) : 18) * elemScale.names;
+  const monogramFontPx = (pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20) * elemScale.monogram;
+  const dateFontPx = (pxPerMm ? Math.max(8, Math.min(14, pxPerMm * 2.4)) : 11) * elemScale.date;
 
   // Default logo footprint: 45% of the print area's smaller physical
   // dimension (width_mm/height_mm, entered when the product was set up) —
   // not a flat percentage of the box — so it's proportionate whether the
   // zone is small or large, wide or tall. Mirrors defaultLogoBoxSize() in
-  // the server-side compositor. logoScale is the customer's own on-top
-  // multiplier.
+  // the server-side compositor. elemScale.logo is the customer's own
+  // on-top multiplier from the resize handle.
   const logoWidthPct = useMemo(() => {
-    const fallbackPct = 45 * logoScale;
+    const fallbackPct = 45 * elemScale.logo;
     if (!zone?.width_mm || !zone?.height_mm || !zoneSize.width || !zoneSize.height) return fallbackPct;
     const pxPerMmX = zoneSize.width / zone.width_mm;
     const pxPerMmY = zoneSize.height / zone.height_mm;
     const scale = Math.min(pxPerMmX, pxPerMmY);
     const smallerMm = Math.min(zone.width_mm, zone.height_mm);
-    const logoBoxPx = scale * smallerMm * 0.45 * logoScale;
+    const logoBoxPx = scale * smallerMm * 0.45 * elemScale.logo;
     return Math.min(95, (logoBoxPx / zoneSize.width) * 100);
-  }, [zone, zoneSize.width, zoneSize.height, logoScale]);
+  }, [zone, zoneSize.width, zoneSize.height, elemScale.logo]);
 
   const formattedDate = useMemo(() => {
     if (!date) return "";
@@ -411,11 +470,9 @@ export function ProductConfigurator({
             date,
             monogram,
             logoDataUrl,
-            sizeScale,
             positions,
-            textRotationOffsetDeg: rotationOffset,
-            logoRotationOffsetDeg: logoRotationOffset,
-            logoScale,
+            elemScale,
+            elemRotationOffsetDeg: elemRotationOffset,
           }),
         });
         if (res.ok) {
@@ -451,11 +508,9 @@ export function ProductConfigurator({
             date,
             monogram,
             technique: technique?.technique,
-            sizeScale,
             positions,
-            rotationOffset,
-            logoScale,
-            logoRotationOffset,
+            elemScale,
+            elemRotationOffset,
             hasLogo: !!logoFile,
             renderUrl,
             renderContextUrl,
@@ -502,7 +557,7 @@ export function ProductConfigurator({
             >
               {logoPreview && (
                 <div
-                  ref={logoBoxRef}
+                  ref={setElemBoxRef("logo")}
                   onPointerDown={startDrag("logo")}
                   className="absolute pointer-events-auto cursor-move touch-none"
                   style={{
@@ -510,72 +565,84 @@ export function ProductConfigurator({
                     top: `${positions.logo.y}%`,
                     width: `${logoWidthPct}%`,
                     aspectRatio: "1",
-                    transform: `translate(-50%, -50%) rotate(${logoRotationDeg}deg)`,
+                    transform: `translate(-50%, -50%) rotate(${elemRotationDeg.logo}deg)`,
                   }}
                 >
                   <div className="relative w-full h-full pointer-events-none">
                     <Image src={logoPreview} alt="" fill className="object-contain" unoptimized />
                   </div>
-                  {/* Direct-manipulation handles, same idea as dragging to
-                      reposition: grab the corner to resize, the dot above
-                      to rotate. */}
-                  <div
-                    onPointerDown={startLogoAdjust("resize")}
-                    className="absolute -right-2 -bottom-2 h-4 w-4 rounded-full bg-white border-2 border-terracotta cursor-nwse-resize touch-none pointer-events-auto"
+                  <AdjustHandles
+                    scale={elemScale.logo}
+                    rotationOffset={elemRotationOffset.logo}
+                    onResizeStart={startElemAdjust("logo", "resize")}
+                    onRotateStart={startElemAdjust("logo", "rotate")}
                   />
-                  <div
-                    onPointerDown={startLogoAdjust("rotate")}
-                    className="absolute left-1/2 -top-7 h-4 w-4 -translate-x-1/2 rounded-full bg-white border-2 border-terracotta cursor-grab touch-none pointer-events-auto"
-                  />
-                  <span className="absolute left-1/2 -bottom-6 -translate-x-1/2 whitespace-nowrap text-[10px] font-medium bg-cream-light/95 text-dark px-2 py-0.5 rounded-full pointer-events-none">
-                    {Math.round(logoScale * 100)}% · {logoRotationOffset > 0 ? "+" : ""}
-                    {logoRotationOffset}°
-                  </span>
                 </div>
               )}
               {monogram && (
                 <div
+                  ref={setElemBoxRef("monogram")}
                   onPointerDown={startDrag("monogram")}
                   className="absolute pointer-events-auto cursor-move touch-none select-none whitespace-nowrap"
                   style={{
                     left: `${positions.monogram.x}%`,
                     top: `${positions.monogram.y}%`,
-                    transform: `translate(-50%, -50%) rotate(${textRotationDeg}deg)`,
+                    transform: `translate(-50%, -50%) rotate(${elemRotationDeg.monogram}deg)`,
                     fontSize: monogramFontPx,
                     ...techniqueTextStyle(technique?.technique),
                   }}
                 >
                   {monogram}
+                  <AdjustHandles
+                    scale={elemScale.monogram}
+                    rotationOffset={elemRotationOffset.monogram}
+                    onResizeStart={startElemAdjust("monogram", "resize")}
+                    onRotateStart={startElemAdjust("monogram", "rotate")}
+                  />
                 </div>
               )}
               {names && (
                 <div
+                  ref={setElemBoxRef("names")}
                   onPointerDown={startDrag("names")}
                   className="absolute pointer-events-auto cursor-move touch-none select-none font-serif whitespace-nowrap"
                   style={{
                     left: `${positions.names.x}%`,
                     top: `${positions.names.y}%`,
-                    transform: `translate(-50%, -50%) rotate(${textRotationDeg}deg)`,
+                    transform: `translate(-50%, -50%) rotate(${elemRotationDeg.names}deg)`,
                     fontSize: nameFontPx,
                     ...techniqueTextStyle(technique?.technique),
                   }}
                 >
                   {names}
+                  <AdjustHandles
+                    scale={elemScale.names}
+                    rotationOffset={elemRotationOffset.names}
+                    onResizeStart={startElemAdjust("names", "resize")}
+                    onRotateStart={startElemAdjust("names", "rotate")}
+                  />
                 </div>
               )}
               {date && (
                 <div
+                  ref={setElemBoxRef("date")}
                   onPointerDown={startDrag("date")}
                   className="absolute pointer-events-auto cursor-move touch-none select-none tracking-wide whitespace-nowrap"
                   style={{
                     left: `${positions.date.x}%`,
                     top: `${positions.date.y}%`,
-                    transform: `translate(-50%, -50%) rotate(${textRotationDeg}deg)`,
+                    transform: `translate(-50%, -50%) rotate(${elemRotationDeg.date}deg)`,
                     fontSize: dateFontPx,
                     ...techniqueTextStyle(technique?.technique),
                   }}
                 >
                   {formattedDate}
+                  <AdjustHandles
+                    scale={elemScale.date}
+                    rotationOffset={elemRotationOffset.date}
+                    onResizeStart={startElemAdjust("date", "resize")}
+                    onRotateStart={startElemAdjust("date", "rotate")}
+                  />
                 </div>
               )}
             </div>
@@ -682,43 +749,6 @@ export function ProductConfigurator({
                   </button>
                 )}
               </div>
-              {logoPreview && (
-                <div className="mt-4 grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] uppercase tracking-wide text-muted">Logo size</span>
-                      <span className="text-[11px] text-muted">{Math.round(logoScale * 100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0.4}
-                      max={2}
-                      step={0.05}
-                      value={logoScale}
-                      onChange={(e) => setLogoScale(Number(e.target.value))}
-                      className="w-full accent-terracotta"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] uppercase tracking-wide text-muted">Logo rotation</span>
-                      <span className="text-[11px] text-muted">
-                        {logoRotationOffset > 0 ? "+" : ""}
-                        {logoRotationOffset}°
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={-45}
-                      max={45}
-                      step={1}
-                      value={logoRotationOffset}
-                      onChange={(e) => setLogoRotationOffset(Number(e.target.value))}
-                      className="w-full accent-terracotta"
-                    />
-                  </div>
-                </div>
-              )}
             </div>
             <div>
               <label className="text-xs uppercase tracking-wide text-muted block mb-2">
@@ -764,85 +794,17 @@ export function ProductConfigurator({
                 ))}
               </div>
             </div>
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs uppercase tracking-wide text-muted">Text size</label>
-                <span className="text-xs text-muted">{Math.round(sizeScale * 100)}%</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setSizeScale((s) => Math.max(0.6, Math.round((s - 0.1) * 10) / 10))}
-                  className="h-9 w-9 shrink-0 rounded-full border border-line flex items-center justify-center text-sm"
-                >
-                  −
-                </button>
-                <input
-                  type="range"
-                  min={0.6}
-                  max={1.8}
-                  step={0.1}
-                  value={sizeScale}
-                  onChange={(e) => setSizeScale(Number(e.target.value))}
-                  className="w-full accent-terracotta"
-                />
-                <button
-                  type="button"
-                  onClick={() => setSizeScale((s) => Math.min(1.8, Math.round((s + 0.1) * 10) / 10))}
-                  className="h-9 w-9 shrink-0 rounded-full border border-line flex items-center justify-center text-sm"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs uppercase tracking-wide text-muted">Rotate</label>
-                <span className="text-xs text-muted">
-                  {rotationOffset > 0 ? "+" : ""}
-                  {rotationOffset}°{autoRotationDeg ? " from print area" : ""}
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setRotationOffset((r) => Math.max(-45, r - 5))}
-                  className="h-9 w-9 shrink-0 rounded-full border border-line flex items-center justify-center text-sm"
-                >
-                  −
-                </button>
-                <input
-                  type="range"
-                  min={-45}
-                  max={45}
-                  step={1}
-                  value={rotationOffset}
-                  onChange={(e) => setRotationOffset(Number(e.target.value))}
-                  className="w-full accent-terracotta"
-                />
-                <button
-                  type="button"
-                  onClick={() => setRotationOffset((r) => Math.min(45, r + 5))}
-                  className="h-9 w-9 shrink-0 rounded-full border border-line flex items-center justify-center text-sm"
-                >
-                  +
-                </button>
-              </div>
-              <p className="text-xs text-muted mt-1">
-                Text and logo already tilt to match the print area automatically — use this to fine-tune further.
-              </p>
-            </div>
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted">
-                Drag the logo, text, date, or monogram directly on the photo to position each one.
+                Drag any element on the photo to move it. Grab its corner dot to resize, the dot above it to rotate —
+                each tilts to match the print area automatically, and can be fine-tuned from there.
               </p>
               <button
                 type="button"
                 onClick={() => {
                   setPositions(DEFAULT_POSITIONS);
-                  setRotationOffset(0);
-                  setLogoScale(1);
-                  setLogoRotationOffset(0);
+                  setElemScale(DEFAULT_SCALES);
+                  setElemRotationOffset(DEFAULT_ROTATIONS);
                 }}
                 className="text-xs text-terracotta-dark font-medium shrink-0 ml-3"
               >
@@ -883,11 +845,9 @@ export function ProductConfigurator({
             date={date}
             monogram={monogram}
             logoFile={logoFile}
-            sizeScale={sizeScale}
             positions={positions}
-            rotationOffset={rotationOffset}
-            logoScale={logoScale}
-            logoRotationOffset={logoRotationOffset}
+            elemScale={elemScale}
+            elemRotationOffset={elemRotationOffset}
             images={product.images}
             defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
             unlimited={unlimitedRenders}
