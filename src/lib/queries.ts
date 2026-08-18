@@ -126,20 +126,23 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
   // (products) column through the planner_products embed — PostgREST only
   // nulls out a non-matching to-one embed rather than excluding the row,
   // which made that shortcut unreliable.
-  const { data: p, error: productError } = await supabase
-    .from("products")
-    .select(
-      `*,
-       category:categories ( name, slug ),
-       supplier:suppliers ( business_name ),
-       images:product_images ( id, url, sort_order ),
-       techniques:product_print_techniques ( id, technique, extra_price, is_default ),
-       zones:product_print_zones ( id, label, width_mm, height_mm, max_chars_per_line, max_lines, corners_pct, image_id ),
-       variants:product_variants ( id, label, sku, price_delta, image_url, sort_order )`
-    )
-    .eq("slug", productSlug)
-    .eq("status", "approved")
-    .maybeSingle();
+  const [{ data: p, error: productError }, { data: techniqueCatalog }] = await Promise.all([
+    supabase
+      .from("products")
+      .select(
+        `*,
+         category:categories ( name, slug ),
+         supplier:suppliers ( business_name ),
+         images:product_images ( id, url, sort_order ),
+         techniques:product_print_techniques ( id, technique, extra_price, is_default ),
+         zones:product_print_zones ( id, label, width_mm, height_mm, max_chars_per_line, max_lines, corners_pct, image_id ),
+         variants:product_variants ( id, label, sku, price_delta, image_url, sort_order )`
+      )
+      .eq("slug", productSlug)
+      .eq("status", "approved")
+      .maybeSingle(),
+    supabase.from("print_techniques").select("name, strip_source_color"),
+  ]);
 
   if (productError || !p) return null;
 
@@ -154,7 +157,10 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
   if (linkError || !link) return null;
 
   const images = (p.images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
-  const techniques = (p.techniques ?? []).slice();
+  const techniques = (p.techniques ?? []).map((t) => ({
+    ...t,
+    stripSourceColor: (techniqueCatalog ?? []).find((tc) => tc.name === t.technique)?.strip_source_color ?? false,
+  }));
   const zones = (p.zones ?? []).map((z) => ({
     ...z,
     corners_pct: (z.corners_pct as { x: number; y: number }[] | null) ?? [],
