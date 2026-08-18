@@ -114,6 +114,8 @@ export function zoneRotationDeg(corners: Corner[], width: number, height: number
 // than asking an image-editing model to place things on the real product
 // photo. Placement here is plain arithmetic, so it can't drift the way an
 // AI edit of the whole photo could.
+export type ElemKey = "logo" | "monogram" | "names" | "date";
+
 export async function buildArtworkImage({
   canvasW,
   canvasH,
@@ -124,8 +126,8 @@ export async function buildArtworkImage({
   date,
   monogram,
   inkColor,
-  textRotationDeg = 0,
-  logoRotationDeg = 0,
+  fontScale = {},
+  rotations = {},
 }: {
   canvasW: number;
   canvasH: number;
@@ -136,15 +138,20 @@ export async function buildArtworkImage({
   date: string;
   monogram: string;
   inkColor: string;
-  textRotationDeg?: number;
-  logoRotationDeg?: number;
+  fontScale?: Partial<Record<Exclude<ElemKey, "logo">, number>>;
+  rotations?: Partial<Record<ElemKey, number>>;
 }): Promise<Buffer> {
   const pos = (key: string, fallback: Corner) => positions[key] ?? fallback;
   // Rotate each element around its own anchor point so it sits flush with
   // the (possibly angled) print area, the same way it looks embossed/
-  // engraved into a tilted surface rather than pasted on upright.
-  const rotateAttr = (cx: number, cy: number, deg: number) =>
-    deg ? ` transform="rotate(${deg} ${cx} ${cy})"` : "";
+  // engraved into a tilted surface rather than pasted on upright. Each
+  // element (logo/monogram/names/date) carries its own independent
+  // rotation and (for text) font-size multiplier, matching the on-canvas
+  // resize/rotate handles in the product builder.
+  const rotateAttr = (cx: number, cy: number, key: ElemKey) => {
+    const deg = rotations[key] ?? 0;
+    return deg ? ` transform="rotate(${deg} ${cx} ${cy})"` : "";
+  };
 
   let logoElement = "";
   if (logoImage) {
@@ -160,7 +167,7 @@ export async function buildArtworkImage({
     const y = Math.round(cy - boxSize / 2);
     logoElement = `<image x="${x}" y="${y}" width="${boxSize}" height="${boxSize}" href="data:image/png;base64,${fitted.toString(
       "base64"
-    )}"${rotateAttr(cx, cy, logoRotationDeg)} />`;
+    )}"${rotateAttr(cx, cy, "logo")} />`;
   }
 
   const textElements: string[] = [];
@@ -168,24 +175,27 @@ export async function buildArtworkImage({
     const p = pos("monogram", { x: 50, y: 15 });
     const cx = (p.x / 100) * canvasW;
     const cy = (p.y / 100) * canvasH;
+    const fontSize = canvasH * 0.14 * (fontScale.monogram ?? 1);
     textElements.push(
-      `<text x="${cx}" y="${cy}" font-size="${canvasH * 0.14}" font-family="Georgia, 'Times New Roman', serif" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, textRotationDeg)}>${escapeXml(monogram)}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="Georgia, 'Times New Roman', serif" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "monogram")}>${escapeXml(monogram)}</text>`
     );
   }
   if (names.trim()) {
     const p = pos("names", { x: 50, y: 65 });
     const cx = (p.x / 100) * canvasW;
     const cy = (p.y / 100) * canvasH;
+    const fontSize = canvasH * 0.11 * (fontScale.names ?? 1);
     textElements.push(
-      `<text x="${cx}" y="${cy}" font-size="${canvasH * 0.11}" font-family="Georgia, 'Times New Roman', serif" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, textRotationDeg)}>${escapeXml(names.trim())}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="Georgia, 'Times New Roman', serif" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "names")}>${escapeXml(names.trim())}</text>`
     );
   }
   if (date.trim()) {
     const p = pos("date", { x: 50, y: 82 });
     const cx = (p.x / 100) * canvasW;
     const cy = (p.y / 100) * canvasH;
+    const fontSize = canvasH * 0.05 * (fontScale.date ?? 1);
     textElements.push(
-      `<text x="${cx}" y="${cy}" font-size="${canvasH * 0.05}" font-family="Georgia, 'Times New Roman', serif" letter-spacing="1" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, textRotationDeg)}>${escapeXml(date.trim())}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="Georgia, 'Times New Roman', serif" letter-spacing="1" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "date")}>${escapeXml(date.trim())}</text>`
     );
   }
 
@@ -263,10 +273,8 @@ export async function composeProductPersonalization({
   date,
   monogram,
   inkColor,
-  sizeScale,
-  logoScale = 1,
-  textRotationOffsetDeg = 0,
-  logoRotationOffsetDeg = 0,
+  elemScale = {},
+  elemRotationOffsetDeg = {},
 }: {
   referenceImageUrl: string;
   zone: PrintZone | undefined;
@@ -276,10 +284,8 @@ export async function composeProductPersonalization({
   date: string;
   monogram: string;
   inkColor: string;
-  sizeScale: number;
-  logoScale?: number;
-  textRotationOffsetDeg?: number;
-  logoRotationOffsetDeg?: number;
+  elemScale?: Partial<Record<ElemKey, number>>;
+  elemRotationOffsetDeg?: Partial<Record<ElemKey, number>>;
 }): Promise<ImagePayload | null> {
   const baseImage = await loadImageAsBase64(referenceImageUrl);
   if (!baseImage) return null;
@@ -294,16 +300,20 @@ export async function composeProductPersonalization({
       ? boundingBoxPx(zone.corners_pct, photoW, photoH)
       : { left: photoW * 0.25, top: photoH * 0.3, width: photoW * 0.5, height: photoH * 0.3 };
 
-  const targetW = Math.max(1, Math.round(box.width * sizeScale));
-  const targetH = Math.max(1, Math.round(box.height * sizeScale));
+  const canvasW = Math.max(1, Math.round(box.width));
+  const canvasH = Math.max(1, Math.round(box.height));
   const baseRotationDeg = zone && zone.corners_pct.length === 4 ? zoneRotationDeg(zone.corners_pct, photoW, photoH) : 0;
-  const textRotationDeg = baseRotationDeg + textRotationOffsetDeg;
-  const logoRotationDeg = baseRotationDeg + logoRotationOffsetDeg;
-  const logoBoxSize = defaultLogoBoxSize(targetW, targetH, zone) * logoScale;
+  const rotations: Partial<Record<ElemKey, number>> = {
+    logo: baseRotationDeg + (elemRotationOffsetDeg.logo ?? 0),
+    monogram: baseRotationDeg + (elemRotationOffsetDeg.monogram ?? 0),
+    names: baseRotationDeg + (elemRotationOffsetDeg.names ?? 0),
+    date: baseRotationDeg + (elemRotationOffsetDeg.date ?? 0),
+  };
+  const logoBoxSize = defaultLogoBoxSize(canvasW, canvasH, zone) * (elemScale.logo ?? 1);
 
   const artworkBuffer = await buildArtworkImage({
-    canvasW: targetW,
-    canvasH: targetH,
+    canvasW,
+    canvasH,
     logoImage,
     logoBoxSize,
     positions,
@@ -311,9 +321,9 @@ export async function composeProductPersonalization({
     date,
     monogram,
     inkColor,
-    textRotationDeg,
-    logoRotationDeg,
+    fontScale: { monogram: elemScale.monogram ?? 1, names: elemScale.names ?? 1, date: elemScale.date ?? 1 },
+    rotations,
   });
 
-  return compositePersonalization(croppedBase, artworkBuffer, box, targetW, targetH);
+  return compositePersonalization(croppedBase, artworkBuffer, box, canvasW, canvasH);
 }

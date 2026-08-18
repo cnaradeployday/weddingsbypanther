@@ -19,10 +19,8 @@ export type CartItem = {
     monogram?: string;
     technique?: string;
     extraPrice?: number;
-    sizeScale?: number;
-    rotationOffset?: number;
-    logoScale?: number;
-    logoRotationOffset?: number;
+    elemScale?: Record<string, number>;
+    elemRotationOffset?: Record<string, number>;
     positions?: Record<string, { x: number; y: number }>;
     hasLogo?: boolean;
     renderUrl?: string;
