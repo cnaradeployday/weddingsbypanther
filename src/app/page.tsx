@@ -22,11 +22,8 @@ export default async function Home() {
         <div className="mx-auto max-w-7xl px-6 py-5 flex items-center justify-between">
           <span className="font-serif text-xl tracking-wide">BESPOKE</span>
           <nav className="hidden md:flex items-center gap-8 text-sm text-dark/80">
-            <Link href={`/store/${DEMO_STORE}/shop`} className="hover:text-terracotta transition-colors">
+            <Link href="/store" className="hover:text-terracotta transition-colors">
               Shop
-            </Link>
-            <Link href={`/store/${DEMO_STORE}/builder`} className="hover:text-terracotta transition-colors">
-              Proposal Builder
             </Link>
             <Link href="#planners" className="hover:text-terracotta transition-colors">
               For Planners
@@ -40,7 +37,7 @@ export default async function Home() {
               Sign in
             </Link>
             <Link
-              href={`/store/${DEMO_STORE}/shop`}
+              href="/store"
               className="px-5 py-2.5 rounded-full bg-dark text-cream-light hover:bg-dark-soft transition-colors"
             >
               Start Designing
@@ -65,7 +62,7 @@ export default async function Home() {
           </p>
           <div className="flex flex-wrap gap-3 mb-10">
             <Link
-              href={`/store/${DEMO_STORE}/shop`}
+              href="/store"
               className="px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors"
             >
               Start Designing
