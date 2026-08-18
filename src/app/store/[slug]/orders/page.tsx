@@ -57,9 +57,17 @@ export default async function CustomerOrdersPage() {
                   </p>
                   <p className="font-serif text-xl">{formatUSD(order.total)}</p>
                 </div>
-                <span className="text-xs uppercase tracking-wide bg-cream px-3 py-1.5 rounded-full">
-                  {STATUS_LABEL[order.status] ?? order.status}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs uppercase tracking-wide bg-cream px-3 py-1.5 rounded-full">
+                    {STATUS_LABEL[order.status] ?? order.status}
+                  </span>
+                  <a
+                    href={`/api/orders/${order.id}/receipt`}
+                    className="text-xs text-terracotta-dark font-medium whitespace-nowrap"
+                  >
+                    Download receipt ↓
+                  </a>
+                </div>
               </div>
 
               <div className="space-y-3">

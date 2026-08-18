@@ -34,6 +34,10 @@ export default async function EditPlannerPage({ params }: { params: Promise<{ id
           default_markup_pct: planner.default_markup_pct,
           logo_url: planner.logo_url,
           accent_color: planner.accent_color,
+          secondary_color: planner.secondary_color,
+          font_choice: planner.font_choice,
+          storefront_banner_url: planner.storefront_banner_url,
+          catalog_banner_url: planner.catalog_banner_url,
         }}
       />
     </div>

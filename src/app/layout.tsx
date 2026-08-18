@@ -1,20 +1,94 @@
 import type { Metadata, Viewport } from "next";
-import { Cormorant_Garamond, Instrument_Sans } from "next/font/google";
+import {
+  Cormorant_Garamond,
+  Instrument_Sans,
+  Playfair_Display,
+  Work_Sans,
+  Libre_Baskerville,
+  Karla,
+  Marcellus,
+  Jost,
+  Fraunces,
+  Manrope,
+} from "next/font/google";
 import { PwaInstall } from "@/components/PwaInstall";
 import "./globals.css";
 
-const serif = Cormorant_Garamond({
-  variable: "--font-serif",
+// Every planner-selectable font pairing (see src/lib/fontChoices.ts) is
+// preloaded here as its own CSS variable — next/font/google needs a static
+// import per family, so it can't be picked dynamically at runtime per
+// planner. globals.css points the site-wide --font-serif/--font-sans at the
+// "cormorant" pair by default; a storefront overrides those two variables
+// to one of the other pairs based on the planner's font_choice.
+const cormorantSerif = Cormorant_Garamond({
+  variable: "--font-serif-cormorant",
   subsets: ["latin"],
   weight: ["400", "500", "600"],
   style: ["normal", "italic"],
 });
-
-const sans = Instrument_Sans({
-  variable: "--font-sans",
+const instrumentSans = Instrument_Sans({
+  variable: "--font-sans-instrument",
   subsets: ["latin"],
   weight: ["400", "500", "600"],
 });
+const playfairSerif = Playfair_Display({
+  variable: "--font-serif-playfair",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
+});
+const workSans = Work_Sans({
+  variable: "--font-sans-worksans",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+});
+const baskervilleSerif = Libre_Baskerville({
+  variable: "--font-serif-baskerville",
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  style: ["normal", "italic"],
+});
+const karlaSans = Karla({
+  variable: "--font-sans-karla",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+});
+const marcellusSerif = Marcellus({
+  variable: "--font-serif-marcellus",
+  subsets: ["latin"],
+  weight: ["400"],
+});
+const jostSans = Jost({
+  variable: "--font-sans-jost",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+});
+const frauncesSerif = Fraunces({
+  variable: "--font-serif-fraunces",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
+});
+const manropeSans = Manrope({
+  variable: "--font-sans-manrope",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+});
+
+const fontVariables = [
+  cormorantSerif,
+  instrumentSans,
+  playfairSerif,
+  workSans,
+  baskervilleSerif,
+  karlaSans,
+  marcellusSerif,
+  jostSans,
+  frauncesSerif,
+  manropeSans,
+]
+  .map((f) => f.variable)
+  .join(" ");
 
 export const metadata: Metadata = {
   title: "Bespoke — Wedding merchandise, made personal.",
@@ -48,7 +122,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${serif.variable} ${sans.variable} antialiased`}>
+      <body className={`${fontVariables} antialiased`}>
         {children}
         <PwaInstall />
       </body>
