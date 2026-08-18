@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import sharp from "sharp";
 import { supabase } from "@/lib/supabase";
 import { techniqueInkColor } from "@/lib/printTechniqueColors";
 import {
@@ -55,6 +56,53 @@ async function callGemini(
   } catch (err) {
     return { error: err instanceof Error ? err.message : "AI render failed." };
   }
+}
+
+// Frames the already-correct, personalized product photo as a small white-
+// bordered card with a soft drop shadow, then composites it onto a
+// generated background — deterministic pixel math, not a model repainting
+// the product. This is what keeps the wedding-context shot from ever
+// risking the personalization text (see compositeOnBackground below).
+async function compositeOnBackground(background: ImagePayload, product: ImagePayload): Promise<ImagePayload> {
+  const bgImage = sharp(Buffer.from(background.data, "base64"));
+  const bgMeta = await bgImage.metadata();
+  const bgW = bgMeta.width ?? 1000;
+  const bgH = bgMeta.height ?? 1250;
+
+  const cardW = Math.round(bgW * 0.46);
+  const border = Math.max(4, Math.round(cardW * 0.035));
+  const innerW = cardW - border * 2;
+  const innerH = Math.round((innerW * 5) / 4); // product photo is 4:5 (w:h)
+  const cardH = innerH + border * 2;
+
+  const resizedProduct = await sharp(Buffer.from(product.data, "base64"))
+    .resize(innerW, innerH, { fit: "cover" })
+    .png()
+    .toBuffer();
+
+  const framedCard = await sharp({
+    create: { width: cardW, height: cardH, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } },
+  })
+    .composite([{ input: resizedProduct, left: border, top: border }])
+    .png()
+    .toBuffer();
+
+  const shadowPad = 40;
+  const shadowSvg = `<svg width="${cardW + shadowPad * 2}" height="${cardH + shadowPad * 2}" xmlns="http://www.w3.org/2000/svg"><rect x="${shadowPad}" y="${shadowPad + 8}" width="${cardW}" height="${cardH}" fill="black" opacity="0.32" /></svg>`;
+  const shadow = await sharp(Buffer.from(shadowSvg)).blur(16).png().toBuffer();
+
+  const left = Math.round((bgW - cardW) / 2);
+  const top = Math.round(bgH * 0.55 - cardH / 2);
+
+  const composited = await bgImage
+    .composite([
+      { input: shadow, left: left - shadowPad, top: top - shadowPad },
+      { input: framedCard, left, top },
+    ])
+    .png()
+    .toBuffer();
+
+  return { data: composited.toString("base64"), mimeType: "image/png" };
 }
 
 export async function POST(req: NextRequest) {
@@ -148,17 +196,24 @@ export async function POST(req: NextRequest) {
   }
   const productImageDataUrl = `data:${productResultImage.mimeType};base64,${productResultImage.data}`;
 
-  // Second pass: place the now-personalized product (accurately composited,
-  // not AI-guessed) into a realistic wedding lifestyle scene.
-  const contextPrompt = `You are a product photographer for a wedding merchandise brand. The attached image is a personalized product that has already been finalized and approved — do not redraw, regenerate, restyle, or "improve" the product itself, its surface, or any text/monogram/logo printed on it. Treat the product exactly as a fixed photographic cutout: composite it, unaltered pixel-for-pixel in every detail including the exact wording and letterforms of any text, into a new background.
+  // Second pass: Gemini generates an EMPTY wedding lifestyle scene — no
+  // product, no text — which is then deterministically composited with the
+  // already-correct personalized photo (compositeOnBackground). Earlier
+  // versions asked Gemini to redraw the personalized product "unchanged"
+  // into a new scene; image-generation models cannot reliably preserve
+  // exact text through a full repaint and would hallucinate/garble it.
+  // Never showing Gemini the personalization at all removes that risk
+  // entirely, the same reasoning that moved text/logo placement off AI.
+  const backgroundPrompt = `Generate a realistic, elegant wedding reception or welcome table photograph — softly lit, tastefully styled with understated florals and neutral linens, shot at a slight angle as if for a lifestyle product catalog. Leave an open, uncluttered area in the lower-middle of the frame, as if a small gift or favor is about to be set down there. Do not include any gift, box, favor, product, sign, or text anywhere in the image — just the empty styled table and ambiance.
 
-Place this exact, unmodified product cutout inside a realistic, elegant wedding lifestyle scene appropriate for this kind of item — for example displayed on a reception or welcome table with soft natural light and understated floral styling, or naturally held/used during a wedding moment. Only the surrounding environment, framing, and lighting should be new; the product itself must remain byte-for-byte recognizable, not reinterpreted.
+${SINGLE_IMAGE_RULE} No text captions, no watermarks, no collage of multiple angles — one full-bleed photograph.`;
 
-${SINGLE_IMAGE_RULE} No text captions, no watermarks, no collage of multiple angles — one full-bleed lifestyle photograph.`;
-
-  const contextResult = await callGemini(apiKey, contextPrompt, [productResultImage]);
-  const contextImageDataUrl =
-    "image" in contextResult ? `data:${contextResult.image.mimeType};base64,${contextResult.image.data}` : null;
+  const backgroundResult = await callGemini(apiKey, backgroundPrompt, []);
+  let contextImageDataUrl: string | null = null;
+  if ("image" in backgroundResult) {
+    const composed = await compositeOnBackground(backgroundResult.image, productResultImage);
+    contextImageDataUrl = `data:${composed.mimeType};base64,${composed.data}`;
+  }
 
   return NextResponse.json({ imageDataUrl: productImageDataUrl, contextImageDataUrl });
 }
