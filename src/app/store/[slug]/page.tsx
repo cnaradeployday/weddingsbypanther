@@ -64,7 +64,7 @@ export default async function StorefrontHome({
           </div>
           <div className="relative h-[420px] rounded-2xl overflow-hidden">
             <Image
-              src="/images/hero-tablescape.jpg"
+              src={planner.storefront_banner_url || "/images/hero-tablescape.jpg"}
               alt="Wedding tablescape"
               fill
               className="object-cover"

@@ -11,6 +11,8 @@
   --color-sage: #3f4a3a;
   --color-line: #e4dccf;
   --color-muted: #7a746b;
+  --font-serif: var(--font-serif-cormorant);
+  --font-sans: var(--font-sans-instrument);
 }
 
 @theme inline {

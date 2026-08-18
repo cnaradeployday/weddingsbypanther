@@ -4,6 +4,7 @@ import { StoreHeader } from "@/components/StoreHeader";
 import { StoreFooter } from "@/components/StoreFooter";
 import { getPlannerBySlug } from "@/lib/queries";
 import { darken } from "@/lib/color";
+import { fontChoiceVars } from "@/lib/fontChoices";
 
 export default async function StorefrontLayout({
   children,
@@ -34,6 +35,8 @@ export default async function StorefrontLayout({
   const accentVars = {
     "--color-terracotta": planner.accent_color,
     "--color-terracotta-dark": darken(planner.accent_color, 0.15),
+    "--color-gold": planner.secondary_color,
+    ...fontChoiceVars(planner.font_choice),
   } as React.CSSProperties;
 
   return (

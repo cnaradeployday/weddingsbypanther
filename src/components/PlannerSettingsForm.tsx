@@ -3,68 +3,150 @@
 import { useState } from "react";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
+import { FONT_CHOICES } from "@/lib/fontChoices";
 
-export function PlannerSettingsForm({
-  plannerId,
-  initial,
+type Initial = {
+  business_name: string;
+  tagline: string | null;
+  initials: string | null;
+  default_markup_pct: number;
+  logo_url: string | null;
+  accent_color: string;
+  secondary_color: string;
+  font_choice: string;
+  storefront_banner_url: string | null;
+  catalog_banner_url: string | null;
+};
+
+async function uploadAsset(
+  supabase: ReturnType<typeof createClient>,
+  plannerId: string,
+  file: File,
+  kind: string
+): Promise<string | null> {
+  const ext = file.name.split(".").pop() ?? "png";
+  const path = `${plannerId}/${kind}-${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from("planner-assets").upload(path, file, { upsert: true });
+  if (error) return null;
+  return supabase.storage.from("planner-assets").getPublicUrl(path).data.publicUrl;
+}
+
+function ImagePickerField({
+  label,
+  hint,
+  previewUrl,
+  aspectClass,
+  onChange,
 }: {
-  plannerId: string;
-  initial: {
-    business_name: string;
-    tagline: string | null;
-    initials: string | null;
-    default_markup_pct: number;
-    logo_url: string | null;
-    accent_color: string;
-  };
+  label: string;
+  hint?: string;
+  previewUrl: string | null;
+  aspectClass: string;
+  onChange: (file: File) => void;
 }) {
+  return (
+    <div>
+      <label className="text-xs uppercase tracking-wide text-muted block mb-2">{label}</label>
+      {hint && <p className="text-xs text-muted mb-2">{hint}</p>}
+      <label
+        className={`relative block w-full ${aspectClass} rounded-xl overflow-hidden border border-dashed border-line cursor-pointer bg-cream hover:border-dark transition-colors`}
+      >
+        {previewUrl ? (
+          <Image src={previewUrl} alt="" fill className="object-cover" unoptimized />
+        ) : (
+          <span className="absolute inset-0 flex items-center justify-center text-xs text-muted">
+            Click to upload
+          </span>
+        )}
+        <input
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) onChange(file);
+          }}
+        />
+      </label>
+    </div>
+  );
+}
+
+export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string; initial: Initial }) {
   const supabase = createClient();
   const [form, setForm] = useState(initial);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(initial.logo_url);
+  const [storefrontBannerFile, setStorefrontBannerFile] = useState<File | null>(null);
+  const [storefrontBannerPreview, setStorefrontBannerPreview] = useState<string | null>(
+    initial.storefront_banner_url
+  );
+  const [catalogBannerFile, setCatalogBannerFile] = useState<File | null>(null);
+  const [catalogBannerPreview, setCatalogBannerPreview] = useState<string | null>(initial.catalog_banner_url);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
-
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setLogoFile(file);
-    setLogoPreview(URL.createObjectURL(file));
-  };
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setError(null);
+    setSaved(false);
 
-    let logoUrl = form.logo_url;
-    if (logoFile) {
-      const ext = logoFile.name.split(".").pop() ?? "png";
-      const path = `${plannerId}/logo-${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from("planner-assets")
-        .upload(path, logoFile, { upsert: true });
-      if (!uploadError) {
-        const { data: publicUrl } = supabase.storage.from("planner-assets").getPublicUrl(path);
-        logoUrl = publicUrl.publicUrl;
+    try {
+      let logoUrl = form.logo_url;
+      if (logoFile) {
+        const uploaded = await uploadAsset(supabase, plannerId, logoFile, "logo");
+        if (!uploaded) throw new Error("Couldn't upload the logo — try a different image.");
+        logoUrl = uploaded;
       }
-    }
+      let storefrontBannerUrl = form.storefront_banner_url;
+      if (storefrontBannerFile) {
+        const uploaded = await uploadAsset(supabase, plannerId, storefrontBannerFile, "storefront-banner");
+        if (!uploaded) throw new Error("Couldn't upload the storefront banner — try a different image.");
+        storefrontBannerUrl = uploaded;
+      }
+      let catalogBannerUrl = form.catalog_banner_url;
+      if (catalogBannerFile) {
+        const uploaded = await uploadAsset(supabase, plannerId, catalogBannerFile, "catalog-banner");
+        if (!uploaded) throw new Error("Couldn't upload the catalog banner — try a different image.");
+        catalogBannerUrl = uploaded;
+      }
 
-    await supabase
-      .from("planners")
-      .update({
-        business_name: form.business_name,
-        tagline: form.tagline,
-        initials: form.initials,
-        default_markup_pct: form.default_markup_pct,
+      const { error: updateError } = await supabase
+        .from("planners")
+        .update({
+          business_name: form.business_name,
+          tagline: form.tagline,
+          initials: form.initials,
+          default_markup_pct: form.default_markup_pct,
+          logo_url: logoUrl,
+          accent_color: form.accent_color,
+          secondary_color: form.secondary_color,
+          font_choice: form.font_choice,
+          storefront_banner_url: storefrontBannerUrl,
+          catalog_banner_url: catalogBannerUrl,
+        })
+        .eq("id", plannerId);
+
+      if (updateError) throw updateError;
+
+      setForm((f) => ({
+        ...f,
         logo_url: logoUrl,
-        accent_color: form.accent_color,
-      })
-      .eq("id", plannerId);
-
-    setForm((f) => ({ ...f, logo_url: logoUrl }));
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+        storefront_banner_url: storefrontBannerUrl,
+        catalog_banner_url: catalogBannerUrl,
+      }));
+      setLogoFile(null);
+      setStorefrontBannerFile(null);
+      setCatalogBannerFile(null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save your changes — try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -81,7 +163,17 @@ export function PlannerSettingsForm({
           </div>
           <label className="px-4 py-2 rounded-full border border-line text-sm cursor-pointer">
             Upload logo
-            <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setLogoFile(file);
+                setLogoPreview(URL.createObjectURL(file));
+              }}
+              className="hidden"
+            />
           </label>
         </div>
       </div>
@@ -120,8 +212,10 @@ export function PlannerSettingsForm({
             className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
           />
         </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="text-xs uppercase tracking-wide text-muted block mb-1">Accent color</label>
+          <label className="text-xs uppercase tracking-wide text-muted block mb-1">Primary color</label>
           <div className="flex items-center gap-2 h-[46px]">
             <input
               type="color"
@@ -132,7 +226,60 @@ export function PlannerSettingsForm({
             <span className="text-xs text-muted">{form.accent_color}</span>
           </div>
         </div>
+        <div>
+          <label className="text-xs uppercase tracking-wide text-muted block mb-1">Secondary color</label>
+          <div className="flex items-center gap-2 h-[46px]">
+            <input
+              type="color"
+              value={form.secondary_color}
+              onChange={(e) => setForm((f) => ({ ...f, secondary_color: e.target.value }))}
+              className="h-10 w-14 rounded border border-line cursor-pointer bg-transparent"
+            />
+            <span className="text-xs text-muted">{form.secondary_color}</span>
+          </div>
+        </div>
       </div>
+      <div>
+        <label className="text-xs uppercase tracking-wide text-muted block mb-2">Storefront font</label>
+        <div className="grid grid-cols-2 gap-2">
+          {FONT_CHOICES.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setForm((f) => ({ ...f, font_choice: opt.id }))}
+              className={`rounded-lg border px-4 py-3 text-left ${
+                form.font_choice === opt.id ? "border-dark bg-cream" : "border-line"
+              }`}
+            >
+              <span className="block font-medium">{opt.label}</span>
+              <span className="block text-xs text-muted">{opt.description}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <ImagePickerField
+        label="Storefront banner"
+        hint="Shown at the top of your store's home page."
+        previewUrl={storefrontBannerPreview}
+        aspectClass="aspect-[3/1]"
+        onChange={(file) => {
+          setStorefrontBannerFile(file);
+          setStorefrontBannerPreview(URL.createObjectURL(file));
+        }}
+      />
+      <ImagePickerField
+        label="Catalog banner"
+        hint="Shown above the product grid when browsing/searching."
+        previewUrl={catalogBannerPreview}
+        aspectClass="aspect-[5/1]"
+        onChange={(file) => {
+          setCatalogBannerFile(file);
+          setCatalogBannerPreview(URL.createObjectURL(file));
+        }}
+      />
+
+      {error && <p className="text-sm text-terracotta-dark">{error}</p>}
       <button
         type="submit"
         disabled={saving}

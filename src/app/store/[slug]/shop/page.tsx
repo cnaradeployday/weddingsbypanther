@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCategories, getPlannerBySlug, getStorefrontCatalog } from "@/lib/queries";
@@ -36,6 +37,11 @@ export default async function ShopPage({
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-10">
+      {planner.catalog_banner_url && (
+        <div className="relative w-full aspect-[5/1] rounded-2xl overflow-hidden mb-8">
+          <Image src={planner.catalog_banner_url} alt="" fill className="object-cover" priority />
+        </div>
+      )}
       <p className="text-sm text-muted mb-2">
         <Link href={base}>Home</Link> / Shop
         {activeCategory ? ` / ${activeCategory.name}` : ""}
