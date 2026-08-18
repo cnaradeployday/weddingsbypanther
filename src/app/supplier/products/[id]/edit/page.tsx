@@ -20,9 +20,10 @@ export default async function EditSupplierProductPage({
     .maybeSingle();
   if (!supplier) redirect("/login");
 
-  const [{ data: categories }, { data: techniques }] = await Promise.all([
+  const [{ data: categories }, { data: techniques }, { data: otherProductRows }] = await Promise.all([
     supabase.from("categories").select("id, name").order("sort_order"),
     supabase.from("print_techniques").select("name").order("sort_order"),
+    supabase.from("products").select("id, name").neq("id", id).order("name"),
   ]);
 
   const { data: product } = await supabase
@@ -55,6 +56,8 @@ export default async function EditSupplierProductPage({
     status: product.status,
     reviewerNote: product.reviewer_note,
     techniques: (product.techniques ?? []).map((t) => t.technique),
+    styleTags: product.style_tags ?? [],
+    relatedProductIds: product.related_product_ids ?? [],
     zone: zone
       ? {
           width: zone.width_mm ?? 60,
@@ -89,6 +92,7 @@ export default async function EditSupplierProductPage({
         supplierId={supplier.id}
         categories={categories ?? []}
         techniqueOptions={(techniques ?? []).map((t) => t.name)}
+        otherProducts={otherProductRows ?? []}
         initial={initial}
       />
     </div>

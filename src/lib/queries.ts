@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { applyMarkup } from "./format";
+import { techniqueInkColor } from "./printTechniqueColors";
 
 export type CatalogProduct = {
   id: string;
@@ -14,6 +15,23 @@ export type CatalogProduct = {
   categorySlug: string;
   supplierName: string;
   image: string | null;
+  styleTags: string[];
+};
+
+export type RelatedProduct = {
+  id: string;
+  slug: string;
+  name: string;
+  price: number;
+  minOrder: number;
+  personalizable: boolean;
+  image: string | null;
+  zone: {
+    width_mm: number | null;
+    height_mm: number | null;
+    corners_pct: { x: number; y: number }[];
+  } | null;
+  inkColor: string;
 };
 
 export async function getPlannerBySlug(slug: string) {
@@ -52,7 +70,7 @@ export async function getStorefrontCatalog(plannerSlug: string): Promise<Catalog
     .select(
       `markup_pct, enabled,
        product:products (
-         id, slug, name, description, factory_price, min_order, personalizable, status,
+         id, slug, name, description, factory_price, min_order, personalizable, status, style_tags,
          category:categories ( name, slug ),
          supplier:suppliers ( business_name ),
          images:product_images ( url, sort_order )
@@ -81,6 +99,7 @@ export async function getStorefrontCatalog(plannerSlug: string): Promise<Catalog
         categorySlug: p.category?.slug ?? "",
         supplierName: p.supplier?.business_name ?? "",
         image: images[0]?.url ?? null,
+        styleTags: p.style_tags ?? [],
       };
     });
 }
@@ -197,5 +216,60 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
     techniques,
     zones,
     variants,
+    relatedProductIds: p.related_product_ids ?? [],
   };
+}
+
+// Related products a customer sees suggested below the configurator —
+// restricted to this planner's own enabled catalog (same rule as the main
+// catalog) so a supplier's cross-sell pick never surfaces a product this
+// particular store doesn't actually carry.
+export async function getRelatedProducts(
+  plannerSlug: string,
+  productIds: string[]
+): Promise<RelatedProduct[]> {
+  if (productIds.length === 0) return [];
+  const planner = await getPlannerBySlug(plannerSlug);
+  if (!planner) return [];
+
+  const { data: rows } = await supabase
+    .from("planner_products")
+    .select(
+      `markup_pct, enabled,
+       product:products (
+         id, slug, name, factory_price, min_order, personalizable, status,
+         images:product_images ( url, sort_order ),
+         techniques:product_print_techniques ( technique, is_default ),
+         zones:product_print_zones ( width_mm, height_mm, corners_pct )
+       )`
+    )
+    .eq("planner_id", planner.id)
+    .eq("enabled", true)
+    .in("product_id", productIds);
+
+  return (rows ?? [])
+    .filter((row) => row.product && row.product.status === "approved")
+    .map((row) => {
+      const p = row.product!;
+      const images = (p.images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
+      const defaultTechnique = (p.techniques ?? []).find((t) => t.is_default) ?? p.techniques?.[0];
+      const zone = p.zones?.[0];
+      return {
+        id: p.id,
+        slug: p.slug,
+        name: p.name,
+        price: applyMarkup(p.factory_price, row.markup_pct),
+        minOrder: p.min_order,
+        personalizable: p.personalizable,
+        image: images[0]?.url ?? null,
+        zone: zone
+          ? {
+              width_mm: zone.width_mm,
+              height_mm: zone.height_mm,
+              corners_pct: (zone.corners_pct as { x: number; y: number }[] | null) ?? [],
+            }
+          : null,
+        inkColor: techniqueInkColor(defaultTechnique?.technique),
+      };
+    });
 }

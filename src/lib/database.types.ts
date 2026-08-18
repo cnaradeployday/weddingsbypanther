@@ -473,11 +473,13 @@ export type Database = {
           min_order: number
           name: string
           personalizable: boolean
+          related_product_ids: string[]
           reviewer_note: string | null
           sku: string | null
           slug: string
           status: string
           stock_on_hand: number
+          style_tags: string[]
           supplier_id: string | null
         }
         Insert: {
@@ -491,11 +493,13 @@ export type Database = {
           min_order?: number
           name: string
           personalizable?: boolean
+          related_product_ids?: string[]
           reviewer_note?: string | null
           sku?: string | null
           slug: string
           status?: string
           stock_on_hand?: number
+          style_tags?: string[]
           supplier_id?: string | null
         }
         Update: {
@@ -509,11 +513,13 @@ export type Database = {
           min_order?: number
           name?: string
           personalizable?: boolean
+          related_product_ids?: string[]
           reviewer_note?: string | null
           sku?: string | null
           slug?: string
           status?: string
           stock_on_hand?: number
+          style_tags?: string[]
           supplier_id?: string | null
         }
         Relationships: [

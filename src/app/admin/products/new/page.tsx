@@ -7,11 +7,13 @@ export default async function NewAdminProductPage() {
   if (!session) redirect("/login");
   const supabase = await createClient();
 
-  const [{ data: suppliers }, { data: categories }, { data: techniques }] = await Promise.all([
-    supabase.from("suppliers").select("id, business_name").order("business_name"),
-    supabase.from("categories").select("id, name").order("sort_order"),
-    supabase.from("print_techniques").select("name").order("sort_order"),
-  ]);
+  const [{ data: suppliers }, { data: categories }, { data: techniques }, { data: otherProductRows }] =
+    await Promise.all([
+      supabase.from("suppliers").select("id, business_name").order("business_name"),
+      supabase.from("categories").select("id, name").order("sort_order"),
+      supabase.from("print_techniques").select("name").order("sort_order"),
+      supabase.from("products").select("id, name").order("name"),
+    ]);
 
   return (
     <div>
@@ -21,6 +23,7 @@ export default async function NewAdminProductPage() {
         suppliers={suppliers ?? []}
         categories={categories ?? []}
         techniqueOptions={(techniques ?? []).map((t) => t.name)}
+        otherProducts={otherProductRows ?? []}
       />
     </div>
   );
