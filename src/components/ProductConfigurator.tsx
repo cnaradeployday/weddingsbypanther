@@ -878,67 +878,65 @@ export function ProductConfigurator({
 
         {product.personalizable && (
           <div className="space-y-6 mb-8">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-                  Your logo <span className="normal-case text-muted/70">(optional)</span>
-                </label>
-                <div className="flex items-center gap-3">
-                  <label className="relative h-16 w-16 rounded-lg overflow-hidden border border-line cursor-pointer bg-white shrink-0">
-                    {logoPreview ? (
-                      <Image src={logoPreview} alt="" fill className="object-contain" unoptimized />
-                    ) : (
-                      <span className="absolute inset-0 flex items-center justify-center text-[10px] text-muted text-center px-1">
-                        Upload
-                      </span>
-                    )}
-                    <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
-                  </label>
-                  {logoPreview && (
-                    <button
-                      type="button"
-                      onClick={clearLogo}
-                      className="text-xs text-terracotta-dark font-medium"
-                    >
-                      Remove
-                    </button>
+            <div>
+              <label className="text-xs uppercase tracking-wide text-muted block mb-2">
+                Your logo <span className="normal-case text-muted/70">(optional)</span>
+              </label>
+              <div className="flex items-center gap-3">
+                <label className="relative h-16 w-16 rounded-lg overflow-hidden border border-line cursor-pointer bg-white shrink-0">
+                  {logoPreview ? (
+                    <Image src={logoPreview} alt="" fill className="object-contain" unoptimized />
+                  ) : (
+                    <span className="absolute inset-0 flex items-center justify-center text-[10px] text-muted text-center px-1">
+                      Upload
+                    </span>
                   )}
-                </div>
-                {logoPreview && logoSizeLabel && <p className="text-xs text-muted mt-1">{logoSizeLabel}</p>}
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-                  Template frame <span className="normal-case text-muted/70">(optional)</span>
+                  <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
                 </label>
-                <div className="flex flex-wrap gap-1.5">
+                {logoPreview && (
                   <button
                     type="button"
-                    onClick={() => setFrame("")}
-                    className={`h-16 w-11 rounded-lg border flex items-center justify-center text-[9px] font-medium shrink-0 ${
-                      frame === "" ? "border-dark bg-dark text-cream-light" : "border-line text-muted"
+                    onClick={clearLogo}
+                    className="text-xs text-terracotta-dark font-medium"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+              {logoPreview && logoSizeLabel && <p className="text-xs text-muted mt-1">{logoSizeLabel}</p>}
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wide text-muted block mb-2">
+                Template frame <span className="normal-case text-muted/70">(optional)</span>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFrame("")}
+                  className={`h-14 w-16 rounded-lg border flex items-center justify-center text-[9px] font-medium shrink-0 ${
+                    frame === "" ? "border-dark bg-dark text-cream-light" : "border-line text-muted"
+                  }`}
+                >
+                  None
+                </button>
+                {FRAME_TEMPLATES.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    title={opt.label}
+                    onClick={() => setFrame(opt.id)}
+                    className={`h-14 w-16 rounded-lg border flex items-center justify-center shrink-0 ${
+                      frame === opt.id ? "border-dark bg-cream" : "border-line"
                     }`}
                   >
-                    None
+                    <svg
+                      viewBox="0 0 200 90"
+                      width={52}
+                      height={23}
+                      dangerouslySetInnerHTML={{ __html: frameSvgInner(opt.id, "currentColor") }}
+                    />
                   </button>
-                  {FRAME_TEMPLATES.map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      title={opt.label}
-                      onClick={() => setFrame(opt.id)}
-                      className={`h-16 w-11 rounded-lg border flex items-center justify-center shrink-0 ${
-                        frame === opt.id ? "border-dark bg-cream" : "border-line"
-                      }`}
-                    >
-                      <svg
-                        viewBox="0 0 200 90"
-                        width={36}
-                        height={16}
-                        dangerouslySetInnerHTML={{ __html: frameSvgInner(opt.id, "currentColor") }}
-                      />
-                    </button>
-                  ))}
-                </div>
+                ))}
               </div>
             </div>
             <div>
