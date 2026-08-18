@@ -51,6 +51,7 @@ type Zone = {
   id: string;
   label: string;
   max_chars_per_line: number | null;
+  max_lines: number | null;
   width_mm: number | null;
   height_mm: number | null;
   corners_pct: { x: number; y: number }[];
@@ -746,7 +747,7 @@ export function ProductConfigurator({
                 <div
                   ref={setElemBoxRef("names")}
                   onPointerDown={startDrag("names")}
-                  className="absolute pointer-events-auto cursor-move touch-none select-none font-serif whitespace-nowrap"
+                  className="absolute pointer-events-auto cursor-move touch-none select-none font-serif flex flex-col items-center leading-tight"
                   style={{
                     left: `${positions.names.x}%`,
                     top: `${positions.names.y}%`,
@@ -761,13 +762,21 @@ export function ProductConfigurator({
                       viewBox="0 0 200 90"
                       preserveAspectRatio="none"
                       className="absolute pointer-events-none"
-                      style={{ inset: "-11px -18px", width: "calc(100% + 36px)", height: "calc(100% + 22px)" }}
+                      style={{
+                        inset: `${-nameFontPx * 0.45}px ${-nameFontPx * 0.7}px`,
+                        width: `calc(100% + ${nameFontPx * 1.4}px)`,
+                        height: `calc(100% + ${nameFontPx * 0.9}px)`,
+                      }}
                       dangerouslySetInnerHTML={{
                         __html: frameSvgInner(frame, techniqueInkColor(technique?.technique)),
                       }}
                     />
                   )}
-                  <span className="relative">{names}</span>
+                  {names.split("\n").map((line, i) => (
+                    <span key={i} className="relative whitespace-nowrap">
+                      {line}
+                    </span>
+                  ))}
                   {activeElem === "names" && (
                     <AdjustHandles
                       onResizeStart={startElemAdjust("names", "resize")}
@@ -944,10 +953,20 @@ export function ProductConfigurator({
                 <label className="text-xs uppercase tracking-wide text-muted">Your names or event text</label>
                 {nameSizeLabel && <span className="text-xs text-muted">{nameSizeLabel}</span>}
               </div>
-              <input
+              <textarea
                 value={names}
-                onChange={(e) => setNames(e.target.value.slice(0, zone?.max_chars_per_line ?? 24))}
-                className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark mb-3"
+                rows={zone?.max_lines ?? 2}
+                onChange={(e) => {
+                  const maxChars = zone?.max_chars_per_line ?? 24;
+                  const maxLines = zone?.max_lines ?? 2;
+                  const capped = e.target.value
+                    .split("\n")
+                    .slice(0, maxLines)
+                    .map((line) => line.slice(0, maxChars))
+                    .join("\n");
+                  setNames(capped);
+                }}
+                className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark mb-3 resize-none"
               />
               <label className="text-xs uppercase tracking-wide text-muted block mb-2">Text font</label>
               <div className="grid grid-cols-2 gap-2">

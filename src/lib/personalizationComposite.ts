@@ -4,7 +4,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { monogramSvgInner } from "./monograms";
 import { frameSvgInner } from "./frameTemplates";
-import { fitTextFontSize, estimateTextWidth } from "./textFit";
+import { fitTextFontSize, estimateTextWidth, textLineCount } from "./textFit";
 import { textFontServerFamily } from "./textFonts";
 
 // Deterministic (non-AI) compositing of a customer's personalization onto
@@ -239,14 +239,18 @@ export async function buildArtworkImage({
     const cx = (p.x / 100) * canvasW;
     const cy = (p.y / 100) * canvasH;
     const trimmed = names.trim();
+    const lines = trimmed.split("\n").map((l) => l.trim());
+    const lineCount = textLineCount(trimmed);
     const fontSize = fitTextFontSize(trimmed, canvasH * 0.11 * (fontScale.names ?? 1), canvasW * 0.92);
+    const lineHeight = fontSize * 1.25;
     if (frame.trim()) {
       // Sized around the same text-width estimate used to fit the font
       // itself, with padding proportional to font size (not a fixed pixel
       // amount) so it scales sensibly whether canvasH is a tiny print area
-      // or a large supersampled render.
+      // or a large supersampled render. Height grows with the line count
+      // for multi-line names/event text.
       const textW = estimateTextWidth(trimmed, fontSize);
-      const textH = fontSize * 1.3;
+      const textH = lineHeight * lineCount;
       const padX = fontSize * 0.7;
       const padY = fontSize * 0.45;
       const boxW = textW + padX * 2;
@@ -259,8 +263,15 @@ export async function buildArtworkImage({
         )}</g>`
       );
     }
+    // dominant-baseline="central" on the outer <text> centers the whole
+    // multi-line block vertically — each tspan just needs to be offset
+    // from the first line by its own line height.
+    const firstLineDy = -((lineCount - 1) / 2) * lineHeight;
+    const tspans = lines
+      .map((line, i) => `<tspan x="${cx}" dy="${i === 0 ? firstLineDy : lineHeight}">${escapeXml(line)}</tspan>`)
+      .join("");
     textElements.push(
-      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="${fontFamily}" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "names")}>${escapeXml(trimmed)}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="${fontFamily}" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "names")}>${tspans}</text>`
     );
   }
   if (date.trim()) {

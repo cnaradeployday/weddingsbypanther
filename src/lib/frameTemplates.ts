@@ -11,7 +11,16 @@
 // an actual rectangle/box — every design hugs the outer edge and stays
 // open around the text itself.
 
-export type FrameId = "laurel" | "arch" | "flourish" | "wreath" | "hearts" | "botanical";
+export type FrameId =
+  | "laurel"
+  | "arch"
+  | "flourish"
+  | "wreath"
+  | "hearts"
+  | "botanical"
+  | "oval"
+  | "ring"
+  | "ornate";
 
 export const FRAME_TEMPLATES: { id: FrameId; label: string }[] = [
   { id: "laurel", label: "Laurel" },
@@ -20,6 +29,9 @@ export const FRAME_TEMPLATES: { id: FrameId; label: string }[] = [
   { id: "wreath", label: "Wreath" },
   { id: "hearts", label: "Hearts" },
   { id: "botanical", label: "Botanical" },
+  { id: "oval", label: "Oval wreath" },
+  { id: "ring", label: "Floral ring" },
+  { id: "ornate", label: "Ornate" },
 ];
 
 function laurelSide(edgeX: number, direction: 1 | -1, stroke: string): string {
@@ -97,6 +109,22 @@ function ivy(edgeX: number, direction: 1 | -1, stroke: string): string {
   return `<path d="${path}" fill="none" stroke="${stroke}" stroke-width="1.3" stroke-linejoin="round" />${leaves}`;
 }
 
+// A full ring of accents around the whole box (not just flanking the
+// sides) — an ellipse inscribed just inside the viewBox, so its closest
+// approach to the text is at its own left/right extremes, right at the
+// outer edge margin, same as the side-only designs above.
+function ringPoints(count: number) {
+  const rx = 95;
+  const ry = 40;
+  const cx = 100;
+  const cy = 45;
+  return Array.from({ length: count }, (_, i) => {
+    const angle = (360 / count) * i;
+    const rad = (angle * Math.PI) / 180;
+    return { x: cx + Math.cos(rad) * rx, y: cy + Math.sin(rad) * ry, tangent: angle + 90 };
+  });
+}
+
 // Returns SVG markup fragments (no outer <svg>) for a 0 0 200 90 viewBox.
 export function frameSvgInner(id: string, stroke: string): string {
   switch (id as FrameId) {
@@ -117,6 +145,39 @@ export function frameSvgInner(id: string, stroke: string): string {
               ${heart(180, 30, 8, stroke, 18, 0.9)}${heart(188, 55, 6, stroke, 10, 0.7)}`;
     case "botanical":
       return `${ivy(9, -1, stroke)}${ivy(191, 1, stroke)}`;
+    case "oval":
+      // A leaf wreath that fully encircles the text — top and bottom
+      // included, not just the sides.
+      return ringPoints(18)
+        .map(
+          (p) =>
+            `<ellipse cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" rx="5.5" ry="2.3" fill="${stroke}" opacity="0.88" transform="rotate(${p.tangent.toFixed(1)} ${p.x.toFixed(1)} ${p.y.toFixed(1)})" />`
+        )
+        .join("");
+    case "ring":
+      // Same full-surround ring, with flower clusters instead of leaves —
+      // more color/texture, fewer, larger accents spaced further apart.
+      return ringPoints(10)
+        .map((p) => flower(p.x, p.y, 3.6, stroke, 5))
+        .join("");
+    case "ornate": {
+      // A soft, wavy border running all the way around (never a straight
+      // rectangle) with a small diamond accent at each corner.
+      const wave =
+        `<path d="M 14 9 Q 50 3 100 9 Q 150 3 186 9" fill="none" stroke="${stroke}" stroke-width="1.2" />` +
+        `<path d="M 14 81 Q 50 87 100 81 Q 150 87 186 81" fill="none" stroke="${stroke}" stroke-width="1.2" />` +
+        `<path d="M 7 20 Q 1 45 7 70" fill="none" stroke="${stroke}" stroke-width="1.2" />` +
+        `<path d="M 193 20 Q 199 45 193 70" fill="none" stroke="${stroke}" stroke-width="1.2" />`;
+      const corners = [
+        [10, 9],
+        [190, 9],
+        [10, 81],
+        [190, 81],
+      ]
+        .map(([x, y]) => `<rect x="${x - 3}" y="${y - 3}" width="6" height="6" fill="${stroke}" transform="rotate(45 ${x} ${y})" />`)
+        .join("");
+      return `${wave}${corners}`;
+    }
     default:
       return "";
   }
