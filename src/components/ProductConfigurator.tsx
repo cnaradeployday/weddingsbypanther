@@ -9,6 +9,7 @@ import { useCart } from "@/lib/cart";
 import { createClient } from "@/lib/supabase/client";
 import { techniqueInkColor } from "@/lib/printTechniqueColors";
 import { MONOGRAM_OPTIONS, monogramSvgInner } from "@/lib/monograms";
+import { FRAME_TEMPLATES, frameSvgInner } from "@/lib/frameTemplates";
 import { fitTextFontSize } from "@/lib/textFit";
 import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
 import type { RelatedProduct } from "@/lib/queries";
@@ -202,6 +203,7 @@ export function ProductConfigurator({
   const [names, setNames] = useState(handoff?.names || "Amelia & Ravi");
   const [date, setDate] = useState(handoff?.date || "2026-06-14");
   const [monogram, setMonogram] = useState(handoff?.monogram || "");
+  const [frame, setFrame] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(handoff?.logoDataUrl ?? null);
 
@@ -583,6 +585,7 @@ export function ProductConfigurator({
             names,
             date,
             monogram,
+            frame,
             logoDataUrl,
             positions,
             elemScale,
@@ -606,7 +609,7 @@ export function ProductConfigurator({
     }
 
     addItem({
-      key: `${product.id}:${variantId}:${names}:${date}:${monogram}:${techniqueId}`,
+      key: `${product.id}:${variantId}:${names}:${date}:${monogram}:${frame}:${techniqueId}`,
       productId: product.id,
       slug: product.slug,
       name: variant ? `${product.name} — ${variant.label}` : product.name,
@@ -621,6 +624,7 @@ export function ProductConfigurator({
             names,
             date,
             monogram,
+            frame,
             technique: technique?.technique,
             positions,
             elemScale,
@@ -747,7 +751,18 @@ export function ProductConfigurator({
                     ...techniqueTextStyle(technique?.technique),
                   }}
                 >
-                  {names}
+                  {frame && (
+                    <svg
+                      viewBox="0 0 200 90"
+                      preserveAspectRatio="none"
+                      className="absolute pointer-events-none"
+                      style={{ inset: "-11px -18px", width: "calc(100% + 36px)", height: "calc(100% + 22px)" }}
+                      dangerouslySetInnerHTML={{
+                        __html: frameSvgInner(frame, techniqueInkColor(technique?.technique)),
+                      }}
+                    />
+                  )}
+                  <span className="relative">{names}</span>
                   {activeElem === "names" && (
                     <AdjustHandles
                       onResizeStart={startElemAdjust("names", "resize")}
@@ -857,33 +872,67 @@ export function ProductConfigurator({
 
         {product.personalizable && (
           <div className="space-y-6 mb-8">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs uppercase tracking-wide text-muted">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs uppercase tracking-wide text-muted block mb-2">
                   Your logo <span className="normal-case text-muted/70">(optional)</span>
                 </label>
-                {logoPreview && logoSizeLabel && <span className="text-xs text-muted">{logoSizeLabel}</span>}
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="relative h-16 w-16 rounded-lg overflow-hidden border border-line cursor-pointer bg-white shrink-0">
-                  {logoPreview ? (
-                    <Image src={logoPreview} alt="" fill className="object-contain" unoptimized />
-                  ) : (
-                    <span className="absolute inset-0 flex items-center justify-center text-[10px] text-muted text-center px-1">
-                      Upload
-                    </span>
+                <div className="flex items-center gap-3">
+                  <label className="relative h-16 w-16 rounded-lg overflow-hidden border border-line cursor-pointer bg-white shrink-0">
+                    {logoPreview ? (
+                      <Image src={logoPreview} alt="" fill className="object-contain" unoptimized />
+                    ) : (
+                      <span className="absolute inset-0 flex items-center justify-center text-[10px] text-muted text-center px-1">
+                        Upload
+                      </span>
+                    )}
+                    <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
+                  </label>
+                  {logoPreview && (
+                    <button
+                      type="button"
+                      onClick={clearLogo}
+                      className="text-xs text-terracotta-dark font-medium"
+                    >
+                      Remove
+                    </button>
                   )}
-                  <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
+                </div>
+                {logoPreview && logoSizeLabel && <p className="text-xs text-muted mt-1">{logoSizeLabel}</p>}
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-wide text-muted block mb-2">
+                  Template frame <span className="normal-case text-muted/70">(optional)</span>
                 </label>
-                {logoPreview && (
+                <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
-                    onClick={clearLogo}
-                    className="text-xs text-terracotta-dark font-medium"
+                    onClick={() => setFrame("")}
+                    className={`h-16 w-11 rounded-lg border flex items-center justify-center text-[9px] font-medium shrink-0 ${
+                      frame === "" ? "border-dark bg-dark text-cream-light" : "border-line text-muted"
+                    }`}
                   >
-                    Remove logo
+                    None
                   </button>
-                )}
+                  {FRAME_TEMPLATES.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      title={opt.label}
+                      onClick={() => setFrame(opt.id)}
+                      className={`h-16 w-11 rounded-lg border flex items-center justify-center shrink-0 ${
+                        frame === opt.id ? "border-dark bg-cream" : "border-line"
+                      }`}
+                    >
+                      <svg
+                        viewBox="0 0 200 90"
+                        width={36}
+                        height={16}
+                        dangerouslySetInnerHTML={{ __html: frameSvgInner(opt.id, "currentColor") }}
+                      />
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <div>
@@ -994,6 +1043,7 @@ export function ProductConfigurator({
             names={names}
             date={date}
             monogram={monogram}
+            frame={frame}
             logoFile={logoFile}
             positions={positions}
             elemScale={elemScale}

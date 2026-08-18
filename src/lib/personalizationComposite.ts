@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { monogramSvgInner } from "./monograms";
-import { fitTextFontSize } from "./textFit";
+import { frameSvgInner } from "./frameTemplates";
+import { fitTextFontSize, estimateTextWidth } from "./textFit";
 
 // Deterministic (non-AI) compositing of a customer's personalization onto
 // the real product photo. Shared by the AI-render route (which layers a
@@ -161,6 +162,7 @@ export async function buildArtworkImage({
   names,
   date,
   monogram,
+  frame = "",
   inkColor,
   fontScale = {},
   rotations = {},
@@ -173,6 +175,7 @@ export async function buildArtworkImage({
   names: string;
   date: string;
   monogram: string;
+  frame?: string;
   inkColor: string;
   fontScale?: Partial<Record<Exclude<ElemKey, "logo">, number>>;
   rotations?: Partial<Record<ElemKey, number>>;
@@ -229,6 +232,25 @@ export async function buildArtworkImage({
     const cy = (p.y / 100) * canvasH;
     const trimmed = names.trim();
     const fontSize = fitTextFontSize(trimmed, canvasH * 0.11 * (fontScale.names ?? 1), canvasW * 0.92);
+    if (frame.trim()) {
+      // Sized around the same text-width estimate used to fit the font
+      // itself, with padding proportional to font size (not a fixed pixel
+      // amount) so it scales sensibly whether canvasH is a tiny print area
+      // or a large supersampled render.
+      const textW = estimateTextWidth(trimmed, fontSize);
+      const textH = fontSize * 1.3;
+      const padX = fontSize * 0.7;
+      const padY = fontSize * 0.45;
+      const boxW = textW + padX * 2;
+      const boxH = textH + padY * 2;
+      const frameDeg = rotations.names ?? 0;
+      textElements.push(
+        `<g transform="translate(${cx} ${cy}) rotate(${frameDeg}) scale(${boxW / 200} ${boxH / 90}) translate(-100 -45)">${frameSvgInner(
+          frame.trim(),
+          inkColor
+        )}</g>`
+      );
+    }
     textElements.push(
       `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="${PERSONALIZATION_FONT_FAMILY}" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "names")}>${escapeXml(trimmed)}</text>`
     );
@@ -317,6 +339,7 @@ export async function composeProductPersonalization({
   names,
   date,
   monogram,
+  frame = "",
   inkColor,
   elemScale = {},
   elemRotationOffsetDeg = {},
@@ -328,6 +351,7 @@ export async function composeProductPersonalization({
   names: string;
   date: string;
   monogram: string;
+  frame?: string;
   inkColor: string;
   elemScale?: Partial<Record<ElemKey, number>>;
   elemRotationOffsetDeg?: Partial<Record<ElemKey, number>>;
@@ -377,6 +401,7 @@ export async function composeProductPersonalization({
     names,
     date,
     monogram,
+    frame,
     inkColor,
     fontScale: { monogram: elemScale.monogram ?? 1, names: elemScale.names ?? 1, date: elemScale.date ?? 1 },
     rotations,
