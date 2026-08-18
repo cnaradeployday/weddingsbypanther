@@ -50,6 +50,7 @@ export function AiRenderPanel({
   names,
   date,
   monogram,
+  frame = "",
   logoFile = null,
   positions,
   elemScale = {},
@@ -63,6 +64,7 @@ export function AiRenderPanel({
   names: string;
   date: string;
   monogram: string;
+  frame?: string;
   logoFile?: File | null;
   positions?: Record<string, { x: number; y: number }>;
   elemScale?: Record<string, number>;
@@ -101,6 +103,7 @@ export function AiRenderPanel({
           names,
           date,
           monogram,
+          frame,
           logoDataUrl,
           positions,
           elemScale,

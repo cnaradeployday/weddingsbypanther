@@ -12,3 +12,10 @@ export function fitTextFontSize(text: string, desiredSize: number, availableWidt
   if (estWidth <= availableWidth) return desiredSize;
   return Math.max(6, availableWidth / (text.length * AVG_CHAR_WIDTH_RATIO));
 }
+
+// Same rough estimate, the other direction — used to size a decorative
+// frame around text that's already been fit to a font size, since the
+// server has no real text-measurement API to size the frame against.
+export function estimateTextWidth(text: string, fontSize: number): number {
+  return text.length * AVG_CHAR_WIDTH_RATIO * fontSize;
+}

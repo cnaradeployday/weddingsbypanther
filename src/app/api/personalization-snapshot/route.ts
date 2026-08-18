@@ -15,6 +15,7 @@ export async function POST(req: NextRequest) {
   const names: string = body?.names ?? "";
   const date: string = body?.date ?? "";
   const monogram: string = body?.monogram ?? "";
+  const frame: string = body?.frame ?? "";
   const logoDataUrl: string | undefined = body?.logoDataUrl;
   const positions: Record<string, Corner> = body?.positions ?? {};
   const elemScale: Partial<Record<ElemKey, number>> = body?.elemScale ?? {};
@@ -74,6 +75,7 @@ export async function POST(req: NextRequest) {
     names,
     date,
     monogram,
+    frame,
     inkColor,
     elemScale,
     elemRotationOffsetDeg,

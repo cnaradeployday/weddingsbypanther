@@ -17,6 +17,7 @@ export type CartItem = {
     names?: string;
     date?: string;
     monogram?: string;
+    frame?: string;
     technique?: string;
     extraPrice?: number;
     elemScale?: Record<string, number>;
