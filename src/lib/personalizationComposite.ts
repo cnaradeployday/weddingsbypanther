@@ -1,7 +1,9 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { monogramSvgInner } from "./monograms";
+import { fitTextFontSize } from "./textFit";
 
 // Deterministic (non-AI) compositing of a customer's personalization onto
 // the real product photo. Shared by the AI-render route (which layers a
@@ -83,6 +85,39 @@ export async function loadImageAsBase64(url: string): Promise<ImagePayload | nul
   }
 }
 
+// Vercel's serverless Node runtime ships with no fonts installed at all, so
+// the SVG text sharp/librsvg renders for personalization artwork resolved to
+// nothing there — every glyph came out as an empty "tofu" box, even though
+// the exact same code rendered fine locally (which does have system fonts).
+// Embedding the font via a base64 @font-face inside the SVG was tried first
+// but doesn't work with this librsvg build — text still came out as tofu in
+// a fontless test environment even with the @font-face block present.
+// Registering the bundled font file with fontconfig (via a generated
+// fonts.conf + FONTCONFIG_FILE) does work, confirmed against the same
+// fontless test environment, so that's the approach used here.
+const PERSONALIZATION_FONT_FAMILY = "'Cormorant Garamond', Georgia, serif";
+let fontConfigReady: Promise<void> | null = null;
+
+function ensureFontConfig(): Promise<void> {
+  if (!fontConfigReady) {
+    fontConfigReady = (async () => {
+      try {
+        const fontDir = path.join(process.cwd(), "public", "fonts");
+        const confDir = path.join(os.tmpdir(), "pz-fontconfig");
+        const confPath = path.join(confDir, "fonts.conf");
+        await mkdir(confDir, { recursive: true });
+        const xml = `<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig>\n  <dir>${fontDir}</dir>\n  <cachedir>${path.join(confDir, "cache")}</cachedir>\n</fontconfig>\n`;
+        await writeFile(confPath, xml, "utf8");
+        process.env.FONTCONFIG_FILE = confPath;
+      } catch {
+        // Best-effort — if this fails, text falls back to whatever font (if
+        // any) the runtime already resolves, same as before this fix.
+      }
+    })();
+  }
+  return fontConfigReady;
+}
+
 function escapeXml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -142,6 +177,7 @@ export async function buildArtworkImage({
   fontScale?: Partial<Record<Exclude<ElemKey, "logo">, number>>;
   rotations?: Partial<Record<ElemKey, number>>;
 }): Promise<Buffer> {
+  await ensureFontConfig();
   const pos = (key: string, fallback: Corner) => positions[key] ?? fallback;
   // Rotate each element around its own anchor point so it sits flush with
   // the (possibly angled) print area, the same way it looks embossed/
@@ -191,18 +227,20 @@ export async function buildArtworkImage({
     const p = pos("names", { x: 50, y: 65 });
     const cx = (p.x / 100) * canvasW;
     const cy = (p.y / 100) * canvasH;
-    const fontSize = canvasH * 0.11 * (fontScale.names ?? 1);
+    const trimmed = names.trim();
+    const fontSize = fitTextFontSize(trimmed, canvasH * 0.11 * (fontScale.names ?? 1), canvasW * 0.92);
     textElements.push(
-      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="Georgia, 'Times New Roman', serif" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "names")}>${escapeXml(names.trim())}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="${PERSONALIZATION_FONT_FAMILY}" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "names")}>${escapeXml(trimmed)}</text>`
     );
   }
   if (date.trim()) {
     const p = pos("date", { x: 50, y: 82 });
     const cx = (p.x / 100) * canvasW;
     const cy = (p.y / 100) * canvasH;
-    const fontSize = canvasH * 0.05 * (fontScale.date ?? 1);
+    const trimmed = date.trim();
+    const fontSize = fitTextFontSize(trimmed, canvasH * 0.05 * (fontScale.date ?? 1), canvasW * 0.92);
     textElements.push(
-      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="Georgia, 'Times New Roman', serif" letter-spacing="1" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "date")}>${escapeXml(date.trim())}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="${PERSONALIZATION_FONT_FAMILY}" letter-spacing="1" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "date")}>${escapeXml(trimmed)}</text>`
     );
   }
 
