@@ -5,6 +5,7 @@ import sharp from "sharp";
 import { monogramSvgInner } from "./monograms";
 import { frameSvgInner } from "./frameTemplates";
 import { fitTextFontSize, estimateTextWidth } from "./textFit";
+import { textFontServerFamily } from "./textFonts";
 
 // Deterministic (non-AI) compositing of a customer's personalization onto
 // the real product photo. Shared by the AI-render route (which layers a
@@ -95,8 +96,12 @@ export async function loadImageAsBase64(url: string): Promise<ImagePayload | nul
 // a fontless test environment even with the @font-face block present.
 // Registering the bundled font file with fontconfig (via a generated
 // fonts.conf + FONTCONFIG_FILE) does work, confirmed against the same
-// fontless test environment, so that's the approach used here.
-const PERSONALIZATION_FONT_FAMILY = "'Cormorant Garamond', Georgia, serif";
+// fontless test environment, so that's the approach used here — for all
+// six of the customer's text-font choices, each bundled the same way (see
+// textFonts.ts for the id -> resolved-family mapping).
+function personalizationFontFamily(textFont: string): string {
+  return `'${textFontServerFamily(textFont)}', Georgia, serif`;
+}
 let fontConfigReady: Promise<void> | null = null;
 
 function ensureFontConfig(): Promise<void> {
@@ -163,6 +168,7 @@ export async function buildArtworkImage({
   date,
   monogram,
   frame = "",
+  textFont = "",
   inkColor,
   fontScale = {},
   rotations = {},
@@ -176,11 +182,13 @@ export async function buildArtworkImage({
   date: string;
   monogram: string;
   frame?: string;
+  textFont?: string;
   inkColor: string;
   fontScale?: Partial<Record<Exclude<ElemKey, "logo">, number>>;
   rotations?: Partial<Record<ElemKey, number>>;
 }): Promise<Buffer> {
   await ensureFontConfig();
+  const fontFamily = personalizationFontFamily(textFont);
   const pos = (key: string, fallback: Corner) => positions[key] ?? fallback;
   // Rotate each element around its own anchor point so it sits flush with
   // the (possibly angled) print area, the same way it looks embossed/
@@ -252,7 +260,7 @@ export async function buildArtworkImage({
       );
     }
     textElements.push(
-      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="${PERSONALIZATION_FONT_FAMILY}" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "names")}>${escapeXml(trimmed)}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="${fontFamily}" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "names")}>${escapeXml(trimmed)}</text>`
     );
   }
   if (date.trim()) {
@@ -262,7 +270,7 @@ export async function buildArtworkImage({
     const trimmed = date.trim();
     const fontSize = fitTextFontSize(trimmed, canvasH * 0.05 * (fontScale.date ?? 1), canvasW * 0.92);
     textElements.push(
-      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="${PERSONALIZATION_FONT_FAMILY}" letter-spacing="1" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "date")}>${escapeXml(trimmed)}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="${fontFamily}" letter-spacing="1" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "date")}>${escapeXml(trimmed)}</text>`
     );
   }
 
@@ -340,6 +348,7 @@ export async function composeProductPersonalization({
   date,
   monogram,
   frame = "",
+  textFont = "",
   inkColor,
   elemScale = {},
   elemRotationOffsetDeg = {},
@@ -352,6 +361,7 @@ export async function composeProductPersonalization({
   date: string;
   monogram: string;
   frame?: string;
+  textFont?: string;
   inkColor: string;
   elemScale?: Partial<Record<ElemKey, number>>;
   elemRotationOffsetDeg?: Partial<Record<ElemKey, number>>;
@@ -402,6 +412,7 @@ export async function composeProductPersonalization({
     date,
     monogram,
     frame,
+    textFont,
     inkColor,
     fontScale: { monogram: elemScale.monogram ?? 1, names: elemScale.names ?? 1, date: elemScale.date ?? 1 },
     rotations,

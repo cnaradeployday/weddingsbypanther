@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 import { techniqueInkColor } from "@/lib/printTechniqueColors";
 import { MONOGRAM_OPTIONS, monogramSvgInner } from "@/lib/monograms";
 import { FRAME_TEMPLATES, frameSvgInner } from "@/lib/frameTemplates";
+import { TEXT_FONTS, DEFAULT_TEXT_FONT, textFontStyle } from "@/lib/textFonts";
 import { fitTextFontSize } from "@/lib/textFit";
 import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
 import type { RelatedProduct } from "@/lib/queries";
@@ -204,6 +205,7 @@ export function ProductConfigurator({
   const [date, setDate] = useState(handoff?.date || "2026-06-14");
   const [monogram, setMonogram] = useState(handoff?.monogram || "");
   const [frame, setFrame] = useState("");
+  const [textFont, setTextFont] = useState<string>(DEFAULT_TEXT_FONT);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(handoff?.logoDataUrl ?? null);
 
@@ -586,6 +588,7 @@ export function ProductConfigurator({
             date,
             monogram,
             frame,
+            textFont,
             logoDataUrl,
             positions,
             elemScale,
@@ -625,6 +628,7 @@ export function ProductConfigurator({
             date,
             monogram,
             frame,
+            textFont,
             technique: technique?.technique,
             positions,
             elemScale,
@@ -748,6 +752,7 @@ export function ProductConfigurator({
                     top: `${positions.names.y}%`,
                     transform: `translate(-50%, -50%) rotate(${elemRotationDeg.names}deg)`,
                     fontSize: nameFontPx,
+                    ...textFontStyle(textFont),
                     ...techniqueTextStyle(technique?.technique),
                   }}
                 >
@@ -781,6 +786,7 @@ export function ProductConfigurator({
                     top: `${positions.date.y}%`,
                     transform: `translate(-50%, -50%) rotate(${elemRotationDeg.date}deg)`,
                     fontSize: dateFontPx,
+                    ...textFontStyle(textFont),
                     ...techniqueTextStyle(technique?.technique),
                   }}
                 >
@@ -943,8 +949,26 @@ export function ProductConfigurator({
               <input
                 value={names}
                 onChange={(e) => setNames(e.target.value.slice(0, zone?.max_chars_per_line ?? 24))}
-                className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+                className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark mb-3"
               />
+              <label className="text-xs uppercase tracking-wide text-muted block mb-2">Text font</label>
+              <div className="grid grid-cols-2 gap-2">
+                {TEXT_FONTS.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setTextFont(f.id)}
+                    className={`rounded-lg border px-3 py-2 text-left overflow-hidden ${
+                      textFont === f.id ? "border-dark bg-cream" : "border-line"
+                    }`}
+                  >
+                    <span className="block text-[9px] uppercase tracking-wide text-muted">{f.label}</span>
+                    <span className="block truncate text-lg leading-tight" style={textFontStyle(f.id)}>
+                      {names || "Amelia & Ravi"}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -1044,6 +1068,7 @@ export function ProductConfigurator({
             date={date}
             monogram={monogram}
             frame={frame}
+            textFont={textFont}
             logoFile={logoFile}
             positions={positions}
             elemScale={elemScale}
