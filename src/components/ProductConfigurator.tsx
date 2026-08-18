@@ -208,6 +208,7 @@ export function ProductConfigurator({
     startAngle: number;
     startScale: number;
     startRotation: number;
+    maxScale: number;
   } | null>(null);
   const [techniqueId, setTechniqueId] = useState(
     product.techniques.find((t) => t.is_default)?.id ?? product.techniques[0]?.id ?? ""
@@ -285,7 +286,7 @@ export function ProductConfigurator({
       if (state.mode === "resize") {
         const dist = Math.hypot(e.clientX - state.centerX, e.clientY - state.centerY);
         const ratio = state.startDist > 0 ? dist / state.startDist : 1;
-        const next = Math.max(0.4, Math.min(2, state.startScale * ratio));
+        const next = Math.max(0.3, Math.min(state.maxScale, state.startScale * ratio));
         setElemScale((prev) => ({ ...prev, [state.key]: next }));
       } else {
         const angle = (Math.atan2(e.clientY - state.centerY, e.clientX - state.centerX) * 180) / Math.PI;
@@ -314,6 +315,19 @@ export function ProductConfigurator({
       const rect = box.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
+      // Cap growth at the print area's own footprint (with a little
+      // breathing room) rather than an arbitrary fixed multiplier — so an
+      // element can be enlarged right up to filling the print area, and no
+      // further.
+      const zoneRect = zoneRef.current?.getBoundingClientRect();
+      const currentScale = elemScale[key] || 1;
+      const maxScale =
+        zoneRect && rect.width > 0 && rect.height > 0
+          ? Math.max(
+              currentScale,
+              currentScale * Math.min((zoneRect.width * 0.95) / rect.width, (zoneRect.height * 0.95) / rect.height)
+            )
+          : 4;
       elemAdjustState.current = {
         key,
         mode,
@@ -321,11 +335,12 @@ export function ProductConfigurator({
         centerY,
         startDist: Math.hypot(e.clientX - centerX, e.clientY - centerY),
         startAngle: (Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180) / Math.PI,
-        startScale: elemScale[key],
+        startScale: currentScale,
         startRotation: elemRotationOffset[key],
+        maxScale,
       };
     },
-    [elemScale, elemRotationOffset]
+    [elemScale, elemRotationOffset, zoneRef]
   );
 
   const technique = product.techniques.find((t) => t.id === techniqueId);

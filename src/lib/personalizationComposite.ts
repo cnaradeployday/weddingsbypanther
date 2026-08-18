@@ -309,6 +309,18 @@ export async function composeProductPersonalization({
 
   const canvasW = Math.max(1, Math.round(box.width));
   const canvasH = Math.max(1, Math.round(box.height));
+
+  // Small print areas (a thin band on a stemless glass, a narrow strip on
+  // a pen) mean canvasW/H can be tiny in real photo pixels — too few
+  // pixels for a serif font to render legibly at all, regardless of font
+  // availability. Render the artwork supersampled, then downscale with a
+  // gentle kernel. (Not Lanczos: that kernel rings on the sharp edges of
+  // text/logos, which is what caused the earlier white-halo artifact —
+  // "mitchell" trades a little sharpness for no ringing.)
+  const renderScale = Math.min(6, Math.max(1, 260 / Math.max(canvasW, canvasH)));
+  const renderW = Math.round(canvasW * renderScale);
+  const renderH = Math.round(canvasH * renderScale);
+
   const baseRotationDeg = zone && zone.corners_pct.length === 4 ? zoneRotationDeg(zone.corners_pct, photoW, photoH) : 0;
   const rotations: Partial<Record<ElemKey, number>> = {
     logo: baseRotationDeg + (elemRotationOffsetDeg.logo ?? 0),
@@ -316,11 +328,11 @@ export async function composeProductPersonalization({
     names: baseRotationDeg + (elemRotationOffsetDeg.names ?? 0),
     date: baseRotationDeg + (elemRotationOffsetDeg.date ?? 0),
   };
-  const logoBoxSize = defaultLogoBoxSize(canvasW, canvasH, zone) * (elemScale.logo ?? 1);
+  const logoBoxSize = defaultLogoBoxSize(renderW, renderH, zone) * (elemScale.logo ?? 1);
 
   const artworkBuffer = await buildArtworkImage({
-    canvasW,
-    canvasH,
+    canvasW: renderW,
+    canvasH: renderH,
     logoImage,
     logoBoxSize,
     positions,
@@ -332,5 +344,10 @@ export async function composeProductPersonalization({
     rotations,
   });
 
-  return compositePersonalization(croppedBase, artworkBuffer, box, canvasW, canvasH);
+  const finalArtwork =
+    renderScale > 1
+      ? await sharp(artworkBuffer).resize(canvasW, canvasH, { fit: "fill", kernel: "mitchell" }).png().toBuffer()
+      : artworkBuffer;
+
+  return compositePersonalization(croppedBase, finalArtwork, box, canvasW, canvasH);
 }
