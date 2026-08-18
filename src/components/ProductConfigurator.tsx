@@ -12,8 +12,11 @@ import { AiRenderPanel } from "./AiRenderPanel";
 
 // Wedding-appropriate monogram accents — kept to monochrome glyphs (not
 // full-color emoji) so they still respect the selected print technique's
-// ink color, the same as the surrounding text.
-const MONOGRAMS = ["♥", "⚭", "❧", "∞", "❀", "✦", "☙", "✿"];
+// ink color, the same as the surrounding text. Limited to widely-supported
+// Unicode blocks (Dingbats / general punctuation) — rarer symbol blocks
+// (e.g. the marriage-rings glyph) render as blank "tofu" boxes on the
+// server's font stack, which is used for the AI render and snapshot.
+const MONOGRAMS = ["♥", "∞", "❀", "✦", "✿", "❖", "⬥"];
 
 // Approximates how each print technique looks on the manual (non-AI) live
 // preview — a plain color swap for printed techniques, plus a debossed
@@ -64,18 +67,33 @@ type ElemKey = "logo" | "monogram" | "names" | "date";
 type ElemPos = { x: number; y: number };
 
 // Direct-manipulation resize/rotate handles shared by all four
-// personalization elements: drag the corner dot to scale (uniformly, never
-// distorting), drag the dot above to rotate, both in place on the element
-// itself rather than a slider elsewhere on the page. A small live readout
-// always shows the current size/rotation.
+// personalization elements: drag the corner icon to scale (uniformly,
+// never distorting), drag the icon above to rotate, both in place on the
+// element itself. Only rendered while that element is the selected one
+// (tapped on), so the photo stays clean otherwise.
+function ResizeIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 13 L13 3" />
+      <path d="M8.5 3 H13 V7.5" />
+      <path d="M7.5 13 H3 V8.5" />
+    </svg>
+  );
+}
+
+function RotateIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M13 8a5 5 0 1 1-1.7-3.75" />
+      <path d="M13 2.2v3.6H9.4" />
+    </svg>
+  );
+}
+
 function AdjustHandles({
-  scale,
-  rotationOffset,
   onResizeStart,
   onRotateStart,
 }: {
-  scale: number;
-  rotationOffset: number;
   onResizeStart: (e: React.PointerEvent) => void;
   onRotateStart: (e: React.PointerEvent) => void;
 }) {
@@ -83,16 +101,16 @@ function AdjustHandles({
     <>
       <div
         onPointerDown={onResizeStart}
-        className="absolute -right-2 -bottom-2 h-4 w-4 rounded-full bg-white border-2 border-terracotta cursor-nwse-resize touch-none pointer-events-auto"
-      />
+        className="absolute -right-2.5 -bottom-2.5 h-5 w-5 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-nwse-resize touch-none pointer-events-auto"
+      >
+        <ResizeIcon />
+      </div>
       <div
         onPointerDown={onRotateStart}
-        className="absolute left-1/2 -top-7 h-4 w-4 -translate-x-1/2 rounded-full bg-white border-2 border-terracotta cursor-grab touch-none pointer-events-auto"
-      />
-      <span className="absolute left-1/2 -bottom-6 -translate-x-1/2 whitespace-nowrap text-[10px] font-medium bg-cream-light/95 text-dark px-2 py-0.5 rounded-full pointer-events-none">
-        {Math.round(scale * 100)}% · {rotationOffset > 0 ? "+" : ""}
-        {rotationOffset}°
-      </span>
+        className="absolute left-1/2 -top-8 h-5 w-5 -translate-x-1/2 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-grab touch-none pointer-events-auto"
+      >
+        <RotateIcon />
+      </div>
     </>
   );
 }
@@ -184,6 +202,9 @@ export function ProductConfigurator({
   // element — not shared sliders elsewhere in the page.
   const [elemScale, setElemScale] = useState<Record<ElemKey, number>>(DEFAULT_SCALES);
   const [elemRotationOffset, setElemRotationOffset] = useState<Record<ElemKey, number>>(DEFAULT_ROTATIONS);
+  // Resize/rotate handles only show on the element the customer tapped —
+  // otherwise the photo stays uncluttered.
+  const [activeElem, setActiveElem] = useState<ElemKey | null>(null);
   const dragState = useRef<{ key: ElemKey; startX: number; startY: number; orig: ElemPos } | null>(null);
   const elemAdjustState = useRef<{
     key: ElemKey;
@@ -244,6 +265,7 @@ export function ProductConfigurator({
     (key: ElemKey) => (e: React.PointerEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      setActiveElem(key);
       dragState.current = { key, startX: e.clientX, startY: e.clientY, orig: positions[key] };
     },
     [positions]
@@ -392,6 +414,16 @@ export function ProductConfigurator({
     return Math.min(95, (logoBoxPx / zoneSize.width) * 100);
   }, [zone, zoneSize.width, zoneSize.height, elemScale.logo]);
 
+  // Real-world size readouts (cm) shown next to each field below, computed
+  // from the same px-per-mm conversion the on-canvas sizing uses — only
+  // available once the product's print-area mm dimensions and rendered box
+  // are both known.
+  const cmLabel = (px: number) => (mmPerPx ? `≈ ${((px * mmPerPx) / 10).toFixed(1)} cm` : null);
+  const logoSizeLabel = mmPerPx && zoneSize.width ? cmLabel((logoWidthPct / 100) * zoneSize.width) : null;
+  const monogramSizeLabel = cmLabel(monogramFontPx);
+  const nameSizeLabel = cmLabel(nameFontPx);
+  const dateSizeLabel = cmLabel(dateFontPx);
+
   const formattedDate = useMemo(() => {
     if (!date) return "";
     const d = new Date(date + "T00:00:00");
@@ -526,7 +558,10 @@ export function ProductConfigurator({
   return (
     <div className="mx-auto max-w-7xl px-6 py-10 grid md:grid-cols-2 gap-12">
       <div>
-        <div className="relative aspect-[4/5] rounded-2xl overflow-hidden bg-cream mb-4">
+        <div
+          className="relative aspect-[4/5] rounded-2xl overflow-hidden bg-cream mb-4"
+          onPointerDown={() => setActiveElem(null)}
+        >
           {displayImage && <Image src={displayImage} alt={product.name} fill className="object-cover" priority />}
           {product.personalizable && zone && showOverlayHere && (
             <svg
@@ -571,12 +606,12 @@ export function ProductConfigurator({
                   <div className="relative w-full h-full pointer-events-none">
                     <Image src={logoPreview} alt="" fill className="object-contain" unoptimized />
                   </div>
-                  <AdjustHandles
-                    scale={elemScale.logo}
-                    rotationOffset={elemRotationOffset.logo}
-                    onResizeStart={startElemAdjust("logo", "resize")}
-                    onRotateStart={startElemAdjust("logo", "rotate")}
-                  />
+                  {activeElem === "logo" && (
+                    <AdjustHandles
+                      onResizeStart={startElemAdjust("logo", "resize")}
+                      onRotateStart={startElemAdjust("logo", "rotate")}
+                    />
+                  )}
                 </div>
               )}
               {monogram && (
@@ -593,12 +628,12 @@ export function ProductConfigurator({
                   }}
                 >
                   {monogram}
-                  <AdjustHandles
-                    scale={elemScale.monogram}
-                    rotationOffset={elemRotationOffset.monogram}
-                    onResizeStart={startElemAdjust("monogram", "resize")}
-                    onRotateStart={startElemAdjust("monogram", "rotate")}
-                  />
+                  {activeElem === "monogram" && (
+                    <AdjustHandles
+                      onResizeStart={startElemAdjust("monogram", "resize")}
+                      onRotateStart={startElemAdjust("monogram", "rotate")}
+                    />
+                  )}
                 </div>
               )}
               {names && (
@@ -615,12 +650,12 @@ export function ProductConfigurator({
                   }}
                 >
                   {names}
-                  <AdjustHandles
-                    scale={elemScale.names}
-                    rotationOffset={elemRotationOffset.names}
-                    onResizeStart={startElemAdjust("names", "resize")}
-                    onRotateStart={startElemAdjust("names", "rotate")}
-                  />
+                  {activeElem === "names" && (
+                    <AdjustHandles
+                      onResizeStart={startElemAdjust("names", "resize")}
+                      onRotateStart={startElemAdjust("names", "rotate")}
+                    />
+                  )}
                 </div>
               )}
               {date && (
@@ -637,12 +672,12 @@ export function ProductConfigurator({
                   }}
                 >
                   {formattedDate}
-                  <AdjustHandles
-                    scale={elemScale.date}
-                    rotationOffset={elemRotationOffset.date}
-                    onResizeStart={startElemAdjust("date", "resize")}
-                    onRotateStart={startElemAdjust("date", "rotate")}
-                  />
+                  {activeElem === "date" && (
+                    <AdjustHandles
+                      onResizeStart={startElemAdjust("date", "resize")}
+                      onRotateStart={startElemAdjust("date", "rotate")}
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -725,9 +760,12 @@ export function ProductConfigurator({
         {product.personalizable && (
           <div className="space-y-6 mb-8">
             <div>
-              <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-                Your logo <span className="normal-case text-muted/70">(optional)</span>
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs uppercase tracking-wide text-muted">
+                  Your logo <span className="normal-case text-muted/70">(optional)</span>
+                </label>
+                {logoPreview && logoSizeLabel && <span className="text-xs text-muted">{logoSizeLabel}</span>}
+              </div>
               <div className="flex items-center gap-3">
                 <label className="relative h-16 w-16 rounded-lg overflow-hidden border border-line cursor-pointer bg-white shrink-0">
                   {logoPreview ? (
@@ -751,9 +789,10 @@ export function ProductConfigurator({
               </div>
             </div>
             <div>
-              <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-                Your names or event text
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs uppercase tracking-wide text-muted">Your names or event text</label>
+                {nameSizeLabel && <span className="text-xs text-muted">{nameSizeLabel}</span>}
+              </div>
               <input
                 value={names}
                 onChange={(e) => setNames(e.target.value.slice(0, zone?.max_chars_per_line ?? 24))}
@@ -761,6 +800,10 @@ export function ProductConfigurator({
               />
             </div>
             <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs uppercase tracking-wide text-muted">Date</label>
+                {dateSizeLabel && <span className="text-xs text-muted">{dateSizeLabel}</span>}
+              </div>
               <input
                 type="date"
                 value={date}
@@ -769,9 +812,12 @@ export function ProductConfigurator({
               />
             </div>
             <div>
-              <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-                Monogram <span className="normal-case text-muted/70">(optional)</span>
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs uppercase tracking-wide text-muted">
+                  Monogram <span className="normal-case text-muted/70">(optional)</span>
+                </label>
+                {monogram && monogramSizeLabel && <span className="text-xs text-muted">{monogramSizeLabel}</span>}
+              </div>
               <div className="flex gap-2 flex-wrap">
                 <button
                   onClick={() => setMonogram("")}
