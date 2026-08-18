@@ -25,7 +25,13 @@ function techniqueTextStyle(techniqueName?: string): React.CSSProperties {
   return fontWeight ? { color, fontWeight } : { color };
 }
 
-type Technique = { id: string; technique: string; extra_price: number; is_default: boolean };
+type Technique = {
+  id: string;
+  technique: string;
+  extra_price: number;
+  is_default: boolean;
+  stripSourceColor?: boolean;
+};
 type ProductImage = { id: string; url: string };
 type Variant = {
   id: string;
@@ -118,10 +124,6 @@ const DEFAULT_POSITIONS: Record<ElemKey, ElemPos> = {
 const DEFAULT_SCALES: Record<ElemKey, number> = { logo: 1, monogram: 1, names: 1, date: 1 };
 const DEFAULT_ROTATIONS: Record<ElemKey, number> = { logo: 0, monogram: 0, names: 0, date: 0 };
 
-function clampPct(v: number) {
-  return Math.min(100, Math.max(0, v));
-}
-
 async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   const res = await fetch(dataUrl);
   return res.blob();
@@ -198,7 +200,14 @@ export function ProductConfigurator({
   // Resize/rotate handles only show on the element the customer tapped —
   // otherwise the photo stays uncluttered.
   const [activeElem, setActiveElem] = useState<ElemKey | null>(null);
-  const dragState = useRef<{ key: ElemKey; startX: number; startY: number; orig: ElemPos } | null>(null);
+  const dragState = useRef<{
+    key: ElemKey;
+    startX: number;
+    startY: number;
+    orig: ElemPos;
+    marginXPct: number;
+    marginYPct: number;
+  } | null>(null);
   const elemAdjustState = useRef<{
     key: ElemKey;
     mode: "resize" | "rotate";
@@ -239,9 +248,15 @@ export function ProductConfigurator({
       const rect = container.getBoundingClientRect();
       const dxPct = ((e.clientX - state.startX) / rect.width) * 100;
       const dyPct = ((e.clientY - state.startY) / rect.height) * 100;
+      // Clamped to the element's own half-size, not just [0,100], so the
+      // element's edges — not just its center point — stay inside the
+      // print area instead of hanging off the side.
       setPositions((prev) => ({
         ...prev,
-        [state.key]: { x: clampPct(state.orig.x + dxPct), y: clampPct(state.orig.y + dyPct) },
+        [state.key]: {
+          x: Math.min(100 - state.marginXPct, Math.max(state.marginXPct, state.orig.x + dxPct)),
+          y: Math.min(100 - state.marginYPct, Math.max(state.marginYPct, state.orig.y + dyPct)),
+        },
       }));
     };
     const handleUp = () => {
@@ -260,9 +275,14 @@ export function ProductConfigurator({
       e.preventDefault();
       e.stopPropagation();
       setActiveElem(key);
-      dragState.current = { key, startX: e.clientX, startY: e.clientY, orig: positions[key] };
+      const box = elemBoxRefs.current[key];
+      const zoneRect = zoneRef.current?.getBoundingClientRect();
+      const boxRect = box?.getBoundingClientRect();
+      const marginXPct = zoneRect && boxRect && zoneRect.width > 0 ? Math.min(50, ((boxRect.width / 2) / zoneRect.width) * 100) : 0;
+      const marginYPct = zoneRect && boxRect && zoneRect.height > 0 ? Math.min(50, ((boxRect.height / 2) / zoneRect.height) * 100) : 0;
+      dragState.current = { key, startX: e.clientX, startY: e.clientY, orig: positions[key], marginXPct, marginYPct };
     },
-    [positions]
+    [positions, zoneRef]
   );
 
   // Direct-manipulation resize/rotate for each element, mirroring the
@@ -419,7 +439,11 @@ export function ProductConfigurator({
     const scale = Math.min(pxPerMmX, pxPerMmY);
     const smallerMm = Math.min(zone.width_mm, zone.height_mm);
     const logoBoxPx = scale * smallerMm * 0.45 * elemScale.logo;
-    return Math.min(95, (logoBoxPx / zoneSize.width) * 100);
+    // No hardcoded ceiling here — the resize handle already computes, per
+    // drag, how far this can grow before exceeding the print area itself
+    // (both width and height), so it's the sole limit on how big the logo
+    // can get.
+    return (logoBoxPx / zoneSize.width) * 100;
   }, [zone, zoneSize.width, zoneSize.height, elemScale.logo]);
 
   // Real-world size readouts (cm) shown next to each field below, computed
@@ -612,7 +636,14 @@ export function ProductConfigurator({
                   }}
                 >
                   <div className="relative w-full h-full pointer-events-none">
-                    <Image src={logoPreview} alt="" fill className="object-contain" unoptimized />
+                    <Image
+                      src={logoPreview}
+                      alt=""
+                      fill
+                      className="object-contain"
+                      style={technique?.stripSourceColor ? { filter: "grayscale(1)" } : undefined}
+                      unoptimized
+                    />
                   </div>
                   {activeElem === "logo" && (
                     <AdjustHandles
