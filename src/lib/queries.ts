@@ -26,6 +26,15 @@ export async function getPlannerBySlug(slug: string) {
   return data;
 }
 
+export async function getPlanners() {
+  const { data } = await supabase
+    .from("planners")
+    .select("id, slug, business_name, tagline, initials, logo_url, accent_color")
+    .eq("status", "approved")
+    .order("business_name");
+  return data ?? [];
+}
+
 export async function getCategories() {
   const { data } = await supabase
     .from("categories")
