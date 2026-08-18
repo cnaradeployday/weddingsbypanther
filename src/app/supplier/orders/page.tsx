@@ -16,6 +16,10 @@ type Personalization = {
   snapshotUrl?: string;
 };
 
+function hasOutlinableText(p: Personalization | null): boolean {
+  return Boolean(p?.names?.trim() || p?.date?.trim() || p?.monogram?.trim());
+}
+
 export default async function SupplierOrdersPage() {
   const session = await getSessionProfile();
   if (!session) redirect("/login");
@@ -140,6 +144,16 @@ export default async function SupplierOrdersPage() {
                             </a>
                           )}
                         </div>
+                      </div>
+                    )}
+                    {hasOutlinableText(p) && (
+                      <div className="flex items-end">
+                        <a
+                          href={`/api/order-items/${item.id}/print-file`}
+                          className="rounded-full border border-terracotta px-4 py-2 text-xs font-medium text-terracotta hover:bg-terracotta hover:text-white transition"
+                        >
+                          Download print file (outlined)
+                        </a>
                       </div>
                     )}
                   </div>
