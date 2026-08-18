@@ -10,7 +10,10 @@ import { createClient } from "@/lib/supabase/client";
 import { techniqueInkColor } from "@/lib/printTechniqueColors";
 import { MONOGRAM_OPTIONS, monogramSvgInner } from "@/lib/monograms";
 import { fitTextFontSize } from "@/lib/textFit";
+import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
+import type { RelatedProduct } from "@/lib/queries";
 import { AiRenderPanel } from "./AiRenderPanel";
+import { RelatedProductsRail } from "./RelatedProductsRail";
 
 // Approximates how each print technique looks on the manual (non-AI) live
 // preview — a plain color swap for printed techniques, plus a debossed
@@ -161,8 +164,10 @@ function useElementSize<T extends HTMLElement>() {
 export function ProductConfigurator({
   product,
   unlimitedRenders = false,
+  relatedProducts = [],
 }: {
   unlimitedRenders?: boolean;
+  relatedProducts?: RelatedProduct[];
   product: {
     id: string;
     slug: string;
@@ -187,11 +192,28 @@ export function ProductConfigurator({
   const router = useRouter();
   const { addItem } = useCart();
 
-  const [names, setNames] = useState("Amelia & Ravi");
-  const [date, setDate] = useState("2026-06-14");
-  const [monogram, setMonogram] = useState("");
+  // If the customer arrived here by tapping a suggested product on another
+  // product's page, pick up the names/date/monogram/logo they'd already
+  // entered there instead of starting blank — read once, synchronously, as
+  // the initial state itself (not an effect) since sessionStorage is a
+  // one-shot read, not a subscription. Cleared as soon as it's read, so it
+  // only ever applies right after that click, not on a later unrelated visit.
+  const [handoff] = useState(() => consumePersonalizationHandoff());
+  const [names, setNames] = useState(handoff?.names || "Amelia & Ravi");
+  const [date, setDate] = useState(handoff?.date || "2026-06-14");
+  const [monogram, setMonogram] = useState(handoff?.monogram || "");
   const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(handoff?.logoDataUrl ?? null);
+
+  // The handoff logo is only a data URL (its File object couldn't survive
+  // navigation) — reconstitute it as a real File async so it can still be
+  // uploaded on checkout, same as one the customer picked here directly.
+  useEffect(() => {
+    if (!handoff?.logoDataUrl) return;
+    dataUrlToBlob(handoff.logoDataUrl).then((blob) => {
+      setLogoFile(new File([blob], "logo.png", { type: blob.type || "image/png" }));
+    });
+  }, [handoff]);
   const [positions, setPositions] = useState<Record<ElemKey, ElemPos>>(DEFAULT_POSITIONS);
   // Each element (logo, monogram, names, date) gets its own independent
   // size and rotation, adjusted with on-canvas drag handles right on the
@@ -616,7 +638,8 @@ export function ProductConfigurator({
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-10 grid md:grid-cols-2 gap-12">
+    <div className="mx-auto max-w-7xl px-6 py-10">
+    <div className="grid md:grid-cols-2 gap-12">
       <div>
         <div
           className="relative aspect-[4/5] rounded-2xl overflow-hidden bg-cream mb-4"
@@ -1038,6 +1061,15 @@ export function ProductConfigurator({
           View cart →
         </button>
       </div>
+    </div>
+      <RelatedProductsRail
+        products={relatedProducts}
+        base={`/store/${product.plannerSlug}`}
+        names={names}
+        date={date}
+        monogram={monogram}
+        logoDataUrl={logoPreview}
+      />
     </div>
   );
 }

@@ -14,11 +14,13 @@ export default async function EditAdminProductPage({
   if (!session) redirect("/login");
   const supabase = await createClient();
 
-  const [{ data: suppliers }, { data: categories }, { data: techniques }] = await Promise.all([
-    supabase.from("suppliers").select("id, business_name").order("business_name"),
-    supabase.from("categories").select("id, name").order("sort_order"),
-    supabase.from("print_techniques").select("name").order("sort_order"),
-  ]);
+  const [{ data: suppliers }, { data: categories }, { data: techniques }, { data: otherProductRows }] =
+    await Promise.all([
+      supabase.from("suppliers").select("id, business_name").order("business_name"),
+      supabase.from("categories").select("id, name").order("sort_order"),
+      supabase.from("print_techniques").select("name").order("sort_order"),
+      supabase.from("products").select("id, name").neq("id", id).order("name"),
+    ]);
 
   const { data: product } = await supabase
     .from("products")
@@ -49,6 +51,8 @@ export default async function EditAdminProductPage({
     status: product.status,
     reviewerNote: product.reviewer_note,
     techniques: (product.techniques ?? []).map((t) => t.technique),
+    styleTags: product.style_tags ?? [],
+    relatedProductIds: product.related_product_ids ?? [],
     zone: zone
       ? {
           width: zone.width_mm ?? 60,
@@ -83,6 +87,7 @@ export default async function EditAdminProductPage({
         suppliers={suppliers ?? []}
         categories={categories ?? []}
         techniqueOptions={(techniques ?? []).map((t) => t.name)}
+        otherProducts={otherProductRows ?? []}
         initial={initial}
         initialSupplierId={product.supplier_id ?? undefined}
       />

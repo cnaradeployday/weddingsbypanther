@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getStorefrontProduct } from "@/lib/queries";
+import { getStorefrontProduct, getRelatedProducts } from "@/lib/queries";
 import { getSessionProfile } from "@/lib/supabase/server";
 import { ProductConfigurator } from "@/components/ProductConfigurator";
 
@@ -14,6 +14,8 @@ export default async function ProductPage({
     getSessionProfile(),
   ]);
   if (!product) notFound();
+
+  const relatedProducts = await getRelatedProducts(slug, product.relatedProductIds);
 
   const unlimitedRenders = session?.profile.role === "admin";
 
@@ -40,6 +42,7 @@ export default async function ProductPage({
         variants: product.variants,
         plannerSlug: slug,
       }}
+      relatedProducts={relatedProducts}
     />
   );
 }

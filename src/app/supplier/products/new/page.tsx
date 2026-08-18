@@ -14,9 +14,10 @@ export default async function NewSupplierProductPage() {
     .maybeSingle();
   if (!supplier) redirect("/login");
 
-  const [{ data: categories }, { data: techniques }] = await Promise.all([
+  const [{ data: categories }, { data: techniques }, { data: otherProductRows }] = await Promise.all([
     supabase.from("categories").select("id, name").order("sort_order"),
     supabase.from("print_techniques").select("name").order("sort_order"),
+    supabase.from("products").select("id, name").order("name"),
   ]);
 
   return (
@@ -27,6 +28,7 @@ export default async function NewSupplierProductPage() {
         supplierId={supplier.id}
         categories={categories ?? []}
         techniqueOptions={(techniques ?? []).map((t) => t.name)}
+        otherProducts={otherProductRows ?? []}
       />
     </div>
   );

@@ -35,8 +35,15 @@ function slotsTotal(slots: CategorySlot[]): number {
 // Every option is built from the same category plan (driven by guest count),
 // starting from each category's cheapest matching product — this is what
 // keeps every tier's products actually connected to what the customer
-// entered, rather than a price picked out of thin air.
-function buildBaseSlots(catalog: CatalogProduct[], guests: number): CategorySlot[] {
+// entered, rather than a price picked out of thin air. Within a category,
+// products tagged with one of the customer's chosen styles are ranked
+// ahead of untagged/non-matching ones (at the same price ordering within
+// each group) — so "Romantic + Rustic" actually steers which products get
+// picked, not just which ones get more expensive as the budget goes up.
+// Untagged products are never excluded outright: most of the seed catalog
+// has no style_tags yet, and a category going empty would be worse than a
+// style mismatch.
+function buildBaseSlots(catalog: CatalogProduct[], guests: number, styles: string[]): CategorySlot[] {
   const byCategory = new Map<string, CatalogProduct[]>();
   for (const p of catalog) {
     const list = byCategory.get(p.categorySlug) ?? [];
@@ -52,9 +59,13 @@ function buildBaseSlots(catalog: CatalogProduct[], guests: number): CategorySlot
     { slug: "welcome-bags", qty: Math.ceil(guests * 0.6) },
   ];
 
+  const matchesStyle = (p: CatalogProduct) => styles.length > 0 && p.styleTags.some((t) => styles.includes(t));
+
   return plan
     .map(({ slug, qty }) => {
-      const options = (byCategory.get(slug) ?? []).slice().sort((a, b) => a.price - b.price);
+      const options = (byCategory.get(slug) ?? [])
+        .slice()
+        .sort((a, b) => Number(matchesStyle(b)) - Number(matchesStyle(a)) || a.price - b.price);
       return { qty, options, index: 0 };
     })
     .filter((s) => s.options.length > 0);
@@ -124,7 +135,7 @@ export function BuilderForm({
   const handleGenerate = async () => {
     setSubmitting(true);
 
-    const baseSlots = buildBaseSlots(catalog, guests);
+    const baseSlots = buildBaseSlots(catalog, guests, styles);
     // Tier 1 spends at least the customer's stated budget (upgrading from
     // the cheapest picks until it does). Tiers 2 and 3 upgrade further from
     // there to land at +20% and +40% over tier 1 specifically — not

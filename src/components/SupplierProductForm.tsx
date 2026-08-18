@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PrintAreaTool, type Quad } from "./PrintAreaTool";
+import { STYLE_TAGS } from "@/lib/styleTags";
 
 const DEFAULT_CORNERS: Quad = [
   { x: 30, y: 35 },
@@ -39,6 +40,8 @@ export type InitialProduct = {
   status: string;
   reviewerNote: string | null;
   techniques: string[];
+  styleTags: string[];
+  relatedProductIds: string[];
   zone: {
     width: number;
     height: number;
@@ -85,11 +88,13 @@ export function SupplierProductForm({
   supplierId,
   categories,
   techniqueOptions,
+  otherProducts,
   initial,
 }: {
   supplierId: string;
   categories: { id: string; name: string }[];
   techniqueOptions: string[];
+  otherProducts: { id: string; name: string }[];
   initial?: InitialProduct;
 }) {
   const router = useRouter();
@@ -109,6 +114,8 @@ export function SupplierProductForm({
   const [stock, setStock] = useState(initial?.stock ?? 1000);
   const [personalizable, setPersonalizable] = useState(initial?.personalizable ?? true);
   const [techniques, setTechniques] = useState<string[]>(initial?.techniques ?? ["Foil stamp"]);
+  const [styleTags, setStyleTags] = useState<string[]>(initial?.styleTags ?? []);
+  const [relatedIds, setRelatedIds] = useState<string[]>(initial?.relatedProductIds ?? []);
   const [zoneWidth, setZoneWidth] = useState(initial?.zone?.width ?? 60);
   const [zoneHeight, setZoneHeight] = useState(initial?.zone?.height ?? 30);
   const [maxChars, setMaxChars] = useState(initial?.zone?.maxChars ?? 24);
@@ -165,6 +172,10 @@ export function SupplierProductForm({
 
   const toggleTechnique = (t: string) =>
     setTechniques((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+  const toggleStyleTag = (t: string) =>
+    setStyleTags((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+  const toggleRelated = (id: string) =>
+    setRelatedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,6 +198,8 @@ export function SupplierProductForm({
           lead_time_days_max: leadMax,
           stock_on_hand: stock,
           personalizable,
+          style_tags: styleTags,
+          related_product_ids: relatedIds,
           ...(needsResubmit ? { status: "pending", reviewer_note: null } : {}),
         })
         .eq("id", productId);
@@ -223,6 +236,8 @@ export function SupplierProductForm({
           lead_time_days_max: leadMax,
           stock_on_hand: stock,
           personalizable,
+          style_tags: styleTags,
+          related_product_ids: relatedIds,
           status: "pending",
         })
         .select()
@@ -510,6 +525,26 @@ export function SupplierProductForm({
           This product can be personalized
         </label>
 
+        <div>
+          <p className="text-xs uppercase tracking-wide text-muted mb-2">
+            Style <span className="normal-case text-muted/70">(matched against the Proposal Builder)</span>
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {STYLE_TAGS.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => toggleStyleTag(t)}
+                className={`px-3 py-2 rounded-lg text-sm border ${
+                  styleTags.includes(t) ? "border-dark bg-cream" : "border-line"
+                }`}
+              >
+                {t} {styleTags.includes(t) ? "✓" : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {personalizable && (
           <div>
             {existingImages.length + previews.length > 1 && (
@@ -594,6 +629,27 @@ export function SupplierProductForm({
           </div>
         )}
 
+      </div>
+
+      <div className="md:col-span-2 rounded-xl border border-line bg-white p-6 space-y-3">
+        <p className="text-xs uppercase tracking-wide text-muted">
+          Related products{" "}
+          <span className="normal-case text-muted/70">
+            — shown as suggested add-ons below this product on the storefront
+          </span>
+        </p>
+        {otherProducts.length === 0 ? (
+          <p className="text-sm text-muted">No other products yet.</p>
+        ) : (
+          <div className="max-h-48 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {otherProducts.map((p) => (
+              <label key={p.id} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={relatedIds.includes(p.id)} onChange={() => toggleRelated(p.id)} />
+                <span className="truncate">{p.name}</span>
+              </label>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="md:col-span-2 rounded-xl border border-line bg-white p-6 space-y-4">
