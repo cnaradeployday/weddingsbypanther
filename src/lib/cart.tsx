@@ -11,6 +11,8 @@ export type CartItem = {
   unitPrice: number;
   quantity: number;
   minOrder: number;
+  leadTimeMin?: number;
+  leadTimeMax?: number;
   variantId?: string;
   variantLabel?: string;
   personalization?: {

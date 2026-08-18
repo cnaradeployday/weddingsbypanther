@@ -182,6 +182,7 @@ export function ProductConfigurator({
     markupPct: number;
     unitPrice: number;
     minOrder: number;
+    popularQty: number | null;
     leadTimeMin: number;
     leadTimeMax: number;
     personalizable: boolean;
@@ -251,7 +252,9 @@ export function ProductConfigurator({
     product.techniques.find((t) => t.is_default)?.id ?? product.techniques[0]?.id ?? ""
   );
   const [variantId, setVariantId] = useState(product.variants[0]?.id ?? "");
-  const [quantity, setQuantity] = useState(product.minOrder);
+  const [quantity, setQuantity] = useState(
+    product.popularQty && product.popularQty >= product.minOrder ? product.popularQty : product.minOrder
+  );
   const [justAdded, setJustAdded] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
   const [latestRender, setLatestRender] = useState<{
@@ -520,7 +523,12 @@ export function ProductConfigurator({
       .replace(/\//g, "·");
   }, [date]);
 
-  const quickQuantities = [product.minOrder, product.minOrder * 2, product.minOrder * 4, product.minOrder * 8];
+  const baseQuickQuantities = [product.minOrder, product.minOrder * 2, product.minOrder * 4, product.minOrder * 8];
+  const popularQty = product.popularQty && product.popularQty >= product.minOrder ? product.popularQty : null;
+  const quickQuantities =
+    popularQty && !baseQuickQuantities.includes(popularQty)
+      ? [...baseQuickQuantities, popularQty].sort((a, b) => a - b)
+      : baseQuickQuantities;
 
   const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -621,6 +629,8 @@ export function ProductConfigurator({
       unitPrice: unitPriceWithTechnique,
       quantity,
       minOrder: product.minOrder,
+      leadTimeMin: product.leadTimeMin,
+      leadTimeMax: product.leadTimeMax,
       variantId: variant?.id,
       variantLabel: variant?.label,
       personalization: product.personalizable
@@ -1116,16 +1126,25 @@ export function ProductConfigurator({
               </button>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             {quickQuantities.map((q) => (
               <button
                 key={q}
                 onClick={() => setQuantity(q)}
-                className={`px-4 py-2 rounded-full text-sm border ${
+                className={`px-4 py-2 rounded-full text-sm border flex items-center gap-1.5 ${
                   quantity === q ? "bg-dark text-cream-light border-dark" : "border-line"
                 }`}
               >
                 {q}
+                {q === popularQty && (
+                  <span
+                    className={`text-[10px] uppercase tracking-wide ${
+                      quantity === q ? "text-cream-light/70" : "text-terracotta"
+                    }`}
+                  >
+                    Popular
+                  </span>
+                )}
               </button>
             ))}
           </div>

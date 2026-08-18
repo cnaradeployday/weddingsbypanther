@@ -92,11 +92,13 @@ export type Database = {
       }
       orders: {
         Row: {
+          authorized_recipient: string | null
           created_at: string
           customer_email: string
           customer_id: string | null
           customer_name: string
           id: string
+          needed_by_date: string | null
           payment_status: string
           personalization_fee: number
           planner_id: string | null
@@ -108,11 +110,13 @@ export type Database = {
           total: number
         }
         Insert: {
+          authorized_recipient?: string | null
           created_at?: string
           customer_email: string
           customer_id?: string | null
           customer_name: string
           id?: string
+          needed_by_date?: string | null
           payment_status?: string
           personalization_fee?: number
           planner_id?: string | null
@@ -124,11 +128,13 @@ export type Database = {
           total: number
         }
         Update: {
+          authorized_recipient?: string | null
           created_at?: string
           customer_email?: string
           customer_id?: string | null
           customer_name?: string
           id?: string
+          needed_by_date?: string | null
           payment_status?: string
           personalization_fee?: number
           planner_id?: string | null
@@ -473,6 +479,7 @@ export type Database = {
           min_order: number
           name: string
           personalizable: boolean
+          popular_qty: number | null
           related_product_ids: string[]
           reviewer_note: string | null
           sku: string | null
@@ -493,6 +500,7 @@ export type Database = {
           min_order?: number
           name: string
           personalizable?: boolean
+          popular_qty?: number | null
           related_product_ids?: string[]
           reviewer_note?: string | null
           sku?: string | null
@@ -513,6 +521,7 @@ export type Database = {
           min_order?: number
           name?: string
           personalizable?: boolean
+          popular_qty?: number | null
           related_product_ids?: string[]
           reviewer_note?: string | null
           sku?: string | null
@@ -541,6 +550,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          couple_names: string | null
           created_at: string
           email: string | null
           full_name: string | null
@@ -548,8 +558,10 @@ export type Database = {
           must_change_password: boolean
           role: string
           role_id: string | null
+          wedding_date: string | null
         }
         Insert: {
+          couple_names?: string | null
           created_at?: string
           email?: string | null
           full_name?: string | null
@@ -557,8 +569,10 @@ export type Database = {
           must_change_password?: boolean
           role: string
           role_id?: string | null
+          wedding_date?: string | null
         }
         Update: {
+          couple_names?: string | null
           created_at?: string
           email?: string | null
           full_name?: string | null
@@ -566,6 +580,7 @@ export type Database = {
           must_change_password?: boolean
           role?: string
           role_id?: string | null
+          wedding_date?: string | null
         }
         Relationships: [
           {

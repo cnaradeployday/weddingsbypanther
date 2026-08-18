@@ -6,9 +6,14 @@ import { useCart } from "@/lib/cart";
 import { formatUSD } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import { createClient } from "@/lib/supabase/client";
+import { COUNTRIES, US_STATES, postalCodeLabel, regionLabel } from "@/lib/geoData";
 
 const SHIPPING_FLAT = 42;
 const FREE_SHIPPING_THRESHOLD = 1500;
+// Proofs take up to 48h to approve before production even starts — added
+// on top of each item's own lead time so "needed by" can't be set to a
+// date the studio has no realistic way to hit.
+const PROOF_BUFFER_DAYS = 2;
 
 type OtpStage = "idle" | "sent" | "verified";
 
@@ -28,7 +33,20 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
   const [otpError, setOtpError] = useState<string | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
 
+  // "Today" is read once via a lazy useState initializer rather than
+  // directly in the render body — Date.now() is impure, and a lazy
+  // initializer is the one place React expects (and permits) a one-time
+  // impure read. The minimum allowed date only needs to be roughly
+  // current, not millisecond-accurate or reactive to cart changes after
+  // the checkout page has already loaded.
+  const [minNeededBy] = useState(() => {
+    const maxLeadDays = items.length > 0 ? Math.max(...items.map((i) => i.leadTimeMax ?? 10)) : 10;
+    return new Date(Date.now() + (maxLeadDays + PROOF_BUFFER_DAYS) * 86400000).toISOString().slice(0, 10);
+  });
+
   const [form, setForm] = useState({
+    coupleNames: "",
+    weddingDate: "",
     email: "",
     firstName: "",
     lastName: "",
@@ -37,7 +55,10 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
     city: "",
     state: "",
     zip: "",
-    country: "United States",
+    country: "US",
+    neededByDate: "",
+    hasAuthorizedRecipient: false,
+    authorizedRecipientName: "",
     cardNumber: "",
     expiry: "",
     cvc: "",
@@ -45,11 +66,23 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
 
   useEffect(() => {
     const authClient = createClient();
-    authClient.auth.getUser().then(({ data }) => {
+    authClient.auth.getUser().then(async ({ data }) => {
       if (data.user) {
         setCustomerId(data.user.id);
         setOtpStage("verified");
         setForm((f) => (f.email ? f : { ...f, email: data.user.email ?? f.email }));
+        const { data: profile } = await authClient
+          .from("profiles")
+          .select("couple_names, wedding_date")
+          .eq("id", data.user.id)
+          .maybeSingle();
+        if (profile) {
+          setForm((f) => ({
+            ...f,
+            coupleNames: f.coupleNames || profile.couple_names || "",
+            weddingDate: f.weddingDate || profile.wedding_date || "",
+          }));
+        }
       }
     });
   }, []);
@@ -113,6 +146,7 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
       // the customer can look this order up later — RLS on SELECT checks
       // orders.customer_id = auth.uid().
       const orderId = crypto.randomUUID();
+      const countryName = COUNTRIES.find((c) => c.code === form.country)?.name ?? form.country;
       const { error: orderError } = await supabase.from("orders").insert({
         id: orderId,
         planner_id: plannerId,
@@ -124,9 +158,12 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
           city: form.city,
           state: form.state,
           zip: form.zip,
-          country: form.country,
+          country: countryName,
+          countryCode: form.country,
           phone: form.phone,
         },
+        needed_by_date: form.neededByDate || null,
+        authorized_recipient: form.hasAuthorizedRecipient ? form.authorizedRecipientName.trim() || null : null,
         subtotal,
         personalization_fee: personalizationFee,
         shipping_fee: shipping,
@@ -151,6 +188,21 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
       const { error: itemsError } = await supabase.from("order_items").insert(orderItems);
       if (itemsError) throw itemsError;
 
+      // Best-effort — the couple's names/date carry over to prefill future
+      // product personalization, but a failure here shouldn't block the
+      // order itself. Needs the cookie-backed client (not the plain anon
+      // one above) since the "profiles self update" RLS policy checks
+      // auth.uid(), which only that client carries.
+      if (customerId && (form.coupleNames.trim() || form.weddingDate)) {
+        await createClient()
+          .from("profiles")
+          .update({
+            couple_names: form.coupleNames.trim() || null,
+            wedding_date: form.weddingDate || null,
+          })
+          .eq("id", customerId);
+      }
+
       clear();
       router.push(`/store/${plannerSlug}/checkout/success?order=${orderId}`);
     } catch (err) {
@@ -163,6 +215,27 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
     <form onSubmit={handleSubmit} className="mx-auto max-w-7xl px-6 py-10 grid md:grid-cols-[1fr_380px] gap-12 items-start">
       <div>
         <h1 className="font-serif text-4xl mb-8">Checkout</h1>
+
+        <div className="mb-8">
+          <p className="text-xs uppercase tracking-wide text-muted mb-3">Wedding details</p>
+          <input
+            required
+            placeholder="The couple's names (e.g. Amelia & Ravi)"
+            value={form.coupleNames}
+            onChange={update("coupleNames")}
+            className="w-full rounded-lg border border-line px-4 py-3 mb-3 focus:outline-none focus:border-dark"
+          />
+          <div>
+            <label className="text-xs text-muted block mb-1">Wedding date</label>
+            <input
+              required
+              type="date"
+              value={form.weddingDate}
+              onChange={update("weddingDate")}
+              className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+            />
+          </div>
+        </div>
 
         <div className="mb-8">
           <p className="text-xs uppercase tracking-wide text-muted mb-3">Contact</p>
@@ -234,12 +307,99 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
 
         <div className="mb-8">
           <p className="text-xs uppercase tracking-wide text-muted mb-3">Shipping address</p>
-          <input required placeholder="Street address" value={form.address} onChange={update("address")} className="w-full rounded-lg border border-line px-4 py-3 mb-3 focus:outline-none focus:border-dark" />
-          <div className="grid grid-cols-4 gap-3">
-            <input required placeholder="City" value={form.city} onChange={update("city")} className="rounded-lg border border-line px-4 py-3 col-span-2 focus:outline-none focus:border-dark" />
-            <input required placeholder="State" value={form.state} onChange={update("state")} className="rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark" />
-            <input required placeholder="ZIP" value={form.zip} onChange={update("zip")} className="rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark" />
+          <div className="mb-3">
+            <label className="text-xs text-muted block mb-1">Country</label>
+            <select
+              required
+              value={form.country}
+              onChange={(e) => setForm((f) => ({ ...f, country: e.target.value, state: "" }))}
+              className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark bg-white"
+            >
+              {COUNTRIES.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
           </div>
+          {/* Everything below unlocks once a country is picked — state/city/
+              postal code depend on knowing which country's rules to use. */}
+          <fieldset disabled={!form.country} className="disabled:opacity-40">
+            <input
+              required
+              placeholder="Street address"
+              value={form.address}
+              onChange={update("address")}
+              className="w-full rounded-lg border border-line px-4 py-3 mb-3 focus:outline-none focus:border-dark"
+            />
+            <div className="grid grid-cols-4 gap-3">
+              <input required placeholder="City" value={form.city} onChange={update("city")} className="rounded-lg border border-line px-4 py-3 col-span-2 focus:outline-none focus:border-dark" />
+              {form.country === "US" ? (
+                <select
+                  required
+                  value={form.state}
+                  onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))}
+                  className="rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark bg-white"
+                >
+                  <option value="" disabled>
+                    State
+                  </option>
+                  {US_STATES.map((s) => (
+                    <option key={s.code} value={s.code}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  placeholder={regionLabel(form.country)}
+                  value={form.state}
+                  onChange={update("state")}
+                  className="rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+                />
+              )}
+              <input
+                required
+                placeholder={postalCodeLabel(form.country)}
+                value={form.zip}
+                onChange={update("zip")}
+                className="rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+              />
+            </div>
+          </fieldset>
+        </div>
+
+        <div className="mb-8">
+          <p className="text-xs uppercase tracking-wide text-muted mb-3">Delivery</p>
+          <label className="text-xs text-muted block mb-1">Needed by</label>
+          <input
+            required
+            type="date"
+            min={minNeededBy}
+            value={form.neededByDate}
+            onChange={update("neededByDate")}
+            className="w-full rounded-lg border border-line px-4 py-3 mb-1 focus:outline-none focus:border-dark"
+          />
+          <p className="text-xs text-muted mb-4">
+            Earliest possible date, given proofing and production time for what&apos;s in your cart.
+          </p>
+
+          <label className="flex items-center gap-2 text-sm mb-2">
+            <input
+              type="checkbox"
+              checked={form.hasAuthorizedRecipient}
+              onChange={(e) => setForm((f) => ({ ...f, hasAuthorizedRecipient: e.target.checked }))}
+            />
+            Someone else is authorized to receive this order
+          </label>
+          {form.hasAuthorizedRecipient && (
+            <input
+              placeholder="Their name"
+              value={form.authorizedRecipientName}
+              onChange={update("authorizedRecipientName")}
+              className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+            />
+          )}
         </div>
 
         <div className="mb-8">
