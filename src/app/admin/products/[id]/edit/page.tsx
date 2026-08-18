@@ -44,6 +44,7 @@ export default async function EditAdminProductPage({
     sku: product.sku,
     factoryPrice: product.factory_price,
     minOrder: product.min_order,
+    popularQty: product.popular_qty,
     leadMin: product.lead_time_days_min,
     leadMax: product.lead_time_days_max,
     stock: product.stock_on_hand,

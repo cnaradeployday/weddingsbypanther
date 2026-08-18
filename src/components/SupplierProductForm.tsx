@@ -33,6 +33,7 @@ export type InitialProduct = {
   sku: string | null;
   factoryPrice: number;
   minOrder: number;
+  popularQty: number | null;
   leadMin: number;
   leadMax: number;
   stock: number;
@@ -109,6 +110,7 @@ export function SupplierProductForm({
   const [sku, setSku] = useState(initial?.sku ?? "");
   const [factoryPrice, setFactoryPrice] = useState(initial?.factoryPrice ?? 5);
   const [minOrder, setMinOrder] = useState(initial?.minOrder ?? 25);
+  const [popularQty, setPopularQty] = useState(initial?.popularQty != null ? String(initial.popularQty) : "");
   const [leadMin, setLeadMin] = useState(initial?.leadMin ?? 7);
   const [leadMax, setLeadMax] = useState(initial?.leadMax ?? 10);
   const [stock, setStock] = useState(initial?.stock ?? 1000);
@@ -194,6 +196,7 @@ export function SupplierProductForm({
           sku: sku || null,
           factory_price: factoryPrice,
           min_order: minOrder,
+          popular_qty: popularQty ? Number(popularQty) : null,
           lead_time_days_min: leadMin,
           lead_time_days_max: leadMax,
           stock_on_hand: stock,
@@ -232,6 +235,7 @@ export function SupplierProductForm({
           sku: sku || null,
           factory_price: factoryPrice,
           min_order: minOrder,
+          popular_qty: popularQty ? Number(popularQty) : null,
           lead_time_days_min: leadMin,
           lead_time_days_max: leadMax,
           stock_on_hand: stock,
@@ -409,7 +413,7 @@ export function SupplierProductForm({
             className="rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
           />
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-4 gap-3">
           <div>
             <label className="text-xs text-muted block mb-1">Factory price</label>
             <input
@@ -435,6 +439,16 @@ export function SupplierProductForm({
               type="number"
               value={minOrder}
               onChange={(e) => setMinOrder(Number(e.target.value))}
+              className="w-full rounded-lg border border-line px-3 py-2 focus:outline-none focus:border-dark"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted block mb-1">Most popular qty</label>
+            <input
+              type="number"
+              placeholder="Optional"
+              value={popularQty}
+              onChange={(e) => setPopularQty(e.target.value)}
               className="w-full rounded-lg border border-line px-3 py-2 focus:outline-none focus:border-dark"
             />
           </div>

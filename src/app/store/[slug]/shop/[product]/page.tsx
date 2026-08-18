@@ -31,6 +31,7 @@ export default async function ProductPage({
         supplierName: product.supplierName,
         unitPrice: product.unitPrice,
         minOrder: product.minOrder,
+        popularQty: product.popularQty,
         leadTimeMin: product.leadTimeMin,
         leadTimeMax: product.leadTimeMax,
         personalizable: product.personalizable,
