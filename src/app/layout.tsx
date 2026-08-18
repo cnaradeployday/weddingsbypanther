@@ -10,6 +10,10 @@ import {
   Jost,
   Fraunces,
   Manrope,
+  Great_Vibes,
+  Montserrat,
+  EB_Garamond,
+  Parisienne,
 } from "next/font/google";
 import { PwaInstall } from "@/components/PwaInstall";
 import "./globals.css";
@@ -75,6 +79,32 @@ const manropeSans = Manrope({
   weight: ["400", "500", "600"],
 });
 
+// Personalization text fonts (src/lib/textFonts.ts) — a separate, smaller
+// picker for the names/date on the product itself, not the storefront.
+// Cormorant and Playfair above are reused for two of these six; these four
+// are loaded only for this picker.
+const greatVibesScript = Great_Vibes({
+  variable: "--font-text-greatvibes",
+  subsets: ["latin"],
+  weight: ["400"],
+});
+const montserratSans = Montserrat({
+  variable: "--font-text-montserrat",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+});
+const ebGaramondSerif = EB_Garamond({
+  variable: "--font-text-ebgaramond",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
+});
+const parisienneScript = Parisienne({
+  variable: "--font-text-parisienne",
+  subsets: ["latin"],
+  weight: ["400"],
+});
+
 const fontVariables = [
   cormorantSerif,
   instrumentSans,
@@ -86,6 +116,10 @@ const fontVariables = [
   jostSans,
   frauncesSerif,
   manropeSans,
+  greatVibesScript,
+  montserratSans,
+  ebGaramondSerif,
+  parisienneScript,
 ]
   .map((f) => f.variable)
   .join(" ");

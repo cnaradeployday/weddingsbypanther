@@ -120,6 +120,7 @@ export async function POST(req: NextRequest) {
   const date: string = body?.date ?? "";
   const monogram: string = body?.monogram ?? "";
   const frame: string = body?.frame ?? "";
+  const textFont: string = body?.textFont ?? "";
   const logoDataUrl: string | undefined = body?.logoDataUrl;
   const positions: Record<string, Corner> = body?.positions ?? {};
   const elemScale: Partial<Record<ElemKey, number>> = body?.elemScale ?? {};
@@ -189,6 +190,7 @@ export async function POST(req: NextRequest) {
     date,
     monogram,
     frame,
+    textFont,
     inkColor,
     elemScale,
     elemRotationOffsetDeg,

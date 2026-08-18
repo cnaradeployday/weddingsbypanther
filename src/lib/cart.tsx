@@ -18,6 +18,7 @@ export type CartItem = {
     date?: string;
     monogram?: string;
     frame?: string;
+    textFont?: string;
     technique?: string;
     extraPrice?: number;
     elemScale?: Record<string, number>;
