@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { VettingStatusControl } from "@/components/VettingStatusControl";
 import { NewSupplierForm } from "@/components/NewSupplierForm";
@@ -32,6 +33,7 @@ export default async function AdminSuppliersPage() {
               <th className="px-5 py-3 font-medium">Since</th>
               <th className="px-5 py-3 font-medium">Products</th>
               <th className="px-5 py-3 font-medium">Status</th>
+              <th className="px-5 py-3 font-medium"></th>
             </tr>
           </thead>
           <tbody>
@@ -42,6 +44,11 @@ export default async function AdminSuppliersPage() {
                 <td className="px-5 py-4">{s.products?.[0]?.count ?? 0}</td>
                 <td className="px-5 py-4">
                   <VettingStatusControl table="suppliers" id={s.id} status={s.status} canWrite={perms.suppliers.write} />
+                </td>
+                <td className="px-5 py-4 text-right">
+                  <Link href={`/admin/suppliers/${s.id}/edit`} className="text-terracotta text-xs font-medium">
+                    Edit
+                  </Link>
                 </td>
               </tr>
             ))}

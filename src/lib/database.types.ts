@@ -817,6 +817,17 @@ export type Database = {
           since_year: number | null
           slug: string
           status: string
+          contact_first_name: string | null
+          contact_last_name: string | null
+          phone: string | null
+          headcount: number | null
+          vat_number: string | null
+          legal_name: string | null
+          website: string | null
+          description: string | null
+          address: string | null
+          city: string | null
+          country: string | null
         }
         Insert: {
           business_name: string
@@ -826,6 +837,17 @@ export type Database = {
           since_year?: number | null
           slug: string
           status?: string
+          contact_first_name?: string | null
+          contact_last_name?: string | null
+          phone?: string | null
+          headcount?: number | null
+          vat_number?: string | null
+          legal_name?: string | null
+          website?: string | null
+          description?: string | null
+          address?: string | null
+          city?: string | null
+          country?: string | null
         }
         Update: {
           business_name?: string
@@ -835,6 +857,17 @@ export type Database = {
           since_year?: number | null
           slug?: string
           status?: string
+          contact_first_name?: string | null
+          contact_last_name?: string | null
+          phone?: string | null
+          headcount?: number | null
+          vat_number?: string | null
+          legal_name?: string | null
+          website?: string | null
+          description?: string | null
+          address?: string | null
+          city?: string | null
+          country?: string | null
         }
         Relationships: [
           {

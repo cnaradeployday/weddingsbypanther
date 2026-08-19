@@ -29,6 +29,17 @@ export async function POST(req: NextRequest) {
   const email: string = body?.email?.trim().toLowerCase() ?? "";
   const fullName: string = body?.fullName?.trim() ?? "";
   const sinceYear: number | null = body?.sinceYear ? Number(body.sinceYear) : null;
+  const legalName: string | null = body?.legalName?.trim() || null;
+  const contactFirstName: string | null = body?.contactFirstName?.trim() || null;
+  const contactLastName: string | null = body?.contactLastName?.trim() || null;
+  const phone: string | null = body?.phone?.trim() || null;
+  const website: string | null = body?.website?.trim() || null;
+  const vatNumber: string | null = body?.vatNumber?.trim() || null;
+  const headcount: number | null = body?.headcount ? Number(body.headcount) : null;
+  const address: string | null = body?.address?.trim() || null;
+  const city: string | null = body?.city?.trim() || null;
+  const country: string | null = body?.country?.trim() || null;
+  const description: string | null = body?.description?.trim() || null;
 
   if (!businessName || !email) {
     return NextResponse.json({ error: "Business name and email are required." }, { status: 400 });
@@ -70,7 +81,21 @@ export async function POST(req: NextRequest) {
 
   const { data: supplier } = await admin
     .from("suppliers")
-    .update(sinceYear ? { status: "approved", since_year: sinceYear } : { status: "approved" })
+    .update({
+      status: "approved",
+      since_year: sinceYear,
+      legal_name: legalName,
+      contact_first_name: contactFirstName,
+      contact_last_name: contactLastName,
+      phone,
+      website,
+      vat_number: vatNumber,
+      headcount,
+      address,
+      city,
+      country,
+      description,
+    })
     .eq("profile_id", userId)
     .select()
     .maybeSingle();
