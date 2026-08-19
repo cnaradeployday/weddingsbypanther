@@ -28,9 +28,6 @@ export default async function Home() {
             <Link href="#planners" className="hover:text-terracotta transition-colors">
               For Planners
             </Link>
-            <Link href="#suppliers" className="hover:text-terracotta transition-colors">
-              Suppliers
-            </Link>
           </nav>
           <div className="flex items-center gap-4 text-sm">
             <Link href="/planner" className="hidden sm:inline hover:text-terracotta transition-colors">
@@ -68,7 +65,7 @@ export default async function Home() {
               Start Designing
             </Link>
             <Link
-              href="/planner"
+              href="/become-a-planner"
               className="px-6 py-3 rounded-full border border-dark/20 text-sm font-medium hover:border-dark transition-colors"
             >
               Become a Planner
@@ -76,7 +73,6 @@ export default async function Home() {
           </div>
           <div className="flex gap-8 text-sm text-muted">
             <span><strong className="text-dark">240+</strong> products</span>
-            <span><strong className="text-dark">38</strong> approved suppliers</span>
             <span><strong className="text-dark">14 days</strong> average delivery</span>
           </div>
         </div>
@@ -200,17 +196,10 @@ export default async function Home() {
           </p>
           <div className="flex gap-3">
             <Link
-              href="/planner"
+              href="/become-a-planner"
               className="px-6 py-3 rounded-full bg-dark text-cream-light text-sm font-medium hover:bg-dark-soft transition-colors"
             >
               Become a Planner
-            </Link>
-            <Link
-              href="#suppliers"
-              id="suppliers"
-              className="px-6 py-3 rounded-full border border-dark/20 text-sm font-medium hover:border-dark transition-colors"
-            >
-              See pricing
             </Link>
           </div>
         </div>
@@ -236,8 +225,7 @@ export default async function Home() {
           <div>
             <p className="text-xs uppercase tracking-wide text-muted mb-3">Business</p>
             <ul className="space-y-2 text-sm">
-              <li><Link href="/planner">For planners</Link></li>
-              <li><Link href="/supplier">For suppliers</Link></li>
+              <li><Link href="/become-a-planner">For planners</Link></li>
             </ul>
           </div>
           <div>

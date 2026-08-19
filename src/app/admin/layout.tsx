@@ -10,6 +10,7 @@ const NAV: { href: string; label: string; section: BackofficeSection }[] = [
   { href: "/admin/print-techniques", label: "Print techniques", section: "products" },
   { href: "/admin/suppliers", label: "Suppliers", section: "suppliers" },
   { href: "/admin/planners", label: "Planners", section: "planners" },
+  { href: "/admin/planner-leads", label: "Planner leads", section: "planners" },
   { href: "/admin/orders", label: "Orders", section: "orders" },
   { href: "/admin/categories", label: "Categories", section: "categories" },
   { href: "/admin/users", label: "Users", section: "users" },
@@ -38,17 +39,19 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     );
   }
 
-  const [{ count: pendingProducts }, { count: pendingSuppliers }, { count: pendingPlanners }] =
+  const [{ count: pendingProducts }, { count: pendingSuppliers }, { count: pendingPlanners }, { count: newLeads }] =
     await Promise.all([
       supabase.from("products").select("id", { count: "exact", head: true }).eq("status", "pending"),
       supabase.from("suppliers").select("id", { count: "exact", head: true }).eq("status", "pending"),
       supabase.from("planners").select("id", { count: "exact", head: true }).eq("status", "pending"),
+      supabase.from("planner_leads").select("id", { count: "exact", head: true }).eq("status", "new"),
     ]);
 
   const nav = NAV.filter((n) => perms[n.section].read).map((n) => {
     if (n.href === "/admin/approvals" && pendingProducts) return { ...n, label: `${n.label} (${pendingProducts})` };
     if (n.href === "/admin/suppliers" && pendingSuppliers) return { ...n, label: `${n.label} (${pendingSuppliers})` };
     if (n.href === "/admin/planners" && pendingPlanners) return { ...n, label: `${n.label} (${pendingPlanners})` };
+    if (n.href === "/admin/planner-leads" && newLeads) return { ...n, label: `${n.label} (${newLeads})` };
     return n;
   });
 
