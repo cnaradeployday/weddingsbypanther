@@ -13,6 +13,7 @@ import { FRAME_TEMPLATES, frameSvgInner } from "@/lib/frameTemplates";
 import { TEXT_FONTS, DEFAULT_TEXT_FONT, textFontStyle } from "@/lib/textFonts";
 import { fitTextFontSize, estimateTextWidth, textLineCount } from "@/lib/textFit";
 import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
+import { dataUrlToBlob } from "@/lib/dataUrl";
 import { availableAlongAxis, nearestEdgeDistance, clampPointToQuad, type Point } from "@/lib/quadGeometry";
 import type { RelatedProduct } from "@/lib/queries";
 import { AiRenderPanel } from "./AiRenderPanel";
@@ -192,11 +193,6 @@ const DEFAULT_POSITIONS: Record<ElemKey, ElemPos> = {
 const DEFAULT_SCALES: Record<ElemKey, number> = { logo: 1, monogram: 1, names: 1, date: 1 };
 const DEFAULT_ROTATIONS: Record<ElemKey, number> = { logo: 0, monogram: 0, names: 0, date: 0 };
 
-async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
-  const res = await fetch(dataUrl);
-  return res.blob();
-}
-
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -282,14 +278,22 @@ export function ProductConfigurator({
       setLogoFile(new File([blob], "logo.png", { type: blob.type || "image/png" }));
     });
   }, [handoff]);
-  const [positions, setPositions] = useState<Record<ElemKey, ElemPos>>(DEFAULT_POSITIONS);
+  // A cart-item "Edit" click carries the exact positions/rotations that
+  // were configured back through the handoff (a plain related-product
+  // suggestion click has no prior arrangement, so these are absent there
+  // and fall back to the defaults as usual).
+  const [positions, setPositions] = useState<Record<ElemKey, ElemPos>>(
+    handoff?.positions ? { ...DEFAULT_POSITIONS, ...handoff.positions } : DEFAULT_POSITIONS
+  );
   // Each element (logo, monogram, names, date) gets its own independent
   // size and rotation, adjusted with on-canvas drag handles right on the
   // element — not shared sliders elsewhere in the page.
   const [elemScale, setElemScale] = useState<Record<ElemKey, number>>(
     handoff?.elemScale ? { ...DEFAULT_SCALES, ...handoff.elemScale } : DEFAULT_SCALES
   );
-  const [elemRotationOffset, setElemRotationOffset] = useState<Record<ElemKey, number>>(DEFAULT_ROTATIONS);
+  const [elemRotationOffset, setElemRotationOffset] = useState<Record<ElemKey, number>>(
+    handoff?.elemRotationOffset ? { ...DEFAULT_ROTATIONS, ...handoff.elemRotationOffset } : DEFAULT_ROTATIONS
+  );
   // Resize/rotate handles only show on the element the customer tapped —
   // otherwise the photo stays uncluttered.
   const [activeElem, setActiveElem] = useState<ElemKey | null>(null);

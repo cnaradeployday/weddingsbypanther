@@ -11,6 +11,8 @@ import { textFontStyle } from "@/lib/textFonts";
 import { fitTextFontSize } from "@/lib/textFit";
 import { savePersonalizationHandoff } from "@/lib/personalizationHandoff";
 import { useCart } from "@/lib/cart";
+import { createClient } from "@/lib/supabase/client";
+import { dataUrlToBlob } from "@/lib/dataUrl";
 import type { RelatedProduct } from "@/lib/queries";
 
 // The bounding box of a product's print-area quad, matching the same
@@ -92,6 +94,7 @@ function RelatedProductCard({
   const router = useRouter();
   const { addItem } = useCart();
   const [added, setAdded] = useState(false);
+  const [adding, setAdding] = useState(false);
   const zoneBox = product.zone && product.zone.corners_pct.length === 4 ? boundingBox(product.zone.corners_pct) : null;
   const rotation = product.zone ? zoneAngleDeg(product.zone.corners_pct) : 0;
   const hasPersonalization = !!(names.trim() || date.trim() || monogram || logoDataUrl);
@@ -129,9 +132,52 @@ function RelatedProductCard({
   // product (what you see is what gets added) — a quick cross-sell add
   // without leaving this page. Anything more specific (a different
   // technique or variant) still means visiting the product page.
-  const handleQuickAdd = (e: React.MouseEvent) => {
+  const handleQuickAdd = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    setAdding(true);
+
+    // Best-effort configuration snapshot — the same deterministic render
+    // the full configurator generates on add-to-cart, so a quick-add here
+    // leaves suppliers/admin the same visual record (logo included) rather
+    // than just the product's bare catalog photo.
+    let snapshotUrl: string | undefined;
+    if (product.personalizable && hasPersonalization) {
+      try {
+        const res = await fetch("/api/personalization-snapshot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            productId: product.id,
+            names,
+            date,
+            monogram,
+            frame,
+            textFont,
+            logoDataUrl,
+            positions,
+            elemScale,
+            elemRotationOffsetDeg: elemRotationOffset,
+          }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const blob = await dataUrlToBlob(json.imageDataUrl);
+          const client = createClient();
+          const plannerSlug = base.replace(/^\/store\//, "");
+          const path = `${plannerSlug}/${product.id}/${crypto.randomUUID()}-snapshot.png`;
+          const { error: uploadError } = await client.storage
+            .from("personalization-renders")
+            .upload(path, blob, { contentType: "image/png" });
+          if (!uploadError) {
+            snapshotUrl = client.storage.from("personalization-renders").getPublicUrl(path).data.publicUrl;
+          }
+        }
+      } catch {
+        // Best-effort — still add to cart even if the snapshot fails.
+      }
+    }
+
     addItem({
       key: `${product.id}:quick-add`,
       productId: product.id,
@@ -141,11 +187,14 @@ function RelatedProductCard({
       unitPrice: product.price,
       quantity: Math.max(product.minOrder, quantity),
       minOrder: product.minOrder,
+      leadTimeMin: product.leadTimeMin,
+      leadTimeMax: product.leadTimeMax,
       personalization:
         product.personalizable && hasPersonalization
-          ? { names, date, monogram, frame, textFont, hasLogo: !!logoDataUrl }
+          ? { names, date, monogram, frame, textFont, positions, elemScale, elemRotationOffset, hasLogo: !!logoDataUrl, snapshotUrl }
           : undefined,
     });
+    setAdding(false);
     setAdded(true);
     setTimeout(() => setAdded(false), 2000);
   };
@@ -257,9 +306,10 @@ function RelatedProductCard({
         <button
           type="button"
           onClick={handleQuickAdd}
-          className="text-xs uppercase tracking-wide font-medium text-terracotta hover:text-terracotta-dark shrink-0"
+          disabled={adding}
+          className="text-xs uppercase tracking-wide font-medium text-terracotta hover:text-terracotta-dark shrink-0 disabled:opacity-50"
         >
-          {added ? "Added ✓" : "+ Add"}
+          {adding ? "Adding…" : added ? "Added ✓" : "+ Add"}
         </button>
       </div>
     </Link>

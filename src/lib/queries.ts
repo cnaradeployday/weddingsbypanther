@@ -24,6 +24,8 @@ export type RelatedProduct = {
   name: string;
   price: number;
   minOrder: number;
+  leadTimeMin: number;
+  leadTimeMax: number;
   personalizable: boolean;
   image: string | null;
   zone: {
@@ -239,7 +241,7 @@ export async function getRelatedProducts(
     .select(
       `markup_pct, enabled,
        product:products (
-         id, slug, name, factory_price, min_order, personalizable, status,
+         id, slug, name, factory_price, min_order, lead_time_days_min, lead_time_days_max, personalizable, status,
          images:product_images ( id, url, sort_order ),
          techniques:product_print_techniques ( technique, is_default ),
          zones:product_print_zones ( width_mm, height_mm, corners_pct, image_id )
@@ -268,6 +270,8 @@ export async function getRelatedProducts(
         name: p.name,
         price: applyMarkup(p.factory_price, row.markup_pct),
         minOrder: p.min_order,
+        leadTimeMin: p.lead_time_days_min,
+        leadTimeMax: p.lead_time_days_max,
         personalizable: p.personalizable,
         image: referenceImage?.url ?? null,
         zone: zone

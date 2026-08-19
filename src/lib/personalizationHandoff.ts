@@ -15,6 +15,11 @@ export type PersonalizationHandoff = {
   frame: string;
   textFont: string;
   elemScale: Record<string, number>;
+  // Carried when editing an existing cart line back into the configurator —
+  // absent (undefined) for a plain related-product suggestion click, which
+  // has no prior arrangement of its own to restore.
+  positions?: Record<string, { x: number; y: number }>;
+  elemRotationOffset?: Record<string, number>;
 };
 
 export function savePersonalizationHandoff(data: PersonalizationHandoff) {
