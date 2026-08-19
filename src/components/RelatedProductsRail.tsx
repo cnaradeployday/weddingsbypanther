@@ -99,11 +99,16 @@ function RelatedProductCard({
     <Link
       href={`${base}/shop/${product.slug}`}
       onClick={handleClick}
-      className="w-36 shrink-0 group"
+      className="w-52 shrink-0 group"
     >
       <div className="relative aspect-square rounded-xl overflow-hidden bg-cream mb-2">
         {product.image && (
-          <Image src={product.image} alt={product.name} fill className="object-cover" />
+          <Image
+            src={product.image}
+            alt={product.name}
+            fill
+            className="object-cover transition-transform duration-300 group-hover:scale-110"
+          />
         )}
         {product.personalizable && zoneBox && hasPersonalization && (
           <div
@@ -120,25 +125,25 @@ function RelatedProductCard({
               style={{ transform: `translate(-50%, -50%) rotate(${rotation}deg)` }}
             >
               {logoDataUrl && (
-                <div className="relative h-4 w-4">
+                <div className="relative h-6 w-6">
                   <Image src={logoDataUrl} alt="" fill className="object-contain" unoptimized />
                 </div>
               )}
               {monogram && (
                 <svg
                   viewBox="0 0 24 24"
-                  width={10}
-                  height={10}
+                  width={15}
+                  height={15}
                   dangerouslySetInnerHTML={{ __html: monogramSvgInner(monogram, product.inkColor) }}
                 />
               )}
               {names && (
-                <span className="font-serif whitespace-nowrap leading-none" style={{ fontSize: 7, color: product.inkColor }}>
+                <span className="font-serif whitespace-nowrap leading-none" style={{ fontSize: 10, color: product.inkColor }}>
                   {names}
                 </span>
               )}
               {date && (
-                <span className="whitespace-nowrap leading-none" style={{ fontSize: 5, color: product.inkColor }}>
+                <span className="whitespace-nowrap leading-none" style={{ fontSize: 7, color: product.inkColor }}>
                   {formatDate(date)}
                 </span>
               )}
@@ -146,13 +151,13 @@ function RelatedProductCard({
           </div>
         )}
       </div>
-      <p className="text-xs font-medium truncate group-hover:text-terracotta transition-colors">{product.name}</p>
+      <p className="text-sm font-medium truncate group-hover:text-terracotta transition-colors">{product.name}</p>
       <div className="flex items-center justify-between gap-2 mt-0.5">
         <p className="text-xs text-muted">From {formatUSD(product.price)}</p>
         <button
           type="button"
           onClick={handleQuickAdd}
-          className="text-[10px] uppercase tracking-wide font-medium text-terracotta hover:text-terracotta-dark shrink-0"
+          className="text-xs uppercase tracking-wide font-medium text-terracotta hover:text-terracotta-dark shrink-0"
         >
           {added ? "Added ✓" : "+ Add"}
         </button>
