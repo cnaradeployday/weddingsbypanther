@@ -512,17 +512,25 @@ export function ProductConfigurator({
       const framePadY = key === "names" && frame ? nameFontPx * 0.9 : 0;
       const naturalW = box.offsetWidth + framePadX;
       const naturalH = box.offsetHeight + framePadY;
+      // The available room isn't just 95% of the zone's total width/height —
+      // it's 95% of whichever side of the *current position* is tighter. An
+      // element dragged off-center has less room on its near side than the
+      // zone's full width would suggest; capping only against the zone's
+      // total size let an off-center element grow right past the edge
+      // closest to it while still measuring "within" the zone overall.
+      const availW = zoneRect ? 2 * Math.min(centerX - zoneRect.left, zoneRect.right - centerX) : 0;
+      const availH = zoneRect ? 2 * Math.min(centerY - zoneRect.top, zoneRect.bottom - centerY) : 0;
       // A hard ceiling on the *absolute* elemScale value, not a multiplier
       // off whatever the current scale happens to be — currentScale cancels
       // out of this ratio (naturalW/H already reflect it), so this is the
-      // one true scale at which the element/frame would exactly fill 95% of
-      // the print area. No flooring at currentScale: if something already
-      // exceeds that (e.g. a stale/looser cap from before this fix), the
-      // next resize gesture must be allowed to shrink it back down, not
-      // just refuse to grow it further.
+      // one true scale at which the element/frame would exactly reach the
+      // nearest edge from its current position. No flooring at
+      // currentScale: if something already exceeds that (e.g. a stale/
+      // looser cap from before this fix), the next resize gesture must be
+      // allowed to shrink it back down, not just refuse to grow it further.
       const maxScale =
-        zoneRect && naturalW > 0 && naturalH > 0
-          ? Math.max(0.3, currentScale * Math.min((zoneRect.width * 0.95) / naturalW, (zoneRect.height * 0.95) / naturalH))
+        zoneRect && naturalW > 0 && naturalH > 0 && availW > 0 && availH > 0
+          ? Math.max(0.3, currentScale * Math.min((availW * 0.95) / naturalW, (availH * 0.95) / naturalH))
           : 4;
       elemAdjustState.current = {
         key,
