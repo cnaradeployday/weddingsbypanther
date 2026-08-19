@@ -432,6 +432,54 @@ export function ProductConfigurator({
     };
   }, []);
 
+  // Real px-per-mm for the currently rendered zone box, so text/logo sizing
+  // reflects the product's actual printable area instead of a fixed guess.
+  const mmPerPx = useMemo(() => {
+    if (!zone?.width_mm || !zoneSize.width) return null;
+    return zone.width_mm / zoneSize.width;
+  }, [zone, zoneSize.width]);
+  const pxPerMm = mmPerPx ? 1 / mmPerPx : null;
+  // Capped to the zone's own rendered width (not just a fixed mm-derived
+  // size) so long names/dates shrink to fit instead of overflowing the
+  // print area — the same fit heuristic used server-side, so the AI render
+  // and cart snapshot match what's shown here.
+  const availableTextWidth = zoneSize.width * 0.92;
+  const nameFontPx = fitTextFontSize(
+    names,
+    (pxPerMm ? Math.max(10, Math.min(28, pxPerMm * 5)) : 18) * elemScale.names,
+    availableTextWidth
+  );
+  const monogramFontPx = (pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20) * elemScale.monogram;
+  // formattedDate isn't declared yet at this point in the component, but
+  // it's always exactly 10 characters ("DD·MM·YYYY"), so that's used
+  // directly rather than reordering declarations.
+  const dateFontPx = fitTextFontSize(
+    "0000000000",
+    (pxPerMm ? Math.max(8, Math.min(14, pxPerMm * 2.4)) : 11) * elemScale.date,
+    availableTextWidth
+  );
+
+  // Default logo footprint: 45% of the print area's smaller physical
+  // dimension (width_mm/height_mm, entered when the product was set up) —
+  // not a flat percentage of the box — so it's proportionate whether the
+  // zone is small or large, wide or tall. Mirrors defaultLogoBoxSize() in
+  // the server-side compositor. elemScale.logo is the customer's own
+  // on-top multiplier from the resize handle.
+  const logoWidthPct = useMemo(() => {
+    const fallbackPct = 45 * elemScale.logo;
+    if (!zone?.width_mm || !zone?.height_mm || !zoneSize.width || !zoneSize.height) return fallbackPct;
+    const pxPerMmX = zoneSize.width / zone.width_mm;
+    const pxPerMmY = zoneSize.height / zone.height_mm;
+    const scale = Math.min(pxPerMmX, pxPerMmY);
+    const smallerMm = Math.min(zone.width_mm, zone.height_mm);
+    const logoBoxPx = scale * smallerMm * 0.45 * elemScale.logo;
+    // No hardcoded ceiling here — the resize handle already computes, per
+    // drag, how far this can grow before exceeding the print area itself
+    // (both width and height), so it's the sole limit on how big the logo
+    // can get.
+    return (logoBoxPx / zoneSize.width) * 100;
+  }, [zone, zoneSize.width, zoneSize.height, elemScale.logo]);
+
   const startElemAdjust = useCallback(
     (key: ElemKey, mode: "resize" | "rotate") => (e: React.PointerEvent) => {
       e.preventDefault();
@@ -452,14 +500,27 @@ export function ProductConfigurator({
       // current size (no further growth allowed at all).
       const zoneRect = zoneRef.current?.getBoundingClientRect();
       const currentScale = elemScale[key] || 1;
-      const naturalW = box.offsetWidth;
-      const naturalH = box.offsetHeight;
+      // For "names", box.offsetWidth/Height only cover the text itself — a
+      // decorative frame draws further out around it (padding proportional
+      // to the current font size, see the frame's `inset`/`calc()` styling
+      // below), so the cap has to account for that extra footprint too, or
+      // the frame could balloon past the print area even while the text
+      // "natural" size still measured as comfortably within it.
+      const framePadX = key === "names" && frame ? nameFontPx * 1.4 : 0;
+      const framePadY = key === "names" && frame ? nameFontPx * 0.9 : 0;
+      const naturalW = box.offsetWidth + framePadX;
+      const naturalH = box.offsetHeight + framePadY;
+      // A hard ceiling on the *absolute* elemScale value, not a multiplier
+      // off whatever the current scale happens to be — currentScale cancels
+      // out of this ratio (naturalW/H already reflect it), so this is the
+      // one true scale at which the element/frame would exactly fill 95% of
+      // the print area. No flooring at currentScale: if something already
+      // exceeds that (e.g. a stale/looser cap from before this fix), the
+      // next resize gesture must be allowed to shrink it back down, not
+      // just refuse to grow it further.
       const maxScale =
         zoneRect && naturalW > 0 && naturalH > 0
-          ? Math.max(
-              currentScale,
-              currentScale * Math.min((zoneRect.width * 0.95) / naturalW, (zoneRect.height * 0.95) / naturalH)
-            )
+          ? Math.max(0.3, currentScale * Math.min((zoneRect.width * 0.95) / naturalW, (zoneRect.height * 0.95) / naturalH))
           : 4;
       elemAdjustState.current = {
         key,
@@ -473,7 +534,7 @@ export function ProductConfigurator({
         maxScale,
       };
     },
-    [elemScale, elemRotationOffset, zoneRef]
+    [elemScale, elemRotationOffset, zoneRef, frame, nameFontPx]
   );
 
   const technique = product.techniques.find((t) => t.id === techniqueId);
@@ -526,54 +587,6 @@ export function ProductConfigurator({
     names: autoRotationDeg + elemRotationOffset.names,
     date: autoRotationDeg + elemRotationOffset.date,
   };
-
-  // Real px-per-mm for the currently rendered zone box, so text/logo sizing
-  // reflects the product's actual printable area instead of a fixed guess.
-  const mmPerPx = useMemo(() => {
-    if (!zone?.width_mm || !zoneSize.width) return null;
-    return zone.width_mm / zoneSize.width;
-  }, [zone, zoneSize.width]);
-  const pxPerMm = mmPerPx ? 1 / mmPerPx : null;
-  // Capped to the zone's own rendered width (not just a fixed mm-derived
-  // size) so long names/dates shrink to fit instead of overflowing the
-  // print area — the same fit heuristic used server-side, so the AI render
-  // and cart snapshot match what's shown here.
-  const availableTextWidth = zoneSize.width * 0.92;
-  const nameFontPx = fitTextFontSize(
-    names,
-    (pxPerMm ? Math.max(10, Math.min(28, pxPerMm * 5)) : 18) * elemScale.names,
-    availableTextWidth
-  );
-  const monogramFontPx = (pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20) * elemScale.monogram;
-  // formattedDate isn't declared yet at this point in the component, but
-  // it's always exactly 10 characters ("DD·MM·YYYY"), so that's used
-  // directly rather than reordering declarations.
-  const dateFontPx = fitTextFontSize(
-    "0000000000",
-    (pxPerMm ? Math.max(8, Math.min(14, pxPerMm * 2.4)) : 11) * elemScale.date,
-    availableTextWidth
-  );
-
-  // Default logo footprint: 45% of the print area's smaller physical
-  // dimension (width_mm/height_mm, entered when the product was set up) —
-  // not a flat percentage of the box — so it's proportionate whether the
-  // zone is small or large, wide or tall. Mirrors defaultLogoBoxSize() in
-  // the server-side compositor. elemScale.logo is the customer's own
-  // on-top multiplier from the resize handle.
-  const logoWidthPct = useMemo(() => {
-    const fallbackPct = 45 * elemScale.logo;
-    if (!zone?.width_mm || !zone?.height_mm || !zoneSize.width || !zoneSize.height) return fallbackPct;
-    const pxPerMmX = zoneSize.width / zone.width_mm;
-    const pxPerMmY = zoneSize.height / zone.height_mm;
-    const scale = Math.min(pxPerMmX, pxPerMmY);
-    const smallerMm = Math.min(zone.width_mm, zone.height_mm);
-    const logoBoxPx = scale * smallerMm * 0.45 * elemScale.logo;
-    // No hardcoded ceiling here — the resize handle already computes, per
-    // drag, how far this can grow before exceeding the print area itself
-    // (both width and height), so it's the sole limit on how big the logo
-    // can get.
-    return (logoBoxPx / zoneSize.width) * 100;
-  }, [zone, zoneSize.width, zoneSize.height, elemScale.logo]);
 
   // Real-world size readouts (cm) shown next to each field below, computed
   // from the same px-per-mm conversion the on-canvas sizing uses — only
