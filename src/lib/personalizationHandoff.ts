@@ -12,6 +12,9 @@ export type PersonalizationHandoff = {
   date: string;
   monogram: string;
   logoDataUrl: string | null;
+  frame: string;
+  textFont: string;
+  elemScale: Record<string, number>;
 };
 
 export function savePersonalizationHandoff(data: PersonalizationHandoff) {

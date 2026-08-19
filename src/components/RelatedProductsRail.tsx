@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatUSD } from "@/lib/format";
 import { monogramSvgInner } from "@/lib/monograms";
+import { frameSvgInner } from "@/lib/frameTemplates";
+import { textFontStyle } from "@/lib/textFonts";
 import { savePersonalizationHandoff } from "@/lib/personalizationHandoff";
 import { useCart } from "@/lib/cart";
 import type { RelatedProduct } from "@/lib/queries";
@@ -40,6 +42,8 @@ function formatDate(isoDate: string) {
     .replace(/\//g, "·");
 }
 
+const clamp = (min: number, value: number, max: number) => Math.max(min, Math.min(max, value));
+
 function RelatedProductCard({
   product,
   base,
@@ -47,6 +51,10 @@ function RelatedProductCard({
   date,
   monogram,
   logoDataUrl,
+  frame,
+  textFont,
+  elemScale,
+  quantity,
 }: {
   product: RelatedProduct;
   base: string;
@@ -54,6 +62,10 @@ function RelatedProductCard({
   date: string;
   monogram: string;
   logoDataUrl: string | null;
+  frame: string;
+  textFont: string;
+  elemScale: Record<string, number>;
+  quantity: number;
 }) {
   const router = useRouter();
   const { addItem } = useCart();
@@ -62,18 +74,28 @@ function RelatedProductCard({
   const rotation = product.zone ? zoneAngleDeg(product.zone.corners_pct) : 0;
   const hasPersonalization = !!(names.trim() || date.trim() || monogram || logoDataUrl);
 
+  // The same relative scale the customer set on the main product (a resize
+  // handle multiplier, not an absolute size) carries over here so the
+  // preview reads as "this, but on that product" rather than a fixed
+  // one-size-fits-all overlay — clamped so an extreme multiplier can't blow
+  // up this much smaller card.
+  const nameSize = clamp(7, 11 * (elemScale.names ?? 1), 22);
+  const dateSize = clamp(5, 7 * (elemScale.date ?? 1), 14);
+  const monogramSize = clamp(10, 16 * (elemScale.monogram ?? 1), 28);
+  const logoSize = clamp(16, 26 * (elemScale.logo ?? 1), 44);
+
   const handleClick = (e: React.MouseEvent) => {
     if (hasPersonalization) {
-      savePersonalizationHandoff({ names, date, monogram, logoDataUrl });
+      savePersonalizationHandoff({ names, date, monogram, logoDataUrl, frame, textFont, elemScale });
     }
     e.preventDefault();
     router.push(`${base}/shop/${product.slug}`);
   };
 
-  // Adds with the same personalization already shown on the card (what you
-  // see is what gets added) at the product's minimum order — a quick cross-
-  // sell add without leaving this page. Anything more specific (a different
-  // technique, quantity, or variant) still means visiting the product page.
+  // Adds with the same personalization and quantity already set on the main
+  // product (what you see is what gets added) — a quick cross-sell add
+  // without leaving this page. Anything more specific (a different
+  // technique or variant) still means visiting the product page.
   const handleQuickAdd = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -84,11 +106,11 @@ function RelatedProductCard({
       name: product.name,
       image: product.image,
       unitPrice: product.price,
-      quantity: product.minOrder,
+      quantity: Math.max(product.minOrder, quantity),
       minOrder: product.minOrder,
       personalization:
         product.personalizable && hasPersonalization
-          ? { names, date, monogram, hasLogo: !!logoDataUrl }
+          ? { names, date, monogram, frame, textFont, hasLogo: !!logoDataUrl }
           : undefined,
     });
     setAdded(true);
@@ -121,29 +143,50 @@ function RelatedProductCard({
             }}
           >
             <div
-              className="absolute left-1/2 top-1/2 flex flex-col items-center gap-0.5"
+              className="absolute left-1/2 top-1/2 flex flex-col items-center gap-1"
               style={{ transform: `translate(-50%, -50%) rotate(${rotation}deg)` }}
             >
               {logoDataUrl && (
-                <div className="relative h-6 w-6">
+                <div className="relative" style={{ width: logoSize, height: logoSize }}>
                   <Image src={logoDataUrl} alt="" fill className="object-contain" unoptimized />
                 </div>
               )}
               {monogram && (
                 <svg
                   viewBox="0 0 24 24"
-                  width={15}
-                  height={15}
+                  width={monogramSize}
+                  height={monogramSize}
                   dangerouslySetInnerHTML={{ __html: monogramSvgInner(monogram, product.inkColor) }}
                 />
               )}
               {names && (
-                <span className="font-serif whitespace-nowrap leading-none" style={{ fontSize: 10, color: product.inkColor }}>
-                  {names}
-                </span>
+                <div className="relative" style={{ fontSize: nameSize }}>
+                  {frame && (
+                    <svg
+                      viewBox="0 0 200 90"
+                      preserveAspectRatio="none"
+                      className="absolute pointer-events-none"
+                      style={{
+                        inset: `${-nameSize * 0.45}px ${-nameSize * 0.7}px`,
+                        width: `calc(100% + ${nameSize * 1.4}px)`,
+                        height: `calc(100% + ${nameSize * 0.9}px)`,
+                      }}
+                      dangerouslySetInnerHTML={{ __html: frameSvgInner(frame, product.inkColor) }}
+                    />
+                  )}
+                  <span
+                    className="relative block whitespace-nowrap leading-none"
+                    style={{ color: product.inkColor, ...textFontStyle(textFont) }}
+                  >
+                    {names}
+                  </span>
+                </div>
               )}
               {date && (
-                <span className="whitespace-nowrap leading-none" style={{ fontSize: 7, color: product.inkColor }}>
+                <span
+                  className="whitespace-nowrap leading-none"
+                  style={{ fontSize: dateSize, color: product.inkColor }}
+                >
                   {formatDate(date)}
                 </span>
               )}
@@ -173,6 +216,10 @@ export function RelatedProductsRail({
   date,
   monogram,
   logoDataUrl,
+  frame,
+  textFont,
+  elemScale,
+  quantity,
 }: {
   products: RelatedProduct[];
   base: string;
@@ -180,6 +227,10 @@ export function RelatedProductsRail({
   date: string;
   monogram: string;
   logoDataUrl: string | null;
+  frame: string;
+  textFont: string;
+  elemScale: Record<string, number>;
+  quantity: number;
 }) {
   if (products.length === 0) return null;
 
@@ -196,6 +247,10 @@ export function RelatedProductsRail({
             date={date}
             monogram={monogram}
             logoDataUrl={logoDataUrl}
+            frame={frame}
+            textFont={textFont}
+            elemScale={elemScale}
+            quantity={quantity}
           />
         ))}
       </div>
