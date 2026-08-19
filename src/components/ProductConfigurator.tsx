@@ -1011,6 +1011,8 @@ export function ProductConfigurator({
           frame={frame}
           textFont={textFont}
           elemScale={elemScale}
+          positions={positions}
+          elemRotationOffset={elemRotationOffset}
           quantity={quantity}
         />
       </div>
