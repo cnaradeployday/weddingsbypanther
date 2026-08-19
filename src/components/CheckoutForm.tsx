@@ -6,7 +6,7 @@ import { useCart } from "@/lib/cart";
 import { formatUSD } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import { createClient } from "@/lib/supabase/client";
-import { COUNTRIES, US_STATES, postalCodeLabel, regionLabel } from "@/lib/geoData";
+import { COUNTRIES, US_STATES, postalCodeLabel, regionLabel, regionsForCountry } from "@/lib/geoData";
 
 const SHIPPING_FLAT = 42;
 const FREE_SHIPPING_THRESHOLD = 1500;
@@ -347,6 +347,22 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
                   {US_STATES.map((s) => (
                     <option key={s.code} value={s.code}>
                       {s.name}
+                    </option>
+                  ))}
+                </select>
+              ) : regionsForCountry(form.country) ? (
+                <select
+                  required
+                  value={form.state}
+                  onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))}
+                  className="rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark bg-white"
+                >
+                  <option value="" disabled>
+                    {regionLabel(form.country)}
+                  </option>
+                  {regionsForCountry(form.country)!.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
                     </option>
                   ))}
                 </select>
