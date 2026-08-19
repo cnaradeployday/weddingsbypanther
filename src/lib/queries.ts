@@ -208,6 +208,7 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
     unitPrice: applyMarkup(p.factory_price, link.markup_pct),
     minOrder: p.min_order,
     popularQty: p.popular_qty,
+    allowSample: p.allow_sample,
     leadTimeMin: p.lead_time_days_min,
     leadTimeMax: p.lead_time_days_max,
     personalizable: p.personalizable,

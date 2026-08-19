@@ -13,6 +13,7 @@ import { FRAME_TEMPLATES, frameSvgInner } from "@/lib/frameTemplates";
 import { TEXT_FONTS, DEFAULT_TEXT_FONT, textFontStyle } from "@/lib/textFonts";
 import { fitTextFontSize, estimateTextWidth, textLineCount } from "@/lib/textFit";
 import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
+import { availableAlongAxis, nearestEdgeDistance, clampPointToQuad, type Point } from "@/lib/quadGeometry";
 import type { RelatedProduct } from "@/lib/queries";
 import { AiRenderPanel } from "./AiRenderPanel";
 import { RelatedProductsRail } from "./RelatedProductsRail";
@@ -177,6 +178,10 @@ function AdjustHandles({
   );
 }
 
+// Flat USD fee for a one-off sample order — covers the machine setup for
+// printing just one piece, on top of the usual unit price and shipping.
+const SAMPLE_FEE = 50;
+
 const DEFAULT_POSITIONS: Record<ElemKey, ElemPos> = {
   monogram: { x: 50, y: 15 },
   logo: { x: 50, y: 35 },
@@ -239,6 +244,7 @@ export function ProductConfigurator({
     unitPrice: number;
     minOrder: number;
     popularQty: number | null;
+    allowSample: boolean;
     leadTimeMin: number;
     leadTimeMax: number;
     personalizable: boolean;
@@ -291,9 +297,8 @@ export function ProductConfigurator({
     key: ElemKey;
     startX: number;
     startY: number;
-    orig: ElemPos;
-    marginXPct: number;
-    marginYPct: number;
+    originPx: Point;
+    marginPx: number;
   } | null>(null);
   const elemAdjustState = useRef<{
     key: ElemKey;
@@ -330,6 +335,8 @@ export function ProductConfigurator({
   };
   const [justAdded, setJustAdded] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
+  const [sampleAdded, setSampleAdded] = useState(false);
+  const [addingSample, setAddingSample] = useState(false);
   const [latestRender, setLatestRender] = useState<{
     imageDataUrl: string;
     contextImageDataUrl: string | null;
@@ -340,6 +347,76 @@ export function ProductConfigurator({
   const [activeImage, setActiveImage] = useState(zoneImageIndex >= 0 ? zoneImageIndex : 0);
 
   const [zoneRef, zoneSize] = useElementSize<HTMLDivElement>();
+  // Measures the full photo container (not just the zone sub-box) so the
+  // print area's true corners_pct — a possibly angled/trapezoidal quad, not
+  // just zoneBox's axis-aligned bounding rectangle — can be converted to
+  // real on-screen pixels for clamping drags and resizes against the
+  // actual boundary a customer drew in the admin print-area tool.
+  const [photoRef, photoSize] = useElementSize<HTMLDivElement>();
+
+  const zoneBox = useMemo(() => (zone ? boundingBox(zone.corners_pct) : null), [zone]);
+
+  // The draggable elements are positioned within zoneBox (its bounding box) —
+  // that's the same coordinate space the AI render and snapshot compositors
+  // use. But for angled/perspective products the actual print area is a
+  // trapezoid, not that bounding rectangle, so the visible outline traces
+  // the true quad (matching the admin print-area tool exactly) even though
+  // it draws in the full-photo 0-100 space rather than zoneBox's.
+  const zonePoints = useMemo(
+    () => (zone ? zone.corners_pct.map((c) => `${c.x},${c.y}`).join(" ") : ""),
+    [zone]
+  );
+
+  // Tilts the logo/text to match the print area's own incline (its top
+  // edge, TL→TR) so personalization reads as embedded in an angled surface
+  // instead of pasted on upright. Uses zoneBox's rendered pixel size to
+  // convert the full-image percentage corners into real on-screen angles —
+  // the container isn't square (aspect-[4/5]), so raw percentage deltas
+  // alone would give a skewed angle.
+  const autoRotationDeg = useMemo(() => {
+    if (!zone || zone.corners_pct.length !== 4 || !zoneBox || !zoneBox.width || !zoneBox.height) return 0;
+    if (!zoneSize.width || !zoneSize.height) return 0;
+    const pxPerPctX = zoneSize.width / zoneBox.width;
+    const pxPerPctY = zoneSize.height / zoneBox.height;
+    const [tl, tr] = zone.corners_pct;
+    const dx = (tr.x - tl.x) * pxPerPctX;
+    const dy = (tr.y - tl.y) * pxPerPctY;
+    return (Math.atan2(dy, dx) * 180) / Math.PI;
+  }, [zone, zoneBox, zoneSize.width, zoneSize.height]);
+  // Customers can nudge rotation further on top of the auto-matched angle
+  // (e.g. the quad only approximates the surface, or they simply prefer it
+  // off-axis) — each element gets its own independent offset via its own
+  // on-canvas rotate handle.
+  const elemRotationDeg: Record<ElemKey, number> = useMemo(
+    () => ({
+      logo: autoRotationDeg + elemRotationOffset.logo,
+      monogram: autoRotationDeg + elemRotationOffset.monogram,
+      names: autoRotationDeg + elemRotationOffset.names,
+      date: autoRotationDeg + elemRotationOffset.date,
+    }),
+    [autoRotationDeg, elemRotationOffset]
+  );
+
+  // The print area's true corners in the SAME local pixel space as
+  // photoSize (origin at the photo's own top-left) — a pure function of
+  // already-tracked state, safe to compute during render, unlike a live
+  // getBoundingClientRect() call.
+  const quadCornersPx = useMemo<Point[] | null>(() => {
+    if (!zone || zone.corners_pct.length !== 4 || !photoSize.width || !photoSize.height) return null;
+    return zone.corners_pct.map((c) => ({ x: (c.x / 100) * photoSize.width, y: (c.y / 100) * photoSize.height }));
+  }, [zone, photoSize.width, photoSize.height]);
+
+  // Converts a position (0-100 within zoneBox, the coordinate space
+  // `positions` are stored in) to that same photo-local pixel space.
+  const posToPhotoPx = useCallback(
+    (pos: ElemPos): Point | null => {
+      if (!zoneBox || !photoSize.width || !photoSize.height) return null;
+      const fullPctX = zoneBox.left + (pos.x / 100) * zoneBox.width;
+      const fullPctY = zoneBox.top + (pos.y / 100) * zoneBox.height;
+      return { x: (fullPctX / 100) * photoSize.width, y: (fullPctY / 100) * photoSize.height };
+    },
+    [zoneBox, photoSize.width, photoSize.height]
+  );
 
   // Lets the customer drag the logo, monogram, names, and date independently
   // within the print area. Listeners stay attached for the component's
@@ -347,19 +424,27 @@ export function ProductConfigurator({
   useEffect(() => {
     const handleMove = (e: PointerEvent) => {
       const state = dragState.current;
-      const container = zoneRef.current;
-      if (!state || !container) return;
-      const rect = container.getBoundingClientRect();
-      const dxPct = ((e.clientX - state.startX) / rect.width) * 100;
-      const dyPct = ((e.clientY - state.startY) / rect.height) * 100;
-      // Clamped to the element's own half-size, not just [0,100], so the
-      // element's edges — not just its center point — stay inside the
-      // print area instead of hanging off the side.
+      if (!state) return;
+      // Pointer-movement deltas are already in real screen pixels, and so
+      // is photo-local space (1 photo-local unit == 1 rendered pixel) — so
+      // the delta can be added directly to the drag's starting photo-local
+      // position without any further conversion.
+      const candidate: Point = {
+        x: state.originPx.x + (e.clientX - state.startX),
+        y: state.originPx.y + (e.clientY - state.startY),
+      };
+      const clamped =
+        quadCornersPx && quadCornersPx.length === 4
+          ? clampPointToQuad(candidate, quadCornersPx, state.marginPx)
+          : candidate;
+      if (!zoneBox || !photoSize.width || !photoSize.height) return;
+      const fullPctX = (clamped.x / photoSize.width) * 100;
+      const fullPctY = (clamped.y / photoSize.height) * 100;
       setPositions((prev) => ({
         ...prev,
         [state.key]: {
-          x: Math.min(100 - state.marginXPct, Math.max(state.marginXPct, state.orig.x + dxPct)),
-          y: Math.min(100 - state.marginYPct, Math.max(state.marginYPct, state.orig.y + dyPct)),
+          x: ((fullPctX - zoneBox.left) / zoneBox.width) * 100,
+          y: ((fullPctY - zoneBox.top) / zoneBox.height) * 100,
         },
       }));
     };
@@ -372,7 +457,7 @@ export function ProductConfigurator({
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
     };
-  }, [zoneRef]);
+  }, [quadCornersPx, zoneBox, photoSize.width, photoSize.height]);
 
   const startDrag = useCallback(
     (key: ElemKey) => (e: React.PointerEvent) => {
@@ -380,17 +465,18 @@ export function ProductConfigurator({
       e.stopPropagation();
       setActiveElem(key);
       const box = elemBoxRefs.current[key];
-      const zoneRect = zoneRef.current?.getBoundingClientRect();
-      // offsetWidth/Height (the element's own untransformed layout size),
-      // not getBoundingClientRect (which inflates once the element is
-      // rotated to match an angled print area) — using the rotated AABB
-      // here overstated the margin and could pin the element off-center or
-      // let it clip the zone edge once rotated.
-      const marginXPct = zoneRect && box && zoneRect.width > 0 ? Math.min(50, ((box.offsetWidth / 2) / zoneRect.width) * 100) : 0;
-      const marginYPct = zoneRect && box && zoneRect.height > 0 ? Math.min(50, ((box.offsetHeight / 2) / zoneRect.height) * 100) : 0;
-      dragState.current = { key, startX: e.clientX, startY: e.clientY, orig: positions[key], marginXPct, marginYPct };
+      const originPx = posToPhotoPx(positions[key]);
+      if (!originPx) return;
+      // A single circular margin (the larger of the box's own half-width/
+      // half-height) rather than separate X/Y margins — offsetWidth/Height
+      // is the element's own untransformed layout size, not the rotated
+      // getBoundingClientRect, which once inflated this margin and could
+      // pin the element off-center or let it clip the zone edge once
+      // rotated to match an angled print area.
+      const marginPx = box ? Math.max(box.offsetWidth / 2, box.offsetHeight / 2) : 0;
+      dragState.current = { key, startX: e.clientX, startY: e.clientY, originPx, marginPx };
     },
-    [positions, zoneRef]
+    [positions, posToPhotoPx]
   );
 
   // Direct-manipulation resize/rotate for each element, mirroring the
@@ -441,15 +527,32 @@ export function ProductConfigurator({
     return zone.width_mm / zoneSize.width;
   }, [zone, zoneSize.width]);
   const pxPerMm = mmPerPx ? 1 / mmPerPx : null;
-  // Capped to the zone's own rendered width (not just a fixed mm-derived
-  // size) so long names/dates shrink to fit instead of overflowing the
-  // print area — the same fit heuristic used server-side, so the AI render
-  // and cart snapshot match what's shown here.
-  const availableTextWidth = zoneSize.width * 0.92;
+  // Available width for auto-fitting names/date text, measured along the
+  // element's own (possibly rotated) axis from its actual current position
+  // out to the print area's TRUE quad boundary — not a flat percentage of
+  // zoneSize.width, which either overshoots a trapezoidal print area or
+  // falls needlessly short of a rectangular one depending on where the
+  // element sits and how it's rotated. Just one small margin (matching the
+  // resize handle's own 0.98 cap below) rather than two independently
+  // tuned margins stacking into a much bigger gap than either alone
+  // intended — which used to leave roughly a centimeter of unusable space
+  // before the real edge.
+  const textAvailableWidth = useCallback(
+    (key: "names" | "date") => {
+      const fallback = zoneSize.width * 0.97;
+      const origin = posToPhotoPx(positions[key]);
+      if (!origin || !quadCornersPx) return fallback;
+      const theta = (elemRotationDeg[key] * Math.PI) / 180;
+      const dir: Point = { x: Math.cos(theta), y: Math.sin(theta) };
+      const avail = 2 * availableAlongAxis(origin, dir, quadCornersPx) * 0.98;
+      return Number.isFinite(avail) && avail > 0 ? avail : fallback;
+    },
+    [zoneSize.width, posToPhotoPx, positions, quadCornersPx, elemRotationDeg]
+  );
   const nameFontPx = fitTextFontSize(
     names,
     (pxPerMm ? Math.max(10, Math.min(28, pxPerMm * 5)) : 18) * elemScale.names,
-    availableTextWidth
+    textAvailableWidth("names")
   );
   const monogramFontPx = (pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20) * elemScale.monogram;
   // formattedDate isn't declared yet at this point in the component, but
@@ -458,7 +561,7 @@ export function ProductConfigurator({
   const dateFontPx = fitTextFontSize(
     "0000000000",
     (pxPerMm ? Math.max(8, Math.min(14, pxPerMm * 2.4)) : 11) * elemScale.date,
-    availableTextWidth
+    textAvailableWidth("date")
   );
 
   // Default logo footprint: 45% of the print area's smaller physical
@@ -491,7 +594,7 @@ export function ProductConfigurator({
       const rect = box.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
-      // Cap growth at the print area's own footprint (with a little
+      // Cap growth at the print area's own true boundary (with a little
       // breathing room) rather than an arbitrary fixed multiplier — so an
       // element can be enlarged right up to filling the print area, and no
       // further. Measured against offsetWidth/Height (the element's own
@@ -500,7 +603,6 @@ export function ProductConfigurator({
       // angled print area, its rotated AABB is larger than its true
       // footprint, which was silently collapsing this ceiling down to the
       // current size (no further growth allowed at all).
-      const zoneRect = zoneRef.current?.getBoundingClientRect();
       const currentScale = elemScale[key] || 1;
       // For "names", box.offsetWidth/Height only cover the text itself — a
       // decorative frame draws further out around it (padding proportional
@@ -512,25 +614,29 @@ export function ProductConfigurator({
       const framePadY = key === "names" && frame ? nameFontPx * 0.9 : 0;
       const naturalW = box.offsetWidth + framePadX;
       const naturalH = box.offsetHeight + framePadY;
-      // The available room isn't just 95% of the zone's total width/height —
-      // it's 95% of whichever side of the *current position* is tighter. An
-      // element dragged off-center has less room on its near side than the
-      // zone's full width would suggest; capping only against the zone's
-      // total size let an off-center element grow right past the edge
-      // closest to it while still measuring "within" the zone overall.
-      const availW = zoneRect ? 2 * Math.min(centerX - zoneRect.left, zoneRect.right - centerX) : 0;
-      const availH = zoneRect ? 2 * Math.min(centerY - zoneRect.top, zoneRect.bottom - centerY) : 0;
+      // The available room is the distance from the element's *current
+      // position* to the nearest edge of the print area's true quad — not
+      // the zone's axis-aligned bounding box, which is looser than the
+      // real (possibly angled/trapezoidal) boundary drawn in the admin
+      // print-area tool, and not just the zone's total width/height either
+      // (an element dragged off-center has less room on its near side than
+      // the zone's full extent would suggest). A single conservative
+      // radius bounds growth in every direction at once — precise enough
+      // to reach the true edge, safe enough to never cross it.
+      const centerPhotoPx = posToPhotoPx(positions[key]);
+      const edgeDist = quadCornersPx && centerPhotoPx ? nearestEdgeDistance(centerPhotoPx, quadCornersPx) : null;
       // A hard ceiling on the *absolute* elemScale value, not a multiplier
       // off whatever the current scale happens to be — currentScale cancels
       // out of this ratio (naturalW/H already reflect it), so this is the
-      // one true scale at which the element/frame would exactly reach the
-      // nearest edge from its current position. No flooring at
-      // currentScale: if something already exceeds that (e.g. a stale/
-      // looser cap from before this fix), the next resize gesture must be
-      // allowed to shrink it back down, not just refuse to grow it further.
+      // one true scale at which the element/frame's larger dimension would
+      // exactly reach the nearest true edge from its current position. No
+      // flooring at currentScale: if something already exceeds that (e.g.
+      // a stale/looser cap from before this fix), the next resize gesture
+      // must be allowed to shrink it back down, not just refuse to grow it
+      // further.
       const maxScale =
-        zoneRect && naturalW > 0 && naturalH > 0 && availW > 0 && availH > 0
-          ? Math.max(0.3, currentScale * Math.min((availW * 0.95) / naturalW, (availH * 0.95) / naturalH))
+        edgeDist != null && naturalW > 0 && naturalH > 0
+          ? Math.max(0.3, (currentScale * (2 * edgeDist * 0.98)) / Math.max(naturalW, naturalH))
           : 4;
       elemAdjustState.current = {
         key,
@@ -544,7 +650,7 @@ export function ProductConfigurator({
         maxScale,
       };
     },
-    [elemScale, elemRotationOffset, zoneRef, frame, nameFontPx]
+    [elemScale, elemRotationOffset, frame, nameFontPx, posToPhotoPx, positions, quadCornersPx]
   );
 
   const technique = product.techniques.find((t) => t.id === techniqueId);
@@ -557,46 +663,6 @@ export function ProductConfigurator({
 
   const displayImage = variant?.image_url ?? product.images[activeImage]?.url ?? product.images[0]?.url;
   const showOverlayHere = !zone?.image_id || product.images[activeImage]?.id === zone.image_id;
-
-  const zoneBox = useMemo(() => (zone ? boundingBox(zone.corners_pct) : null), [zone]);
-
-  // The draggable elements are positioned within zoneBox (its bounding box) —
-  // that's the same coordinate space the AI render and snapshot compositors
-  // use. But for angled/perspective products the actual print area is a
-  // trapezoid, not that bounding rectangle, so the visible outline traces
-  // the true quad (matching the admin print-area tool exactly) even though
-  // it draws in the full-photo 0-100 space rather than zoneBox's.
-  const zonePoints = useMemo(
-    () => (zone ? zone.corners_pct.map((c) => `${c.x},${c.y}`).join(" ") : ""),
-    [zone]
-  );
-
-  // Tilts the logo/text to match the print area's own incline (its top
-  // edge, TL→TR) so personalization reads as embedded in an angled surface
-  // instead of pasted on upright. Uses zoneBox's rendered pixel size to
-  // convert the full-image percentage corners into real on-screen angles —
-  // the container isn't square (aspect-[4/5]), so raw percentage deltas
-  // alone would give a skewed angle.
-  const autoRotationDeg = useMemo(() => {
-    if (!zone || zone.corners_pct.length !== 4 || !zoneBox || !zoneBox.width || !zoneBox.height) return 0;
-    if (!zoneSize.width || !zoneSize.height) return 0;
-    const pxPerPctX = zoneSize.width / zoneBox.width;
-    const pxPerPctY = zoneSize.height / zoneBox.height;
-    const [tl, tr] = zone.corners_pct;
-    const dx = (tr.x - tl.x) * pxPerPctX;
-    const dy = (tr.y - tl.y) * pxPerPctY;
-    return (Math.atan2(dy, dx) * 180) / Math.PI;
-  }, [zone, zoneBox, zoneSize.width, zoneSize.height]);
-  // Customers can nudge rotation further on top of the auto-matched angle
-  // (e.g. the quad only approximates the surface, or they simply prefer it
-  // off-axis) — each element gets its own independent offset via its own
-  // on-canvas rotate handle.
-  const elemRotationDeg: Record<ElemKey, number> = {
-    logo: autoRotationDeg + elemRotationOffset.logo,
-    monogram: autoRotationDeg + elemRotationOffset.monogram,
-    names: autoRotationDeg + elemRotationOffset.names,
-    date: autoRotationDeg + elemRotationOffset.date,
-  };
 
   // Real-world size readouts (cm) shown next to each field below, computed
   // from the same px-per-mm conversion the on-canvas sizing uses — only
@@ -640,8 +706,16 @@ export function ProductConfigurator({
     setLogoPreview(null);
   };
 
-  const handleAddToCart = async () => {
-    setAddingToCart(true);
+  const handleAddToCart = () => submitToCart(false);
+  const handleAddSample = () => submitToCart(true);
+
+  // Shared by the normal Add to Cart button and "Buy 1 sample" — same
+  // render/snapshot capture either way, since a sample is exactly the
+  // customer's current configuration, just forced to a single piece with
+  // its own flat setup fee instead of the product's usual quantity rules.
+  const submitToCart = async (sample: boolean) => {
+    if (sample) setAddingSample(true);
+    else setAddingToCart(true);
 
     // If the customer generated an AI render for this exact configuration,
     // persist it to storage so it isn't lost once the tab closes — the
@@ -719,18 +793,22 @@ export function ProductConfigurator({
     }
 
     addItem({
-      key: `${product.id}:${variantId}:${names}:${date}:${monogram}:${frame}:${techniqueId}`,
+      key: sample
+        ? `${product.id}:${variantId}:${names}:${date}:${monogram}:${frame}:${techniqueId}:sample:${crypto.randomUUID()}`
+        : `${product.id}:${variantId}:${names}:${date}:${monogram}:${frame}:${techniqueId}`,
       productId: product.id,
       slug: product.slug,
       name: variant ? `${product.name} — ${variant.label}` : product.name,
       image: displayImage ?? null,
       unitPrice: unitPriceWithTechnique,
-      quantity,
-      minOrder: product.minOrder,
+      quantity: sample ? 1 : quantity,
+      minOrder: sample ? 1 : product.minOrder,
       leadTimeMin: product.leadTimeMin,
       leadTimeMax: product.leadTimeMax,
       variantId: variant?.id,
       variantLabel: variant?.label,
+      isSample: sample || undefined,
+      sampleFee: sample ? SAMPLE_FEE : undefined,
       personalization: product.personalizable
         ? {
             names,
@@ -749,9 +827,15 @@ export function ProductConfigurator({
           }
         : undefined,
     });
-    setAddingToCart(false);
-    setJustAdded(true);
-    setTimeout(() => setJustAdded(false), 2000);
+    if (sample) {
+      setAddingSample(false);
+      setSampleAdded(true);
+      setTimeout(() => setSampleAdded(false), 2000);
+    } else {
+      setAddingToCart(false);
+      setJustAdded(true);
+      setTimeout(() => setJustAdded(false), 2000);
+    }
   };
 
   return (
@@ -759,6 +843,7 @@ export function ProductConfigurator({
     <div className="grid md:grid-cols-2 gap-12">
       <div>
         <div
+          ref={photoRef}
           className="relative aspect-[4/5] rounded-2xl overflow-hidden bg-cream mb-4"
           onPointerDown={() => setActiveElem(null)}
         >
@@ -951,6 +1036,8 @@ export function ProductConfigurator({
           frame={frame}
           textFont={textFont}
           elemScale={elemScale}
+          positions={positions}
+          elemRotationOffset={elemRotationOffset}
           quantity={quantity}
         />
       </div>
@@ -1265,6 +1352,19 @@ export function ProductConfigurator({
             {addingToCart ? "Adding…" : justAdded ? "Added ✓" : "Add to Cart"}
           </button>
         </div>
+        {product.allowSample && (
+          <button
+            onClick={handleAddSample}
+            disabled={addingSample}
+            className="w-full mt-3 px-6 py-3 rounded-full border border-line text-sm font-medium hover:border-terracotta hover:text-terracotta transition-colors disabled:opacity-50"
+          >
+            {addingSample
+              ? "Adding…"
+              : sampleAdded
+                ? "Sample added ✓"
+                : `Buy 1 sample — +${formatUSD(SAMPLE_FEE)}`}
+          </button>
+        )}
         <button
           onClick={() => router.push(`/store/${product.plannerSlug}/cart`)}
           className="text-sm text-muted mt-4 hover:text-terracotta"

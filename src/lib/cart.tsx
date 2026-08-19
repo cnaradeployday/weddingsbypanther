@@ -15,6 +15,13 @@ export type CartItem = {
   leadTimeMax?: number;
   variantId?: string;
   variantLabel?: string;
+  // A one-off sample of the current configuration, bought to check quality/
+  // fit before committing to the full run — bypasses the product's normal
+  // minOrder (always quantity 1) and carries a flat machine-setup fee
+  // rather than a per-unit one, so it's tracked separately from
+  // personalization's own per-unit extraPrice.
+  isSample?: boolean;
+  sampleFee?: number;
   personalization?: {
     names?: string;
     date?: string;
@@ -41,6 +48,7 @@ type CartContextValue = {
   clear: () => void;
   subtotal: number;
   personalizationFee: number;
+  sampleFee: number;
   totalPieces: number;
 };
 
@@ -115,11 +123,25 @@ export function CartProvider({
       ),
     [items]
   );
+  const sampleFee = useMemo(
+    () => items.reduce((sum, i) => sum + (i.isSample ? (i.sampleFee ?? 0) : 0), 0),
+    [items]
+  );
   const totalPieces = useMemo(() => items.reduce((sum, i) => sum + i.quantity, 0), [items]);
 
   return (
     <CartContext.Provider
-      value={{ items, addItem, updateQuantity, removeItem, clear, subtotal, personalizationFee, totalPieces }}
+      value={{
+        items,
+        addItem,
+        updateQuantity,
+        removeItem,
+        clear,
+        subtotal,
+        personalizationFee,
+        sampleFee,
+        totalPieces,
+      }}
     >
       {children}
     </CartContext.Provider>

@@ -8,9 +8,9 @@ import { formatUSD } from "@/lib/format";
 
 export default function CartPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const { items, updateQuantity, removeItem, subtotal, personalizationFee, totalPieces } = useCart();
+  const { items, updateQuantity, removeItem, subtotal, personalizationFee, sampleFee, totalPieces } = useCart();
   const base = `/store/${slug}`;
-  const total = subtotal + personalizationFee;
+  const total = subtotal + personalizationFee + sampleFee;
 
   if (items.length === 0) {
     return (
@@ -48,7 +48,14 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
               </div>
               <div className="flex-1">
                 <div className="flex justify-between">
-                  <p className="font-medium">{item.name}</p>
+                  <p className="font-medium">
+                    {item.name}
+                    {item.isSample && (
+                      <span className="ml-2 text-[10px] uppercase tracking-wide text-terracotta align-middle">
+                        Sample
+                      </span>
+                    )}
+                  </p>
                   <p className="font-medium">{formatUSD(item.unitPrice * item.quantity)}</p>
                 </div>
                 {item.personalization && (
@@ -98,6 +105,12 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
             <span className="text-muted">Personalization</span>
             <span>{formatUSD(personalizationFee)}</span>
           </div>
+          {sampleFee > 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted">Sample setup</span>
+              <span>{formatUSD(sampleFee)}</span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-muted">Shipping</span>
             <span className="text-muted">At checkout</span>

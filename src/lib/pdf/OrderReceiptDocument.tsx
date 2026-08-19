@@ -48,6 +48,7 @@ export type ReceiptData = {
   items: ReceiptItem[];
   subtotal: number;
   personalizationFee: number;
+  sampleFee: number;
   shippingFee: number;
   tax: number;
   total: number;
@@ -194,6 +195,12 @@ export function OrderReceiptDocument({ data }: { data: ReceiptData }) {
             <View style={s.summaryRow}>
               <Text style={s.summaryLabel}>Personalization</Text>
               <Text style={s.summaryValue}>{money(data.personalizationFee)}</Text>
+            </View>
+          )}
+          {data.sampleFee > 0 && (
+            <View style={s.summaryRow}>
+              <Text style={s.summaryLabel}>Sample setup</Text>
+              <Text style={s.summaryValue}>{money(data.sampleFee)}</Text>
             </View>
           )}
           <View style={s.summaryRow}>

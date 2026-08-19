@@ -32,6 +32,7 @@ export default async function ProductPage({
         unitPrice: product.unitPrice,
         minOrder: product.minOrder,
         popularQty: product.popularQty,
+        allowSample: product.allowSample,
         leadTimeMin: product.leadTimeMin,
         leadTimeMax: product.leadTimeMax,
         personalizable: product.personalizable,

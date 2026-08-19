@@ -54,6 +54,7 @@ export default async function EditSupplierProductPage({
     leadMax: product.lead_time_days_max,
     stock: product.stock_on_hand,
     personalizable: product.personalizable,
+    allowSample: product.allow_sample,
     status: product.status,
     reviewerNote: product.reviewer_note,
     techniques: (product.techniques ?? []).map((t) => t.technique),

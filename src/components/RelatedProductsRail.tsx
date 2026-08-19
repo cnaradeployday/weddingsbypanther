@@ -34,6 +34,17 @@ function zoneAngleDeg(corners: { x: number; y: number }[]) {
   return (Math.atan2(tr.y - tl.y, tr.x - tl.x) * 180) / Math.PI;
 }
 
+type ElemKey = "logo" | "monogram" | "names" | "date";
+type ElemPos = { x: number; y: number };
+
+const DEFAULT_POSITIONS: Record<ElemKey, ElemPos> = {
+  monogram: { x: 50, y: 15 },
+  logo: { x: 50, y: 35 },
+  names: { x: 50, y: 65 },
+  date: { x: 50, y: 82 },
+};
+const DEFAULT_ROTATIONS: Record<ElemKey, number> = { logo: 0, monogram: 0, names: 0, date: 0 };
+
 function formatDate(isoDate: string) {
   if (!isoDate) return "";
   const d = new Date(isoDate + "T00:00:00");
@@ -61,6 +72,8 @@ function RelatedProductCard({
   frame,
   textFont,
   elemScale,
+  positions,
+  elemRotationOffset,
   quantity,
 }: {
   product: RelatedProduct;
@@ -72,6 +85,8 @@ function RelatedProductCard({
   frame: string;
   textFont: string;
   elemScale: Record<string, number>;
+  positions: Record<ElemKey, ElemPos>;
+  elemRotationOffset: Record<ElemKey, number>;
   quantity: number;
 }) {
   const router = useRouter();
@@ -80,6 +95,12 @@ function RelatedProductCard({
   const zoneBox = product.zone && product.zone.corners_pct.length === 4 ? boundingBox(product.zone.corners_pct) : null;
   const rotation = product.zone ? zoneAngleDeg(product.zone.corners_pct) : 0;
   const hasPersonalization = !!(names.trim() || date.trim() || monogram || logoDataUrl);
+  // Mirrors wherever the customer actually dragged each element on the main
+  // product's configurator, rather than a fixed centered stack — so this
+  // small preview matches the arrangement they set, not just the same
+  // pieces in a default layout.
+  const pos = (key: ElemKey) => positions[key] ?? DEFAULT_POSITIONS[key];
+  const elemRotation = (key: ElemKey) => rotation + (elemRotationOffset[key] ?? DEFAULT_ROTATIONS[key]);
 
   // The same relative scale the customer set on the main product (a resize
   // handle multiplier, not an absolute size) carries over here so the
@@ -154,55 +175,79 @@ function RelatedProductCard({
               height: `${zoneBox.height}%`,
             }}
           >
-            <div
-              className="absolute left-1/2 top-1/2 flex flex-col items-center gap-1"
-              style={{ transform: `translate(-50%, -50%) rotate(${rotation}deg)` }}
-            >
-              {logoDataUrl && (
-                <div className="relative" style={{ width: logoSize, height: logoSize }}>
-                  <Image src={logoDataUrl} alt="" fill className="object-contain" unoptimized />
-                </div>
-              )}
-              {monogram && (
-                <svg
-                  viewBox="0 0 24 24"
-                  width={monogramSize}
-                  height={monogramSize}
-                  dangerouslySetInnerHTML={{ __html: monogramSvgInner(monogram, product.inkColor) }}
-                />
-              )}
-              {names && (
-                <div className="relative" style={{ fontSize: nameSize }}>
-                  {frame && (
-                    <svg
-                      viewBox="0 0 200 90"
-                      preserveAspectRatio="none"
-                      className="absolute pointer-events-none"
-                      style={{
-                        inset: `${-nameSize * 0.45}px ${-nameSize * 0.7}px`,
-                        width: `calc(100% + ${nameSize * 1.4}px)`,
-                        height: `calc(100% + ${nameSize * 0.9}px)`,
-                      }}
-                      dangerouslySetInnerHTML={{ __html: frameSvgInner(frame, product.inkColor) }}
-                    />
-                  )}
-                  <span
-                    className="relative block whitespace-nowrap leading-none"
-                    style={{ color: product.inkColor, ...textFontStyle(textFont) }}
-                  >
-                    {names}
-                  </span>
-                </div>
-              )}
-              {date && (
+            {logoDataUrl && (
+              <div
+                className="absolute"
+                style={{
+                  left: `${pos("logo").x}%`,
+                  top: `${pos("logo").y}%`,
+                  width: logoSize,
+                  height: logoSize,
+                  transform: `translate(-50%, -50%) rotate(${elemRotation("logo")}deg)`,
+                }}
+              >
+                <Image src={logoDataUrl} alt="" fill className="object-contain" unoptimized />
+              </div>
+            )}
+            {monogram && (
+              <svg
+                viewBox="0 0 24 24"
+                width={monogramSize}
+                height={monogramSize}
+                className="absolute"
+                style={{
+                  left: `${pos("monogram").x}%`,
+                  top: `${pos("monogram").y}%`,
+                  transform: `translate(-50%, -50%) rotate(${elemRotation("monogram")}deg)`,
+                }}
+                dangerouslySetInnerHTML={{ __html: monogramSvgInner(monogram, product.inkColor) }}
+              />
+            )}
+            {names && (
+              <div
+                className="absolute"
+                style={{
+                  left: `${pos("names").x}%`,
+                  top: `${pos("names").y}%`,
+                  fontSize: nameSize,
+                  transform: `translate(-50%, -50%) rotate(${elemRotation("names")}deg)`,
+                }}
+              >
+                {frame && (
+                  <svg
+                    viewBox="0 0 200 90"
+                    preserveAspectRatio="none"
+                    className="absolute pointer-events-none"
+                    style={{
+                      inset: `${-nameSize * 0.45}px ${-nameSize * 0.7}px`,
+                      width: `calc(100% + ${nameSize * 1.4}px)`,
+                      height: `calc(100% + ${nameSize * 0.9}px)`,
+                    }}
+                    dangerouslySetInnerHTML={{ __html: frameSvgInner(frame, product.inkColor) }}
+                  />
+                )}
                 <span
-                  className="whitespace-nowrap leading-none"
-                  style={{ fontSize: dateSize, color: product.inkColor }}
+                  className="relative block whitespace-nowrap leading-none"
+                  style={{ color: product.inkColor, ...textFontStyle(textFont) }}
                 >
-                  {formatDate(date)}
+                  {names}
                 </span>
-              )}
-            </div>
+              </div>
+            )}
+            {date && (
+              <span
+                className="absolute whitespace-nowrap leading-none"
+                style={{
+                  left: `${pos("date").x}%`,
+                  top: `${pos("date").y}%`,
+                  fontSize: dateSize,
+                  color: product.inkColor,
+                  transform: `translate(-50%, -50%) rotate(${elemRotation("date")}deg)`,
+                }}
+              >
+                {formatDate(date)}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -231,6 +276,8 @@ export function RelatedProductsRail({
   frame,
   textFont,
   elemScale,
+  positions,
+  elemRotationOffset,
   quantity,
 }: {
   products: RelatedProduct[];
@@ -242,6 +289,8 @@ export function RelatedProductsRail({
   frame: string;
   textFont: string;
   elemScale: Record<string, number>;
+  positions: Record<ElemKey, ElemPos>;
+  elemRotationOffset: Record<ElemKey, number>;
   quantity: number;
 }) {
   if (products.length === 0) return null;
@@ -262,6 +311,8 @@ export function RelatedProductsRail({
             frame={frame}
             textFont={textFont}
             elemScale={elemScale}
+            positions={positions}
+            elemRotationOffset={elemRotationOffset}
             quantity={quantity}
           />
         ))}
