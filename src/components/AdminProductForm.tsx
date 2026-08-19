@@ -357,7 +357,7 @@ export function AdminProductForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-5xl grid md:grid-cols-2 gap-6">
+    <form onSubmit={handleSubmit} className="max-w-6xl grid md:grid-cols-2 xl:grid-cols-3 gap-6">
       <div className="rounded-xl border border-line bg-white p-6 space-y-4">
         <p className="text-xs uppercase tracking-wide text-muted">Basics</p>
         <select
@@ -552,7 +552,11 @@ export function AdminProductForm({
           </div>
         </div>
 
-        {personalizable && (
+      </div>
+
+      <div className="rounded-xl border border-line bg-white p-6 space-y-5">
+        <p className="text-xs uppercase tracking-wide text-muted">Print area</p>
+        {personalizable ? (
           <div>
             {existingImages.length + previews.length > 1 && (
               <div className="mb-3">
@@ -588,8 +592,8 @@ export function AdminProductForm({
               </div>
             )}
             <p className="text-xs uppercase tracking-wide text-muted mb-2">
-              Print area — drag the shape to move it, drag any corner to reshape it (useful when the
-              surface is at an angle in the photo)
+              Drag the shape to move it, drag any corner to reshape it (useful when the surface is at
+              an angle in the photo)
             </p>
             <PrintAreaTool
               imageUrl={
@@ -634,10 +638,12 @@ export function AdminProductForm({
               </div>
             </div>
           </div>
+        ) : (
+          <p className="text-sm text-muted">This product isn&apos;t personalizable, so it has no print area.</p>
         )}
 
         {initial ? (
-          <div>
+          <div className="pt-4 border-t border-line">
             <label className="text-xs uppercase tracking-wide text-muted block mb-1">Status</label>
             <select
               value={status}
@@ -652,7 +658,7 @@ export function AdminProductForm({
             </select>
           </div>
         ) : (
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-sm pt-4 border-t border-line">
             <input
               type="checkbox"
               checked={addToPlanners}
@@ -663,7 +669,7 @@ export function AdminProductForm({
         )}
       </div>
 
-      <div className="md:col-start-2 rounded-xl border border-line bg-white p-6 space-y-3">
+      <div className="md:col-span-2 xl:col-span-3 rounded-xl border border-line bg-white p-6 space-y-3">
         <p className="text-xs uppercase tracking-wide text-muted">
           Related products{" "}
           <span className="normal-case text-muted/70">
@@ -684,7 +690,7 @@ export function AdminProductForm({
         )}
       </div>
 
-      <div className="md:col-span-2 rounded-xl border border-line bg-white p-6 space-y-4">
+      <div className="md:col-span-2 xl:col-span-3 rounded-xl border border-line bg-white p-6 space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-xs uppercase tracking-wide text-muted">
             Variants (color, material, etc.) — optional
@@ -750,7 +756,7 @@ export function AdminProductForm({
         )}
       </div>
 
-      <div className="md:col-span-2">
+      <div className="md:col-span-2 xl:col-span-3">
         {error && <p className="text-sm text-terracotta-dark mb-4">{error}</p>}
 
         <button
