@@ -1,16 +1,155 @@
 "use client";
 
+import { use, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { use } from "react";
-import { useCart } from "@/lib/cart";
+import { useRouter } from "next/navigation";
+import { useCart, type CartItem } from "@/lib/cart";
 import { formatUSD } from "@/lib/format";
+import { savePersonalizationHandoff } from "@/lib/personalizationHandoff";
+
+function deliveryEstimate(item: CartItem): string | null {
+  if (item.leadTimeMin == null || item.leadTimeMax == null) return null;
+  return item.leadTimeMin === item.leadTimeMax
+    ? `Ships in ${item.leadTimeMin} days`
+    : `Ships in ${item.leadTimeMin}–${item.leadTimeMax} days`;
+}
+
+function CartLineItem({
+  item,
+  onUpdateQuantity,
+  onRemove,
+  onEdit,
+}: {
+  item: CartItem;
+  onUpdateQuantity: (key: string, quantity: number) => void;
+  onRemove: (key: string) => void;
+  onEdit: (item: CartItem) => void;
+}) {
+  const previewUrl = item.personalization?.snapshotUrl ?? item.personalization?.renderUrl ?? item.image;
+  // A typable quantity field (not just +/- steps) mirrors the product
+  // page's own quantity input — editing away from the current value only
+  // commits (clamped to the item's minOrder) on blur/Enter, so a customer
+  // can clear the field and type a new number without fighting a stepper.
+  const [quantityInput, setQuantityInput] = useState(() => String(item.quantity));
+
+  const commitQuantity = () => {
+    const next = Math.max(item.minOrder, Number(quantityInput) || item.minOrder);
+    onUpdateQuantity(item.key, next);
+    setQuantityInput(String(next));
+  };
+
+  const step = (delta: number) => {
+    const next = Math.max(item.minOrder, item.quantity + delta);
+    onUpdateQuantity(item.key, next);
+    setQuantityInput(String(next));
+  };
+
+  const delivery = deliveryEstimate(item);
+
+  return (
+    <div className="py-6 flex gap-4">
+      <div className="relative h-24 w-24 rounded-lg overflow-hidden bg-cream shrink-0">
+        {previewUrl && (
+          <Image
+            src={previewUrl}
+            alt={item.name}
+            fill
+            className={item.personalization?.snapshotUrl || item.personalization?.renderUrl ? "object-contain" : "object-cover"}
+            unoptimized={!!(item.personalization?.snapshotUrl ?? item.personalization?.renderUrl)}
+          />
+        )}
+      </div>
+      <div className="flex-1">
+        <div className="flex justify-between">
+          <p className="font-medium">
+            {item.name}
+            {item.isSample && (
+              <span className="ml-2 text-[10px] uppercase tracking-wide text-terracotta align-middle">
+                Sample
+              </span>
+            )}
+          </p>
+          <p className="font-medium">{formatUSD(item.unitPrice * item.quantity)}</p>
+        </div>
+        {item.personalization && (
+          <p className="text-sm text-muted mt-1">
+            &quot;{item.personalization.names}&quot; · {item.personalization.date} ·{" "}
+            {item.personalization.technique}
+          </p>
+        )}
+        {delivery && <p className="text-xs text-muted mt-1">{delivery}</p>}
+        <div className="flex items-center gap-4 mt-3">
+          <div className="flex items-center gap-2 rounded-full border border-line px-3 py-1">
+            <button onClick={() => step(-item.minOrder)} className="text-muted">
+              −
+            </button>
+            <input
+              type="number"
+              value={quantityInput}
+              onChange={(e) => setQuantityInput(e.target.value)}
+              onBlur={commitQuantity}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitQuantity();
+                }
+              }}
+              className="text-sm w-12 text-center bg-transparent focus:outline-none"
+            />
+            <button onClick={() => step(item.minOrder)} className="text-muted">
+              +
+            </button>
+          </div>
+          <button
+            onClick={() => onEdit(item)}
+            className="text-sm text-muted hover:text-terracotta"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => onRemove(item.key)}
+            className="text-sm text-muted hover:text-terracotta"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function CartPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
+  const router = useRouter();
   const { items, updateQuantity, removeItem, subtotal, personalizationFee, sampleFee, totalPieces } = useCart();
   const base = `/store/${slug}`;
   const total = subtotal + personalizationFee + sampleFee;
+
+  // Sends the customer back to that product's configurator with its exact
+  // personalization (text, logo flag, positions, sizes, rotations) carried
+  // through the same handoff mechanism a related-product click uses — the
+  // line itself is removed so finishing the edit and adding again doesn't
+  // leave a stale duplicate behind. A raw logo file can't be recovered
+  // (only a snapshot image and a "had a logo" flag are ever kept in the
+  // cart), so an item with a logo will need it re-uploaded.
+  const handleEdit = (item: CartItem) => {
+    if (item.personalization) {
+      savePersonalizationHandoff({
+        names: item.personalization.names ?? "",
+        date: item.personalization.date ?? "",
+        monogram: item.personalization.monogram ?? "",
+        logoDataUrl: null,
+        frame: item.personalization.frame ?? "",
+        textFont: item.personalization.textFont ?? "",
+        elemScale: item.personalization.elemScale ?? {},
+        positions: item.personalization.positions,
+        elemRotationOffset: item.personalization.elemRotationOffset,
+      });
+    }
+    removeItem(item.key);
+    router.push(`${base}/shop/${item.slug}`);
+  };
 
   if (items.length === 0) {
     return (
@@ -31,66 +170,15 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
         <p className="text-muted mb-8">{items.length} items · {totalPieces} pieces</p>
 
         <div className="divide-y divide-line">
-          {items.map((item) => {
-            const previewUrl = item.personalization?.snapshotUrl ?? item.personalization?.renderUrl ?? item.image;
-            return (
-            <div key={item.key} className="py-6 flex gap-4">
-              <div className="relative h-24 w-24 rounded-lg overflow-hidden bg-cream shrink-0">
-                {previewUrl && (
-                  <Image
-                    src={previewUrl}
-                    alt={item.name}
-                    fill
-                    className={item.personalization?.snapshotUrl || item.personalization?.renderUrl ? "object-contain" : "object-cover"}
-                    unoptimized={!!(item.personalization?.snapshotUrl ?? item.personalization?.renderUrl)}
-                  />
-                )}
-              </div>
-              <div className="flex-1">
-                <div className="flex justify-between">
-                  <p className="font-medium">
-                    {item.name}
-                    {item.isSample && (
-                      <span className="ml-2 text-[10px] uppercase tracking-wide text-terracotta align-middle">
-                        Sample
-                      </span>
-                    )}
-                  </p>
-                  <p className="font-medium">{formatUSD(item.unitPrice * item.quantity)}</p>
-                </div>
-                {item.personalization && (
-                  <p className="text-sm text-muted mt-1">
-                    &quot;{item.personalization.names}&quot; · {item.personalization.date} ·{" "}
-                    {item.personalization.technique}
-                  </p>
-                )}
-                <div className="flex items-center gap-4 mt-3">
-                  <div className="flex items-center gap-2 rounded-full border border-line px-3 py-1">
-                    <button
-                      onClick={() => updateQuantity(item.key, item.quantity - item.minOrder)}
-                      className="text-muted"
-                    >
-                      −
-                    </button>
-                    <span className="text-sm w-8 text-center">{item.quantity}</span>
-                    <button
-                      onClick={() => updateQuantity(item.key, item.quantity + item.minOrder)}
-                      className="text-muted"
-                    >
-                      +
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => removeItem(item.key)}
-                    className="text-sm text-muted hover:text-terracotta"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            </div>
-            );
-          })}
+          {items.map((item) => (
+            <CartLineItem
+              key={item.key}
+              item={item}
+              onUpdateQuantity={updateQuantity}
+              onRemove={removeItem}
+              onEdit={handleEdit}
+            />
+          ))}
         </div>
       </div>
 
