@@ -38,6 +38,7 @@ export type InitialProduct = {
   leadMax: number;
   stock: number;
   personalizable: boolean;
+  allowSample: boolean;
   status: string;
   reviewerNote: string | null;
   techniques: string[];
@@ -115,6 +116,7 @@ export function SupplierProductForm({
   const [leadMax, setLeadMax] = useState(initial?.leadMax ?? 10);
   const [stock, setStock] = useState(initial?.stock ?? 1000);
   const [personalizable, setPersonalizable] = useState(initial?.personalizable ?? true);
+  const [allowSample, setAllowSample] = useState(initial?.allowSample ?? true);
   const [techniques, setTechniques] = useState<string[]>(initial?.techniques ?? ["Foil stamp"]);
   const [styleTags, setStyleTags] = useState<string[]>(initial?.styleTags ?? []);
   const [relatedIds, setRelatedIds] = useState<string[]>(initial?.relatedProductIds ?? []);
@@ -201,6 +203,7 @@ export function SupplierProductForm({
           lead_time_days_max: leadMax,
           stock_on_hand: stock,
           personalizable,
+          allow_sample: allowSample,
           style_tags: styleTags,
           related_product_ids: relatedIds,
           ...(needsResubmit ? { status: "pending", reviewer_note: null } : {}),
@@ -240,6 +243,7 @@ export function SupplierProductForm({
           lead_time_days_max: leadMax,
           stock_on_hand: stock,
           personalizable,
+          allow_sample: allowSample,
           style_tags: styleTags,
           related_product_ids: relatedIds,
           status: "pending",
@@ -537,6 +541,15 @@ export function SupplierProductForm({
             onChange={(e) => setPersonalizable(e.target.checked)}
           />
           This product can be personalized
+        </label>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={allowSample}
+            onChange={(e) => setAllowSample(e.target.checked)}
+          />
+          Customers can buy a single sample (+$50 setup fee) before the full order
         </label>
 
         <div>

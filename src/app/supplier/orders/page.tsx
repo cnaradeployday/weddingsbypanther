@@ -43,7 +43,7 @@ export default async function SupplierOrdersPage() {
     ? await supabase
         .from("order_items")
         .select(
-          `id, quantity, unit_price, variant_label, personalization,
+          `id, quantity, unit_price, variant_label, personalization, is_sample,
            product:products ( name ),
            order:orders ( id, customer_name, customer_email, status, created_at )`
         )
@@ -70,6 +70,11 @@ export default async function SupplierOrdersPage() {
                     <p className="font-medium">
                       {item.product?.name ?? "Deleted product"}
                       {item.variant_label ? ` — ${item.variant_label}` : ""}
+                      {item.is_sample && (
+                        <span className="ml-2 text-[10px] uppercase tracking-wide text-terracotta align-middle">
+                          Sample — 1-off setup
+                        </span>
+                      )}
                     </p>
                     <p className="text-sm text-muted">
                       {item.order?.customer_name} · {item.order?.customer_email}

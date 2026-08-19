@@ -68,6 +68,11 @@ export default async function AdminOrderDetailPage({ params }: { params: Promise
                     <p className="font-medium">
                       {item.product?.name ?? "Deleted product"}
                       {item.variant_label ? ` — ${item.variant_label}` : ""}
+                      {item.is_sample && (
+                        <span className="ml-2 text-[10px] uppercase tracking-wide text-terracotta align-middle">
+                          Sample
+                        </span>
+                      )}
                     </p>
                     <p className="text-sm text-muted">
                       {item.quantity} × {formatUSD(item.unit_price)}
@@ -175,6 +180,12 @@ export default async function AdminOrderDetailPage({ params }: { params: Promise
               <span className="text-muted">Personalization</span>
               <span>{formatUSD(order.personalization_fee)}</span>
             </div>
+            {order.sample_fee > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted">Sample setup</span>
+                <span>{formatUSD(order.sample_fee)}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-muted">Shipping</span>
               <span>{formatUSD(order.shipping_fee)}</span>

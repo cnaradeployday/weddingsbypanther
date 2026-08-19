@@ -19,7 +19,7 @@ type OtpStage = "idle" | "sent" | "verified";
 
 export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; plannerSlug: string }) {
   const router = useRouter();
-  const { items, subtotal, personalizationFee, clear } = useCart();
+  const { items, subtotal, personalizationFee, sampleFee, clear } = useCart();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,7 +88,7 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
   }, []);
 
   const shipping = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FLAT;
-  const total = subtotal + personalizationFee + shipping;
+  const total = subtotal + personalizationFee + sampleFee + shipping;
 
   const update = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -166,6 +166,7 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
         authorized_recipient: form.hasAuthorizedRecipient ? form.authorizedRecipientName.trim() || null : null,
         subtotal,
         personalization_fee: personalizationFee,
+        sample_fee: sampleFee,
         shipping_fee: shipping,
         tax: 0,
         total,
@@ -183,6 +184,7 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
         variant_id: item.variantId ?? null,
         variant_label: item.variantLabel ?? null,
         personalization: item.personalization ?? null,
+        is_sample: item.isSample ?? false,
       }));
 
       const { error: itemsError } = await supabase.from("order_items").insert(orderItems);
@@ -462,6 +464,11 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
             <div key={item.key} className="py-3 flex justify-between text-sm">
               <span>
                 {item.name}
+                {item.isSample && (
+                  <span className="ml-2 text-[10px] uppercase tracking-wide text-terracotta align-middle">
+                    Sample
+                  </span>
+                )}
                 <span className="block text-muted">
                   {item.quantity} × {formatUSD(item.unitPrice)}
                 </span>
@@ -479,6 +486,12 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
             <span className="text-muted">Personalization</span>
             <span>{formatUSD(personalizationFee)}</span>
           </div>
+          {sampleFee > 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted">Sample setup</span>
+              <span>{formatUSD(sampleFee)}</span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-muted">Shipping</span>
             <span>{shipping === 0 ? "Free" : formatUSD(shipping)}</span>

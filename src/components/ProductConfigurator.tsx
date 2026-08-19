@@ -178,6 +178,10 @@ function AdjustHandles({
   );
 }
 
+// Flat USD fee for a one-off sample order — covers the machine setup for
+// printing just one piece, on top of the usual unit price and shipping.
+const SAMPLE_FEE = 50;
+
 const DEFAULT_POSITIONS: Record<ElemKey, ElemPos> = {
   monogram: { x: 50, y: 15 },
   logo: { x: 50, y: 35 },
@@ -240,6 +244,7 @@ export function ProductConfigurator({
     unitPrice: number;
     minOrder: number;
     popularQty: number | null;
+    allowSample: boolean;
     leadTimeMin: number;
     leadTimeMax: number;
     personalizable: boolean;
@@ -330,6 +335,8 @@ export function ProductConfigurator({
   };
   const [justAdded, setJustAdded] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
+  const [sampleAdded, setSampleAdded] = useState(false);
+  const [addingSample, setAddingSample] = useState(false);
   const [latestRender, setLatestRender] = useState<{
     imageDataUrl: string;
     contextImageDataUrl: string | null;
@@ -699,8 +706,16 @@ export function ProductConfigurator({
     setLogoPreview(null);
   };
 
-  const handleAddToCart = async () => {
-    setAddingToCart(true);
+  const handleAddToCart = () => submitToCart(false);
+  const handleAddSample = () => submitToCart(true);
+
+  // Shared by the normal Add to Cart button and "Buy 1 sample" — same
+  // render/snapshot capture either way, since a sample is exactly the
+  // customer's current configuration, just forced to a single piece with
+  // its own flat setup fee instead of the product's usual quantity rules.
+  const submitToCart = async (sample: boolean) => {
+    if (sample) setAddingSample(true);
+    else setAddingToCart(true);
 
     // If the customer generated an AI render for this exact configuration,
     // persist it to storage so it isn't lost once the tab closes — the
@@ -778,18 +793,22 @@ export function ProductConfigurator({
     }
 
     addItem({
-      key: `${product.id}:${variantId}:${names}:${date}:${monogram}:${frame}:${techniqueId}`,
+      key: sample
+        ? `${product.id}:${variantId}:${names}:${date}:${monogram}:${frame}:${techniqueId}:sample:${crypto.randomUUID()}`
+        : `${product.id}:${variantId}:${names}:${date}:${monogram}:${frame}:${techniqueId}`,
       productId: product.id,
       slug: product.slug,
       name: variant ? `${product.name} — ${variant.label}` : product.name,
       image: displayImage ?? null,
       unitPrice: unitPriceWithTechnique,
-      quantity,
-      minOrder: product.minOrder,
+      quantity: sample ? 1 : quantity,
+      minOrder: sample ? 1 : product.minOrder,
       leadTimeMin: product.leadTimeMin,
       leadTimeMax: product.leadTimeMax,
       variantId: variant?.id,
       variantLabel: variant?.label,
+      isSample: sample || undefined,
+      sampleFee: sample ? SAMPLE_FEE : undefined,
       personalization: product.personalizable
         ? {
             names,
@@ -808,9 +827,15 @@ export function ProductConfigurator({
           }
         : undefined,
     });
-    setAddingToCart(false);
-    setJustAdded(true);
-    setTimeout(() => setJustAdded(false), 2000);
+    if (sample) {
+      setAddingSample(false);
+      setSampleAdded(true);
+      setTimeout(() => setSampleAdded(false), 2000);
+    } else {
+      setAddingToCart(false);
+      setJustAdded(true);
+      setTimeout(() => setJustAdded(false), 2000);
+    }
   };
 
   return (
@@ -1327,6 +1352,19 @@ export function ProductConfigurator({
             {addingToCart ? "Adding…" : justAdded ? "Added ✓" : "Add to Cart"}
           </button>
         </div>
+        {product.allowSample && (
+          <button
+            onClick={handleAddSample}
+            disabled={addingSample}
+            className="w-full mt-3 px-6 py-3 rounded-full border border-line text-sm font-medium hover:border-terracotta hover:text-terracotta transition-colors disabled:opacity-50"
+          >
+            {addingSample
+              ? "Adding…"
+              : sampleAdded
+                ? "Sample added ✓"
+                : `Buy 1 sample — +${formatUSD(SAMPLE_FEE)}`}
+          </button>
+        )}
         <button
           onClick={() => router.push(`/store/${product.plannerSlug}/cart`)}
           className="text-sm text-muted mt-4 hover:text-terracotta"

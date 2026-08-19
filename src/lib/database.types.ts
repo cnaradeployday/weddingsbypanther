@@ -35,57 +35,10 @@ export type Database = {
         }
         Relationships: []
       }
-      planner_leads: {
-        Row: {
-          id: string
-          contact_name: string
-          business_name: string
-          email: string
-          phone: string | null
-          website: string | null
-          address: string | null
-          city: string | null
-          country: string | null
-          years_in_business: number | null
-          message: string | null
-          status: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          contact_name: string
-          business_name: string
-          email: string
-          phone?: string | null
-          website?: string | null
-          address?: string | null
-          city?: string | null
-          country?: string | null
-          years_in_business?: number | null
-          message?: string | null
-          status?: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          contact_name?: string
-          business_name?: string
-          email?: string
-          phone?: string | null
-          website?: string | null
-          address?: string | null
-          city?: string | null
-          country?: string | null
-          years_in_business?: number | null
-          message?: string | null
-          status?: string
-          created_at?: string
-        }
-        Relationships: []
-      }
       order_items: {
         Row: {
           id: string
+          is_sample: boolean
           order_id: string | null
           personalization: Json | null
           product_id: string | null
@@ -96,6 +49,7 @@ export type Database = {
         }
         Insert: {
           id?: string
+          is_sample?: boolean
           order_id?: string | null
           personalization?: Json | null
           product_id?: string | null
@@ -106,6 +60,7 @@ export type Database = {
         }
         Update: {
           id?: string
+          is_sample?: boolean
           order_id?: string | null
           personalization?: Json | null
           product_id?: string | null
@@ -150,6 +105,7 @@ export type Database = {
           payment_status: string
           personalization_fee: number
           planner_id: string | null
+          sample_fee: number
           shipping_address: Json
           shipping_fee: number
           status: string
@@ -168,6 +124,7 @@ export type Database = {
           payment_status?: string
           personalization_fee?: number
           planner_id?: string | null
+          sample_fee?: number
           shipping_address: Json
           shipping_fee?: number
           status?: string
@@ -186,6 +143,7 @@ export type Database = {
           payment_status?: string
           personalization_fee?: number
           planner_id?: string | null
+          sample_fee?: number
           shipping_address?: Json
           shipping_fee?: number
           status?: string
@@ -209,6 +167,54 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      planner_leads: {
+        Row: {
+          address: string | null
+          business_name: string
+          city: string | null
+          contact_name: string
+          country: string | null
+          created_at: string
+          email: string
+          id: string
+          message: string | null
+          phone: string | null
+          status: string
+          website: string | null
+          years_in_business: number | null
+        }
+        Insert: {
+          address?: string | null
+          business_name: string
+          city?: string | null
+          contact_name: string
+          country?: string | null
+          created_at?: string
+          email: string
+          id?: string
+          message?: string | null
+          phone?: string | null
+          status?: string
+          website?: string | null
+          years_in_business?: number | null
+        }
+        Update: {
+          address?: string | null
+          business_name?: string
+          city?: string | null
+          contact_name?: string
+          country?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          message?: string | null
+          phone?: string | null
+          status?: string
+          website?: string | null
+          years_in_business?: number | null
+        }
+        Relationships: []
       }
       planner_products: {
         Row: {
@@ -517,6 +523,7 @@ export type Database = {
       }
       products: {
         Row: {
+          allow_sample: boolean
           category_id: string | null
           created_at: string
           description: string | null
@@ -538,6 +545,7 @@ export type Database = {
           supplier_id: string | null
         }
         Insert: {
+          allow_sample?: boolean
           category_id?: string | null
           created_at?: string
           description?: string | null
@@ -559,6 +567,7 @@ export type Database = {
           supplier_id?: string | null
         }
         Update: {
+          allow_sample?: boolean
           category_id?: string | null
           created_at?: string
           description?: string | null
@@ -810,64 +819,64 @@ export type Database = {
       }
       suppliers: {
         Row: {
+          address: string | null
           business_name: string
+          city: string | null
+          contact_first_name: string | null
+          contact_last_name: string | null
+          country: string | null
           created_at: string
+          description: string | null
+          headcount: number | null
           id: string
+          legal_name: string | null
+          phone: string | null
           profile_id: string | null
           since_year: number | null
           slug: string
           status: string
-          contact_first_name: string | null
-          contact_last_name: string | null
-          phone: string | null
-          headcount: number | null
           vat_number: string | null
-          legal_name: string | null
           website: string | null
-          description: string | null
-          address: string | null
-          city: string | null
-          country: string | null
         }
         Insert: {
+          address?: string | null
           business_name: string
+          city?: string | null
+          contact_first_name?: string | null
+          contact_last_name?: string | null
+          country?: string | null
           created_at?: string
+          description?: string | null
+          headcount?: number | null
           id?: string
+          legal_name?: string | null
+          phone?: string | null
           profile_id?: string | null
           since_year?: number | null
           slug: string
           status?: string
-          contact_first_name?: string | null
-          contact_last_name?: string | null
-          phone?: string | null
-          headcount?: number | null
           vat_number?: string | null
-          legal_name?: string | null
           website?: string | null
-          description?: string | null
-          address?: string | null
-          city?: string | null
-          country?: string | null
         }
         Update: {
+          address?: string | null
           business_name?: string
+          city?: string | null
+          contact_first_name?: string | null
+          contact_last_name?: string | null
+          country?: string | null
           created_at?: string
+          description?: string | null
+          headcount?: number | null
           id?: string
+          legal_name?: string | null
+          phone?: string | null
           profile_id?: string | null
           since_year?: number | null
           slug?: string
           status?: string
-          contact_first_name?: string | null
-          contact_last_name?: string | null
-          phone?: string | null
-          headcount?: number | null
           vat_number?: string | null
-          legal_name?: string | null
           website?: string | null
-          description?: string | null
-          address?: string | null
-          city?: string | null
-          country?: string | null
         }
         Relationships: [
           {

@@ -136,6 +136,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     items,
     subtotal: order.subtotal,
     personalizationFee: order.personalization_fee,
+    sampleFee: order.sample_fee,
     shippingFee: order.shipping_fee,
     tax: order.tax,
     total: order.total,
