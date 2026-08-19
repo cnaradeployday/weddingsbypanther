@@ -262,8 +262,8 @@ export function ProductConfigurator({
   const [names, setNames] = useState(handoff?.names || "Amelia & Ravi");
   const [date, setDate] = useState(handoff?.date || "2026-06-14");
   const [monogram, setMonogram] = useState(handoff?.monogram || "");
-  const [frame, setFrame] = useState("");
-  const [textFont, setTextFont] = useState<string>(DEFAULT_TEXT_FONT);
+  const [frame, setFrame] = useState(handoff?.frame || "");
+  const [textFont, setTextFont] = useState<string>(handoff?.textFont || DEFAULT_TEXT_FONT);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(handoff?.logoDataUrl ?? null);
 
@@ -280,7 +280,9 @@ export function ProductConfigurator({
   // Each element (logo, monogram, names, date) gets its own independent
   // size and rotation, adjusted with on-canvas drag handles right on the
   // element — not shared sliders elsewhere in the page.
-  const [elemScale, setElemScale] = useState<Record<ElemKey, number>>(DEFAULT_SCALES);
+  const [elemScale, setElemScale] = useState<Record<ElemKey, number>>(
+    handoff?.elemScale ? { ...DEFAULT_SCALES, ...handoff.elemScale } : DEFAULT_SCALES
+  );
   const [elemRotationOffset, setElemRotationOffset] = useState<Record<ElemKey, number>>(DEFAULT_ROTATIONS);
   // Resize/rotate handles only show on the element the customer tapped —
   // otherwise the photo stays uncluttered.
@@ -938,6 +940,10 @@ export function ProductConfigurator({
           date={date}
           monogram={monogram}
           logoDataUrl={logoPreview}
+          frame={frame}
+          textFont={textFont}
+          elemScale={elemScale}
+          quantity={quantity}
         />
       </div>
 
