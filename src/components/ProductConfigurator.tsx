@@ -96,6 +96,62 @@ function RotateIcon() {
   );
 }
 
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="10"
+      height="10"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`transition-transform ${open ? "rotate-180" : ""}`}
+    >
+      <path d="M3 5.5 L8 10.5 L13 5.5" />
+    </svg>
+  );
+}
+
+// Each personalization option (logo, frame, names, date, monogram) starts
+// collapsed to just its title so the page doesn't load with every option's
+// full controls open at once — a big source of scroll length on the product
+// page. Tap the title to expand and edit, tap again to collapse.
+function CollapsibleSection({
+  title,
+  optional,
+  trailing,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  optional?: boolean;
+  trailing?: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-2 mb-2"
+      >
+        <span className="text-xs uppercase tracking-wide text-muted">
+          {title} {optional && <span className="normal-case text-muted/70">(optional)</span>}
+        </span>
+        <span className="flex items-center gap-2 text-muted shrink-0">
+          {trailing}
+          <ChevronIcon open={open} />
+        </span>
+      </button>
+      {open && children}
+    </div>
+  );
+}
+
 function AdjustHandles({
   onResizeStart,
   onRotateStart,
@@ -853,6 +909,15 @@ export function ProductConfigurator({
             <p>Max {zone.max_chars_per_line ?? "—"} characters per line</p>
           </div>
         )}
+
+        <RelatedProductsRail
+          products={relatedProducts}
+          base={`/store/${product.plannerSlug}`}
+          names={names}
+          date={date}
+          monogram={monogram}
+          logoDataUrl={logoPreview}
+        />
       </div>
 
       <div>
@@ -897,10 +962,7 @@ export function ProductConfigurator({
 
         {product.personalizable && (
           <div className="space-y-6 mb-8">
-            <div>
-              <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-                Your logo <span className="normal-case text-muted/70">(optional)</span>
-              </label>
+            <CollapsibleSection title="Your logo" optional>
               <div className="flex items-center gap-3">
                 <label className="relative h-16 w-16 rounded-lg overflow-hidden border border-line cursor-pointer bg-white shrink-0">
                   {logoPreview ? (
@@ -923,11 +985,8 @@ export function ProductConfigurator({
                 )}
               </div>
               {logoPreview && logoSizeLabel && <p className="text-xs text-muted mt-1">{logoSizeLabel}</p>}
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-                Template frame <span className="normal-case text-muted/70">(optional)</span>
-              </label>
+            </CollapsibleSection>
+            <CollapsibleSection title="Template frame" optional>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -957,12 +1016,12 @@ export function ProductConfigurator({
                   </button>
                 ))}
               </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs uppercase tracking-wide text-muted">Your names or event text</label>
-                {nameSizeLabel && <span className="text-xs text-muted">{nameSizeLabel}</span>}
-              </div>
+            </CollapsibleSection>
+            <CollapsibleSection
+              title="Your names or event text"
+              defaultOpen
+              trailing={nameSizeLabel && <span className="text-xs">{nameSizeLabel}</span>}
+            >
               <textarea
                 value={names}
                 rows={zone?.max_lines ?? 2}
@@ -996,26 +1055,24 @@ export function ProductConfigurator({
                   </button>
                 ))}
               </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs uppercase tracking-wide text-muted">Date</label>
-                {dateSizeLabel && <span className="text-xs text-muted">{dateSizeLabel}</span>}
-              </div>
+            </CollapsibleSection>
+            <CollapsibleSection
+              title="Date"
+              defaultOpen
+              trailing={dateSizeLabel && <span className="text-xs">{dateSizeLabel}</span>}
+            >
               <input
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
                 className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
               />
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs uppercase tracking-wide text-muted">
-                  Monogram <span className="normal-case text-muted/70">(optional)</span>
-                </label>
-                {monogram && monogramSizeLabel && <span className="text-xs text-muted">{monogramSizeLabel}</span>}
-              </div>
+            </CollapsibleSection>
+            <CollapsibleSection
+              title="Monogram"
+              optional
+              trailing={monogram && monogramSizeLabel && <span className="text-xs">{monogramSizeLabel}</span>}
+            >
               <div className="flex gap-2 flex-wrap">
                 <button
                   onClick={() => setMonogram("")}
@@ -1043,7 +1100,7 @@ export function ProductConfigurator({
                   </button>
                 ))}
               </div>
-            </div>
+            </CollapsibleSection>
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted">
                 Drag any element on the photo to move it. Grab its corner dot to resize, the dot above it to rotate —
@@ -1173,14 +1230,6 @@ export function ProductConfigurator({
         </button>
       </div>
     </div>
-      <RelatedProductsRail
-        products={relatedProducts}
-        base={`/store/${product.plannerSlug}`}
-        names={names}
-        date={date}
-        monogram={monogram}
-        logoDataUrl={logoPreview}
-      />
     </div>
   );
 }

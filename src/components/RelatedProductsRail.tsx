@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatUSD } from "@/lib/format";
 import { monogramSvgInner } from "@/lib/monograms";
 import { savePersonalizationHandoff } from "@/lib/personalizationHandoff";
+import { useCart } from "@/lib/cart";
 import type { RelatedProduct } from "@/lib/queries";
 
 // The bounding box of a product's print-area quad, matching the same
@@ -54,6 +56,8 @@ function RelatedProductCard({
   logoDataUrl: string | null;
 }) {
   const router = useRouter();
+  const { addItem } = useCart();
+  const [added, setAdded] = useState(false);
   const zoneBox = product.zone && product.zone.corners_pct.length === 4 ? boundingBox(product.zone.corners_pct) : null;
   const rotation = product.zone ? zoneAngleDeg(product.zone.corners_pct) : 0;
   const hasPersonalization = !!(names.trim() || date.trim() || monogram || logoDataUrl);
@@ -64,6 +68,31 @@ function RelatedProductCard({
     }
     e.preventDefault();
     router.push(`${base}/shop/${product.slug}`);
+  };
+
+  // Adds with the same personalization already shown on the card (what you
+  // see is what gets added) at the product's minimum order — a quick cross-
+  // sell add without leaving this page. Anything more specific (a different
+  // technique, quantity, or variant) still means visiting the product page.
+  const handleQuickAdd = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    addItem({
+      key: `${product.id}:quick-add`,
+      productId: product.id,
+      slug: product.slug,
+      name: product.name,
+      image: product.image,
+      unitPrice: product.price,
+      quantity: product.minOrder,
+      minOrder: product.minOrder,
+      personalization:
+        product.personalizable && hasPersonalization
+          ? { names, date, monogram, hasLogo: !!logoDataUrl }
+          : undefined,
+    });
+    setAdded(true);
+    setTimeout(() => setAdded(false), 2000);
   };
 
   return (
@@ -118,7 +147,16 @@ function RelatedProductCard({
         )}
       </div>
       <p className="text-xs font-medium truncate group-hover:text-terracotta transition-colors">{product.name}</p>
-      <p className="text-xs text-muted">From {formatUSD(product.price)}</p>
+      <div className="flex items-center justify-between gap-2 mt-0.5">
+        <p className="text-xs text-muted">From {formatUSD(product.price)}</p>
+        <button
+          type="button"
+          onClick={handleQuickAdd}
+          className="text-[10px] uppercase tracking-wide font-medium text-terracotta hover:text-terracotta-dark shrink-0"
+        >
+          {added ? "Added ✓" : "+ Add"}
+        </button>
+      </div>
     </Link>
   );
 }

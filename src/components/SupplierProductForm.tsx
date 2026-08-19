@@ -369,9 +369,9 @@ export function SupplierProductForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-5xl grid md:grid-cols-2 gap-6">
+    <form onSubmit={handleSubmit} className="max-w-6xl grid md:grid-cols-2 xl:grid-cols-3 gap-6">
       {initial?.status === "draft" && initial.reviewerNote && (
-        <div className="md:col-span-2 rounded-xl border border-gold bg-gold/10 p-4 text-sm">
+        <div className="md:col-span-2 xl:col-span-3 rounded-xl border border-gold bg-gold/10 p-4 text-sm">
           <p className="font-medium mb-1">Changes requested</p>
           <p className="text-dark/80">{initial.reviewerNote}</p>
         </div>
@@ -559,7 +559,11 @@ export function SupplierProductForm({
           </div>
         </div>
 
-        {personalizable && (
+      </div>
+
+      <div className="rounded-xl border border-line bg-white p-6 space-y-5">
+        <p className="text-xs uppercase tracking-wide text-muted">Print area</p>
+        {personalizable ? (
           <div>
             {existingImages.length + previews.length > 1 && (
               <div className="mb-3">
@@ -595,8 +599,8 @@ export function SupplierProductForm({
               </div>
             )}
             <p className="text-xs uppercase tracking-wide text-muted mb-2">
-              Print area — drag the shape to move it, drag any corner to reshape it (useful when the
-              surface is at an angle in the photo)
+              Drag the shape to move it, drag any corner to reshape it (useful when the surface is at
+              an angle in the photo)
             </p>
             <PrintAreaTool
               imageUrl={
@@ -641,11 +645,12 @@ export function SupplierProductForm({
               </div>
             </div>
           </div>
+        ) : (
+          <p className="text-sm text-muted">This product isn&apos;t personalizable, so it has no print area.</p>
         )}
-
       </div>
 
-      <div className="md:col-start-2 rounded-xl border border-line bg-white p-6 space-y-3">
+      <div className="md:col-span-2 xl:col-span-3 rounded-xl border border-line bg-white p-6 space-y-3">
         <p className="text-xs uppercase tracking-wide text-muted">
           Related products{" "}
           <span className="normal-case text-muted/70">
@@ -666,7 +671,7 @@ export function SupplierProductForm({
         )}
       </div>
 
-      <div className="md:col-span-2 rounded-xl border border-line bg-white p-6 space-y-4">
+      <div className="md:col-span-2 xl:col-span-3 rounded-xl border border-line bg-white p-6 space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-xs uppercase tracking-wide text-muted">
             Variants (color, material, etc.) — optional
@@ -734,7 +739,7 @@ export function SupplierProductForm({
         )}
       </div>
 
-      <div className="md:col-span-2">
+      <div className="md:col-span-2 xl:col-span-3">
         {error && <p className="text-sm text-terracotta-dark mb-4">{error}</p>}
 
         <button
