@@ -8,6 +8,7 @@ import { formatUSD } from "@/lib/format";
 import { monogramSvgInner } from "@/lib/monograms";
 import { frameSvgInner } from "@/lib/frameTemplates";
 import { textFontStyle } from "@/lib/textFonts";
+import { fitTextFontSize } from "@/lib/textFit";
 import { savePersonalizationHandoff } from "@/lib/personalizationHandoff";
 import { useCart } from "@/lib/cart";
 import type { RelatedProduct } from "@/lib/queries";
@@ -44,6 +45,12 @@ function formatDate(isoDate: string) {
 
 const clamp = (min: number, value: number, max: number) => Math.max(min, Math.min(max, value));
 
+// Matches the card's fixed Tailwind width (w-52 = 13rem = 208px at the
+// default root font size) — there's no ResizeObserver here like the full
+// configurator has, but the card's size is a fixed class, not something
+// that varies at runtime, so a constant is exact rather than approximate.
+const CARD_PX = 208;
+
 function RelatedProductCard({
   product,
   base,
@@ -77,10 +84,15 @@ function RelatedProductCard({
   // The same relative scale the customer set on the main product (a resize
   // handle multiplier, not an absolute size) carries over here so the
   // preview reads as "this, but on that product" rather than a fixed
-  // one-size-fits-all overlay — clamped so an extreme multiplier can't blow
-  // up this much smaller card.
-  const nameSize = clamp(7, 11 * (elemScale.names ?? 1), 22);
-  const dateSize = clamp(5, 7 * (elemScale.date ?? 1), 14);
+  // one-size-fits-all overlay. A raw clamp on the multiplier alone isn't
+  // enough for text, though — a long name at even a modest scale can still
+  // run past this much smaller card's edge, the same overflow bug fixed on
+  // the main preview — so names/date are additionally fit to the print
+  // zone's actual width on this card, exactly like the full configurator
+  // does, not just capped to a fixed font-size range.
+  const availableWidthPx = (zoneBox ? (zoneBox.width / 100) * CARD_PX : CARD_PX) * 0.92;
+  const nameSize = fitTextFontSize(names, clamp(7, 11 * (elemScale.names ?? 1), 22), availableWidthPx);
+  const dateSize = fitTextFontSize(formatDate(date), clamp(5, 7 * (elemScale.date ?? 1), 14), availableWidthPx);
   const monogramSize = clamp(10, 16 * (elemScale.monogram ?? 1), 28);
   const logoSize = clamp(16, 26 * (elemScale.logo ?? 1), 44);
 
