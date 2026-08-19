@@ -35,6 +35,54 @@ export type Database = {
         }
         Relationships: []
       }
+      planner_leads: {
+        Row: {
+          id: string
+          contact_name: string
+          business_name: string
+          email: string
+          phone: string | null
+          website: string | null
+          address: string | null
+          city: string | null
+          country: string | null
+          years_in_business: number | null
+          message: string | null
+          status: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          contact_name: string
+          business_name: string
+          email: string
+          phone?: string | null
+          website?: string | null
+          address?: string | null
+          city?: string | null
+          country?: string | null
+          years_in_business?: number | null
+          message?: string | null
+          status?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          contact_name?: string
+          business_name?: string
+          email?: string
+          phone?: string | null
+          website?: string | null
+          address?: string | null
+          city?: string | null
+          country?: string | null
+          years_in_business?: number | null
+          message?: string | null
+          status?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       order_items: {
         Row: {
           id: string
