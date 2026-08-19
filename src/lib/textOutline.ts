@@ -54,7 +54,7 @@ function linePath(font: opentype.Font, line: string, startX: number, baselineY: 
     combined.extend(font.getPath(char, x, baselineY, fontSize));
     x += font.getAdvanceWidth(char, fontSize) + letterSpacing;
   }
-  return combined.toPathData(2);
+  return combined.toPathData(3);
 }
 
 // Renders `text` as one outlined path per line, each centered on `cx` with

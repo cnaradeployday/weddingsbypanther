@@ -107,7 +107,24 @@ export async function buildOutlineArtworkSvg({
     }
   }
 
-  return `<svg width="${canvasW}mm" height="${canvasH}mm" viewBox="0 0 ${canvasW} ${canvasH}" xmlns="http://www.w3.org/2000/svg">
+  // All the math above works in plain millimeters, matching the print
+  // zone's own width_mm/height_mm — correct for physical sizing, but a
+  // viewBox that small (tens of units) is a problem for less careful
+  // print/laser tooling: some importers ignore the width/height="Xmm"
+  // attributes entirely and treat raw viewBox numbers as pixels (the SVG
+  // spec's own fallback), which would silently shrink a 60-unit design down
+  // to ~16mm. Wrapping everything in one outer scale transform up to a true
+  // print-resolution grid (300 DPI's px-per-mm) — while keeping width/height
+  // in real mm — makes the file read correctly either way: as exact physical
+  // mm for tools that honor the unit, or as a properly-proportioned
+  // print-quality raster grid for tools that don't.
+  const RESOLUTION_SCALE = 300 / 25.4;
+  const viewW = canvasW * RESOLUTION_SCALE;
+  const viewH = canvasH * RESOLUTION_SCALE;
+
+  return `<svg width="${canvasW}mm" height="${canvasH}mm" viewBox="0 0 ${viewW} ${viewH}" xmlns="http://www.w3.org/2000/svg">
+<g transform="scale(${RESOLUTION_SCALE})">
 ${elements.join("\n")}
+</g>
 </svg>`;
 }
