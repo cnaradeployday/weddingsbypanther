@@ -1,5 +1,38 @@
 export type Point = { x: number; y: number };
 
+export function boundingBox(corners: Point[]) {
+  const xs = corners.map((c) => c.x);
+  const ys = corners.map((c) => c.y);
+  const left = Math.min(...xs);
+  const top = Math.min(...ys);
+  return { left, top, width: Math.max(...xs) - left, height: Math.max(...ys) - top };
+}
+
+// Expresses `point` in the quad's own affine (u,v) parametric coordinates —
+// u=0..1 along the TL->TR edge, v=0..1 along the TL->BL edge — treating the
+// quad as a parallelogram (basis TL, TR, BL; BR is ignored, the same
+// simplification already used elsewhere to derive a single rotation angle
+// from just the TL->TR edge). This inverts the perspective/rotation
+// distortion baked into corners_pct by the angle the reference photo was
+// shot at, recovering where a point truly sits on the real, flat print
+// surface — needed for output (like the print-ready outline file) that
+// isn't itself drawn over that photo, so it can't lean on the same
+// AABB-plus-rotation approximation the on-photo overlay and composite use.
+export function quadUV(point: Point, corners: Point[]): { u: number; v: number } {
+  if (corners.length !== 4) return { u: 0.5, v: 0.5 };
+  const [tl, tr, , bl] = corners;
+  const ex = { x: tr.x - tl.x, y: tr.y - tl.y };
+  const ey = { x: bl.x - tl.x, y: bl.y - tl.y };
+  const dx = point.x - tl.x;
+  const dy = point.y - tl.y;
+  const det = ex.x * ey.y - ey.x * ex.y;
+  if (Math.abs(det) < 1e-9) return { u: 0.5, v: 0.5 };
+  return {
+    u: (dx * ey.y - ey.x * dy) / det,
+    v: (ex.x * dy - dx * ex.y) / det,
+  };
+}
+
 // Distance (same units as the input points) from `origin` to the nearest
 // edge of a convex quad, travelling along direction `dir` — i.e. the `t`
 // such that origin + t*dir lands exactly on the quad's boundary. Returns

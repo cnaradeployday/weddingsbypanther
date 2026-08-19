@@ -134,12 +134,18 @@ export default async function AdminOrderDetailPage({ params }: { params: Promise
                       </div>
                     )}
                     {(p.names?.trim() || p.date?.trim() || p.monogram?.trim()) && (
-                      <div className="pt-1">
+                      <div className="pt-1 flex gap-2">
                         <a
                           href={`/api/order-items/${item.id}/print-file`}
                           className="inline-block rounded-full border border-terracotta px-4 py-2 text-xs font-medium text-terracotta hover:bg-terracotta hover:text-white transition"
                         >
-                          Download print file (outlined)
+                          Download print file (SVG, outlined)
+                        </a>
+                        <a
+                          href={`/api/order-items/${item.id}/print-file?format=pdf`}
+                          className="inline-block rounded-full border border-terracotta px-4 py-2 text-xs font-medium text-terracotta hover:bg-terracotta hover:text-white transition"
+                        >
+                          Download PDF (outlined)
                         </a>
                       </div>
                     )}
