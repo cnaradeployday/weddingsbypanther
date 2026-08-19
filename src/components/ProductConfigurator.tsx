@@ -11,7 +11,7 @@ import { techniqueInkColor } from "@/lib/printTechniqueColors";
 import { MONOGRAM_OPTIONS, monogramSvgInner } from "@/lib/monograms";
 import { FRAME_TEMPLATES, frameSvgInner } from "@/lib/frameTemplates";
 import { TEXT_FONTS, DEFAULT_TEXT_FONT, textFontStyle } from "@/lib/textFonts";
-import { fitTextFontSize } from "@/lib/textFit";
+import { fitTextFontSize, estimateTextWidth, textLineCount } from "@/lib/textFit";
 import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
 import type { RelatedProduct } from "@/lib/queries";
 import { AiRenderPanel } from "./AiRenderPanel";
@@ -311,6 +311,21 @@ export function ProductConfigurator({
   const [quantity, setQuantity] = useState(
     product.popularQty && product.popularQty >= product.minOrder ? product.popularQty : product.minOrder
   );
+  // The quantity field is directly editable (not just +/-/preset chips) so
+  // a customer can type an exact amount — kept as its own string state so
+  // typing isn't clobbered by clamping mid-keystroke; every other way of
+  // changing quantity (the +/- buttons, the preset chips) updates this
+  // alongside `quantity` via updateQuantity below, rather than syncing it
+  // from an effect.
+  const [quantityInput, setQuantityInput] = useState(String(quantity));
+  const updateQuantity = (next: number) => {
+    setQuantity(next);
+    setQuantityInput(String(next));
+  };
+  const commitQuantityInput = () => {
+    const parsed = Math.round(Number(quantityInput));
+    updateQuantity(Number.isFinite(parsed) && parsed > 0 ? Math.max(product.minOrder, parsed) : product.minOrder);
+  };
   const [justAdded, setJustAdded] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
   const [latestRender, setLatestRender] = useState<{
@@ -563,12 +578,16 @@ export function ProductConfigurator({
   // Real-world size readouts (cm) shown next to each field below, computed
   // from the same px-per-mm conversion the on-canvas sizing uses — only
   // available once the product's print-area mm dimensions and rendered box
-  // are both known.
-  const cmLabel = (px: number) => (mmPerPx ? `≈ ${((px * mmPerPx) / 10).toFixed(1)} cm` : null);
-  const logoSizeLabel = mmPerPx && zoneSize.width ? cmLabel((logoWidthPct / 100) * zoneSize.width) : null;
-  const monogramSizeLabel = cmLabel(monogramFontPx);
-  const nameSizeLabel = cmLabel(nameFontPx);
-  const dateSizeLabel = cmLabel(dateFontPx);
+  // are both known. Shown as width x height (not just a single font-size
+  // number) so it reads as the element's actual footprint on the product.
+  const sizeLabelWH = (widthPx: number, heightPx: number) =>
+    mmPerPx ? `≈ ${((widthPx * mmPerPx) / 10).toFixed(1)}×${((heightPx * mmPerPx) / 10).toFixed(1)} cm` : null;
+  const logoWidthPx = zoneSize.width ? (logoWidthPct / 100) * zoneSize.width : 0;
+  const logoSizeLabel = sizeLabelWH(logoWidthPx, logoWidthPx);
+  const monogramSizeLabel = sizeLabelWH(monogramFontPx, monogramFontPx);
+  const nameLineCount = textLineCount(names);
+  const nameSizeLabel = sizeLabelWH(estimateTextWidth(names, nameFontPx), nameFontPx * 1.25 * nameLineCount);
+  const dateSizeLabel = sizeLabelWH(estimateTextWidth("0000000000", dateFontPx), dateFontPx);
 
   const formattedDate = useMemo(() => {
     if (!date) return "";
@@ -899,17 +918,6 @@ export function ProductConfigurator({
           </div>
         )}
 
-        {zone && (
-          <div className="mt-6 rounded-xl bg-cream p-6 text-sm text-muted space-y-1">
-            <p className="text-xs uppercase tracking-wide text-dark mb-2">Print area</p>
-            <p>
-              Printable zone {zone.width_mm}×{zone.height_mm}mm
-              {technique ? ` · ${technique.technique}` : ""}
-            </p>
-            <p>Max {zone.max_chars_per_line ?? "—"} characters per line</p>
-          </div>
-        )}
-
         <RelatedProductsRail
           products={relatedProducts}
           base={`/store/${product.plannerSlug}`}
@@ -1019,7 +1027,6 @@ export function ProductConfigurator({
             </CollapsibleSection>
             <CollapsibleSection
               title="Your names or event text"
-              defaultOpen
               trailing={nameSizeLabel && <span className="text-xs">{nameSizeLabel}</span>}
             >
               <textarea
@@ -1058,7 +1065,6 @@ export function ProductConfigurator({
             </CollapsibleSection>
             <CollapsibleSection
               title="Date"
-              defaultOpen
               trailing={dateSizeLabel && <span className="text-xs">{dateSizeLabel}</span>}
             >
               <input
@@ -1169,14 +1175,24 @@ export function ProductConfigurator({
             <label className="text-xs uppercase tracking-wide text-muted">Quantity</label>
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setQuantity((q) => Math.max(product.minOrder, q - product.minOrder))}
+                onClick={() => updateQuantity(Math.max(product.minOrder, quantity - product.minOrder))}
                 className="h-8 w-8 rounded-full border border-line flex items-center justify-center"
               >
                 −
               </button>
-              <span className="w-10 text-center font-medium">{quantity}</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={quantityInput}
+                onChange={(e) => setQuantityInput(e.target.value)}
+                onBlur={commitQuantityInput}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+                className="w-16 text-center font-medium rounded-lg border border-line py-1 focus:outline-none focus:border-dark"
+              />
               <button
-                onClick={() => setQuantity((q) => q + product.minOrder)}
+                onClick={() => updateQuantity(quantity + product.minOrder)}
                 className="h-8 w-8 rounded-full border border-line flex items-center justify-center"
               >
                 +
@@ -1187,7 +1203,7 @@ export function ProductConfigurator({
             {quickQuantities.map((q) => (
               <button
                 key={q}
-                onClick={() => setQuantity(q)}
+                onClick={() => updateQuantity(q)}
                 className={`px-4 py-2 rounded-full text-sm border flex items-center gap-1.5 ${
                   quantity === q ? "bg-dark text-cream-light border-dark" : "border-line"
                 }`}
