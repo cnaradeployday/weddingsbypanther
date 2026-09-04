@@ -7,12 +7,11 @@ import { useRouter } from "next/navigation";
 import { useCart, type CartItem } from "@/lib/cart";
 import { formatUSD } from "@/lib/format";
 import { savePersonalizationHandoff } from "@/lib/personalizationHandoff";
+import { leadTimeRange } from "@/lib/leadTime";
 
 function deliveryEstimate(item: CartItem): string | null {
-  if (item.leadTimeMin == null || item.leadTimeMax == null) return null;
-  return item.leadTimeMin === item.leadTimeMax
-    ? `Ships in ${item.leadTimeMin} days`
-    : `Ships in ${item.leadTimeMin}–${item.leadTimeMax} days`;
+  const range = leadTimeRange(item.leadTimeMin, item.leadTimeMax);
+  return range ? `Ships in ${range}` : null;
 }
 
 function CartLineItem({

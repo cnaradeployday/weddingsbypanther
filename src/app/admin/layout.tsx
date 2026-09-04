@@ -15,6 +15,7 @@ const NAV: { href: string; label: string; section: BackofficeSection }[] = [
   { href: "/admin/merchandise/products", label: "Merchandise products", section: "products" },
   { href: "/admin/planner-leads", label: "Planner leads", section: "planners" },
   { href: "/admin/orders", label: "Orders", section: "orders" },
+  { href: "/admin/quote-requests", label: "Quote requests", section: "orders" },
   { href: "/admin/categories", label: "Categories", section: "categories" },
   { href: "/admin/users", label: "Users", section: "users" },
   { href: "/admin/roles", label: "Roles & permissions", section: "roles" },
@@ -48,6 +49,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     { count: pendingPlanners },
     { count: pendingMerchandise },
     { count: newLeads },
+    { count: newQuoteRequests },
   ] = await Promise.all([
     supabase.from("products").select("id", { count: "exact", head: true }).eq("status", "pending"),
     supabase.from("suppliers").select("id", { count: "exact", head: true }).eq("status", "pending"),
@@ -62,6 +64,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       .eq("status", "pending")
       .eq("business_type", "merchandise"),
     supabase.from("planner_leads").select("id", { count: "exact", head: true }).eq("status", "new"),
+    supabase.from("quote_requests").select("id", { count: "exact", head: true }).eq("status", "new"),
   ]);
 
   const nav = NAV.filter((n) => perms[n.section].read).map((n) => {
@@ -71,6 +74,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     if (n.href === "/admin/merchandise" && pendingMerchandise)
       return { ...n, label: `${n.label} (${pendingMerchandise})` };
     if (n.href === "/admin/planner-leads" && newLeads) return { ...n, label: `${n.label} (${newLeads})` };
+    if (n.href === "/admin/quote-requests" && newQuoteRequests)
+      return { ...n, label: `${n.label} (${newQuoteRequests})` };
     return n;
   });
 
