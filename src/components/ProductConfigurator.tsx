@@ -15,7 +15,7 @@ import { fitTextFontSize, estimateTextWidth, textLineCount } from "@/lib/textFit
 import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
 import { dataUrlToBlob } from "@/lib/dataUrl";
 import { recolorLogoToSolid } from "@/lib/logoRecolor";
-import { nearestPantone } from "@/lib/pantoneMatch";
+import { nearestPantone, resolveColorInput } from "@/lib/pantoneMatch";
 import type { BusinessType } from "@/lib/businessType";
 import {
   availableAlongAxis,
@@ -35,8 +35,8 @@ import { RelatedProductsRail } from "./RelatedProductsRail";
 // a stray white smudge/halo behind the text more often than they read as
 // "engraved," so the manual preview keeps it simple and lets color alone
 // carry the technique's look.
-function techniqueTextStyle(techniqueName?: string): React.CSSProperties {
-  const color = techniqueInkColor(techniqueName);
+function techniqueTextStyle(techniqueName?: string, colorOverride?: string): React.CSSProperties {
+  const color = colorOverride ?? techniqueInkColor(techniqueName);
   const fontWeight = techniqueName === "Laser engrave" || techniqueName === "Foil stamp" ? 500 : techniqueName === "Embroidery" ? 600 : undefined;
   return fontWeight ? { color, fontWeight } : { color };
 }
@@ -306,6 +306,7 @@ export function ProductConfigurator({
   // preview (fill-mode "silhouette"), and the logo traced into vector path
   // data so the print-ready outline can include it as true curves.
   const [inkColor, setInkColor] = useState("#1a1a1a");
+  const [colorTextInput, setColorTextInput] = useState("");
   const [logoSilhouetteUrl, setLogoSilhouetteUrl] = useState<string | null>(null);
   const [logoVector, setLogoVector] = useState<{ ds: string[]; width: number; height: number } | null>(null);
 
@@ -722,6 +723,16 @@ export function ProductConfigurator({
     () => (technique?.singleColorInk ? nearestPantone(inkColor) : null),
     [technique?.singleColorInk, inkColor]
   );
+  // The customer's chosen ink color is the whole point of a single-color-ink
+  // technique — one ink prints/etches everything, so it has to apply to
+  // every personalization element (monogram, frame, names, date), not just
+  // the logo silhouette. Non-single-color techniques keep their fixed
+  // per-technique preview color as before.
+  const effectiveInkColor = technique?.singleColorInk ? inkColor : techniqueInkColor(technique?.technique);
+  const applyColorTextInput = useCallback(() => {
+    const resolved = resolveColorInput(colorTextInput);
+    if (resolved) setInkColor(resolved.hex);
+  }, [colorTextInput]);
 
   // Flattens the uploaded logo into a solid silhouette in the customer's
   // chosen ink color — only for a single-color-ink technique in
@@ -1064,7 +1075,7 @@ export function ProductConfigurator({
                     height={monogramFontPx}
                     className="pointer-events-none"
                     dangerouslySetInnerHTML={{
-                      __html: monogramSvgInner(monogram, techniqueInkColor(technique?.technique)),
+                      __html: monogramSvgInner(monogram, effectiveInkColor),
                     }}
                   />
                   {activeElem === "monogram" && (
@@ -1087,7 +1098,7 @@ export function ProductConfigurator({
                     transform: `translate(-50%, -50%) rotate(${elemRotationDeg.names}deg)`,
                     fontSize: nameFontPx,
                     ...textFontStyle(textFont),
-                    ...techniqueTextStyle(technique?.technique),
+                    ...techniqueTextStyle(technique?.technique, effectiveInkColor),
                   }}
                 >
                   {frame && (
@@ -1101,7 +1112,7 @@ export function ProductConfigurator({
                         height: `calc(100% + ${nameFontPx * 0.9}px)`,
                       }}
                       dangerouslySetInnerHTML={{
-                        __html: frameSvgInner(frame, techniqueInkColor(technique?.technique)),
+                        __html: frameSvgInner(frame, effectiveInkColor),
                       }}
                     />
                   )}
@@ -1130,7 +1141,7 @@ export function ProductConfigurator({
                     transform: `translate(-50%, -50%) rotate(${elemRotationDeg.date}deg)`,
                     fontSize: dateFontPx,
                     ...textFontStyle(textFont),
-                    ...techniqueTextStyle(technique?.technique),
+                    ...techniqueTextStyle(technique?.technique, effectiveInkColor),
                   }}
                 >
                   {formattedDate}
@@ -1256,6 +1267,21 @@ export function ProductConfigurator({
                     onChange={(e) => setInkColor(e.target.value)}
                     className="h-9 w-9 rounded border border-line cursor-pointer p-0 bg-transparent shrink-0"
                     aria-label="Ink color"
+                  />
+                  <input
+                    type="text"
+                    value={colorTextInput}
+                    onChange={(e) => setColorTextInput(e.target.value)}
+                    onBlur={applyColorTextInput}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        applyColorTextInput();
+                      }
+                    }}
+                    placeholder="Pantone or hex"
+                    className="h-9 w-32 rounded border border-line px-2 text-xs shrink-0"
+                    aria-label="Pantone code or hex color"
                   />
                   <div className="text-xs">
                     <p className="text-muted">

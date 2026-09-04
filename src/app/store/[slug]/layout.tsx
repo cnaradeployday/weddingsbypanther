@@ -47,6 +47,7 @@ export default async function StorefrontLayout({
           businessName={planner.business_name}
           initials={planner.initials}
           logoUrl={planner.logo_url}
+          showProposalBuilder={planner.business_type !== "merchandise"}
         />
         <main className="flex-1">{children}</main>
         <StoreFooter businessName={planner.business_name} />

@@ -6,6 +6,10 @@ export default async function BuilderPage({ params }: { params: Promise<{ slug: 
   const { slug } = await params;
   const planner = await getPlannerBySlug(slug);
   if (!planner) notFound();
+  // The proposal builder ("budget in, ideas out") is a wedding-specific
+  // concept — a promotional-merchandise storefront has no equivalent, so
+  // the route doesn't exist for it even if linked directly.
+  if (planner.business_type === "merchandise") notFound();
 
   const catalog = await getStorefrontCatalog(slug);
 
