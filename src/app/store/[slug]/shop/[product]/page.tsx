@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getStorefrontProduct, getRelatedProducts } from "@/lib/queries";
 import { getSessionProfile } from "@/lib/supabase/server";
 import { ProductConfigurator } from "@/components/ProductConfigurator";
+import { isBusinessType } from "@/lib/businessType";
 
 export default async function ProductPage({
   params,
@@ -43,6 +44,7 @@ export default async function ProductPage({
         zones: product.zones,
         variants: product.variants,
         plannerSlug: slug,
+        businessType: isBusinessType(product.planner.business_type) ? product.planner.business_type : "wedding",
       }}
       relatedProducts={relatedProducts}
     />

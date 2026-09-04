@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
   const businessName: string = body?.businessName?.trim() ?? "";
   const email: string = body?.email?.trim().toLowerCase() ?? "";
   const fullName: string = body?.fullName?.trim() ?? "";
+  const businessType: string = body?.businessType === "merchandise" ? "merchandise" : "wedding";
 
   if (!businessName || !email) {
     return NextResponse.json({ error: "Studio name and email are required." }, { status: 400 });
@@ -52,6 +53,7 @@ export async function POST(req: NextRequest) {
     user_metadata: {
       role: "planner",
       business_name: businessName,
+      business_type: businessType,
       full_name: fullName || undefined,
     },
   });

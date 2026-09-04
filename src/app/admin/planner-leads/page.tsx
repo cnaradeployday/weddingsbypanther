@@ -29,7 +29,14 @@ export default async function AdminPlannerLeadsPage() {
             <div key={lead.id} className="rounded-xl border border-line bg-white p-5">
               <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
                 <div>
-                  <p className="font-medium">{lead.business_name}</p>
+                  <p className="font-medium">
+                    {lead.business_name}
+                    {lead.business_type === "merchandise" && (
+                      <span className="ml-2 text-[10px] uppercase tracking-wide text-terracotta align-middle">
+                        Merchandise
+                      </span>
+                    )}
+                  </p>
                   <p className="text-sm text-muted">
                     {lead.contact_name} ·{" "}
                     <a href={`mailto:${lead.email}`} className="hover:text-terracotta">

@@ -14,6 +14,7 @@ import { TEXT_FONTS, DEFAULT_TEXT_FONT, textFontStyle } from "@/lib/textFonts";
 import { fitTextFontSize, estimateTextWidth, textLineCount } from "@/lib/textFit";
 import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
 import { dataUrlToBlob } from "@/lib/dataUrl";
+import type { BusinessType } from "@/lib/businessType";
 import { availableAlongAxis, nearestEdgeDistance, clampPointToQuad, type Point } from "@/lib/quadGeometry";
 import type { RelatedProduct } from "@/lib/queries";
 import { AiRenderPanel } from "./AiRenderPanel";
@@ -249,10 +250,12 @@ export function ProductConfigurator({
     zones: Zone[];
     variants: Variant[];
     plannerSlug: string;
+    businessType: BusinessType;
   };
 }) {
   const router = useRouter();
   const { addItem } = useCart();
+  const isMerchandise = product.businessType === "merchandise";
 
   // If the customer arrived here by tapping a suggested product on another
   // product's page, pick up the names/date/monogram/logo they'd already
@@ -261,11 +264,16 @@ export function ProductConfigurator({
   // one-shot read, not a subscription. Cleared as soon as it's read, so it
   // only ever applies right after that click, not on a later unrelated visit.
   const [handoff] = useState(() => consumePersonalizationHandoff());
-  const [names, setNames] = useState(handoff?.names || "Amelia & Ravi");
-  const [date, setDate] = useState(handoff?.date || "2026-06-14");
+  // Placeholder content only — a starting point so the live preview isn't
+  // blank, swapped out per vertical so a promotional-merchandise storefront
+  // doesn't open on a wedding couple's names.
+  const [names, setNames] = useState(handoff?.names || (isMerchandise ? "Your Company" : "Amelia & Ravi"));
+  const [date, setDate] = useState(handoff?.date || (isMerchandise ? "" : "2026-06-14"));
   const [monogram, setMonogram] = useState(handoff?.monogram || "");
   const [frame, setFrame] = useState(handoff?.frame || "");
-  const [textFont, setTextFont] = useState<string>(handoff?.textFont || DEFAULT_TEXT_FONT);
+  const [textFont, setTextFont] = useState<string>(
+    handoff?.textFont || (isMerchandise ? "montserrat" : DEFAULT_TEXT_FONT)
+  );
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(handoff?.logoDataUrl ?? null);
 
@@ -1175,7 +1183,7 @@ export function ProductConfigurator({
                   >
                     <span className="block text-[9px] uppercase tracking-wide text-muted">{f.label}</span>
                     <span className="block truncate text-lg leading-tight" style={textFontStyle(f.id)}>
-                      {names || "Amelia & Ravi"}
+                      {names || (isMerchandise ? "Your Company" : "Amelia & Ravi")}
                     </span>
                   </button>
                 ))}

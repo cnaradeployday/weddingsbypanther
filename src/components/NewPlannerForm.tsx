@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import type { BusinessType } from "@/lib/businessType";
 
-export function NewPlannerForm() {
+export function NewPlannerForm({ businessType = "wedding" }: { businessType?: BusinessType }) {
   const router = useRouter();
+  const noun = businessType === "merchandise" ? "distributor" : "planner";
   const [open, setOpen] = useState(false);
   const [businessName, setBusinessName] = useState("");
   const [email, setEmail] = useState("");
@@ -32,12 +34,12 @@ export function NewPlannerForm() {
     const res = await fetch("/api/admin/planners", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ businessName, email, fullName }),
+      body: JSON.stringify({ businessName, email, fullName, businessType }),
     });
     const json = await res.json();
 
     if (!res.ok) {
-      setError(json.error ?? "Could not create the planner.");
+      setError(json.error ?? `Could not create the ${noun}.`);
       setSubmitting(false);
       return;
     }
@@ -59,7 +61,7 @@ export function NewPlannerForm() {
         onClick={() => setOpen(true)}
         className="px-5 py-2.5 rounded-full bg-dark text-cream-light text-sm font-medium hover:bg-dark-soft transition-colors"
       >
-        New planner
+        New {noun}
       </button>
     );
   }
@@ -69,7 +71,7 @@ export function NewPlannerForm() {
       <div className="bg-cream-light rounded-2xl border border-line p-6 w-full max-w-sm">
         {result ? (
           <>
-            <h2 className="font-serif text-xl mb-2">Planner created</h2>
+            <h2 className="font-serif text-xl mb-2 capitalize">{noun} created</h2>
             <p className="text-sm text-muted mb-4">
               Share these sign-in details with {result.email}. They&apos;ll be required to set their own
               password the first time they sign in. You can fill in the rest of their storefront (logo,
@@ -98,7 +100,7 @@ export function NewPlannerForm() {
           </>
         ) : (
           <>
-            <h2 className="font-serif text-xl mb-4">New planner</h2>
+            <h2 className="font-serif text-xl mb-4 capitalize">New {noun}</h2>
             <form onSubmit={handleSubmit} className="space-y-3">
               <input
                 required

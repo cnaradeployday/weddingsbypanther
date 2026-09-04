@@ -4,8 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { DEPLOYMENT_BUSINESS_TYPE, BUSINESS_COPY } from "@/lib/businessType";
 
 export default function LoginPage() {
+  const siteName = BUSINESS_COPY[DEPLOYMENT_BUSINESS_TYPE].siteName;
   const router = useRouter();
   const supabase = createClient();
   const [email, setEmail] = useState("");
@@ -59,7 +61,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-cream px-6">
       <div className="w-full max-w-sm">
         <Link href="/" className="font-serif text-xl tracking-wide block text-center mb-10">
-          BESPOKE
+          {siteName}
         </Link>
         <div className="bg-cream-light rounded-2xl border border-line p-8">
           <h1 className="font-serif text-2xl mb-6 text-center">Sign in</h1>

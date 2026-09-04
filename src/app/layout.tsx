@@ -16,6 +16,7 @@ import {
   Parisienne,
 } from "next/font/google";
 import { PwaInstall } from "@/components/PwaInstall";
+import { DEPLOYMENT_BUSINESS_TYPE } from "@/lib/businessType";
 import "./globals.css";
 
 // Every planner-selectable font pairing (see src/lib/fontChoices.ts) is
@@ -155,7 +156,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" data-business={DEPLOYMENT_BUSINESS_TYPE}>
       <body className={`${fontVariables} antialiased`}>
         {children}
         <PwaInstall />

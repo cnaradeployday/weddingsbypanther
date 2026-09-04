@@ -4,10 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { DEPLOYMENT_BUSINESS_TYPE, BUSINESS_COPY } from "@/lib/businessType";
 
 export default function SignupPage() {
   const router = useRouter();
   const supabase = createClient();
+  const copy = BUSINESS_COPY[DEPLOYMENT_BUSINESS_TYPE];
   const [role, setRole] = useState<"planner" | "supplier">("planner");
   const [fullName, setFullName] = useState("");
   const [businessName, setBusinessName] = useState("");
@@ -26,7 +28,12 @@ export default function SignupPage() {
       email,
       password,
       options: {
-        data: { role, full_name: fullName, business_name: businessName },
+        data: {
+          role,
+          full_name: fullName,
+          business_name: businessName,
+          business_type: DEPLOYMENT_BUSINESS_TYPE,
+        },
       },
     });
 
@@ -69,12 +76,12 @@ export default function SignupPage() {
     <div className="min-h-screen flex items-center justify-center bg-cream px-6 py-16">
       <div className="w-full max-w-sm">
         <Link href="/" className="font-serif text-xl tracking-wide block text-center mb-10">
-          BESPOKE
+          {copy.siteName}
         </Link>
         <div className="bg-cream-light rounded-2xl border border-line p-8">
           <h1 className="font-serif text-2xl mb-2 text-center">Create your account</h1>
           <p className="text-sm text-muted text-center mb-6">
-            Sell on the Bespoke marketplace as a planner or a supplier.
+            Sell on the {copy.siteName} marketplace as a {copy.accountNoun} or a supplier.
           </p>
 
           <div className="flex rounded-full border border-line p-1 mb-6">
@@ -87,7 +94,7 @@ export default function SignupPage() {
                   role === r ? "bg-dark text-cream-light" : "text-dark/70"
                 }`}
               >
-                {r}
+                {r === "planner" ? copy.accountNoun : r}
               </button>
             ))}
           </div>
@@ -102,7 +109,7 @@ export default function SignupPage() {
             />
             <input
               required
-              placeholder={role === "planner" ? "Studio name" : "Company name"}
+              placeholder={role === "planner" ? "Business name" : "Company name"}
               value={businessName}
               onChange={(e) => setBusinessName(e.target.value)}
               className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
