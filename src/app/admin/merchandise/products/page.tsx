@@ -1,15 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
-import { formatUSD } from "@/lib/format";
 import { getBackofficePermissions } from "@/lib/permissions";
-
-const STATUS_STYLE: Record<string, string> = {
-  approved: "bg-sage/15 text-sage",
-  pending: "bg-gold/20 text-dark",
-  rejected: "bg-terracotta/15 text-terracotta-dark",
-  draft: "bg-line text-muted",
-};
+import { ProductsTable } from "@/components/ProductsTable";
 
 // The promotional-merchandise sibling of /admin/products — same table, same
 // edit route, just filtered to products whose category belongs to the
@@ -43,52 +36,7 @@ export default async function AdminMerchandiseProductsPage() {
         )}
       </div>
 
-      <div className="rounded-xl border border-line bg-white overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
-              <th className="px-5 py-3 font-medium">Product</th>
-              <th className="px-5 py-3 font-medium">Supplier</th>
-              <th className="px-5 py-3 font-medium">Category</th>
-              <th className="px-5 py-3 font-medium">Factory price</th>
-              <th className="px-5 py-3 font-medium">Status</th>
-              <th className="px-5 py-3 font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {(products ?? []).map((p) => (
-              <tr key={p.id} className="border-b border-line last:border-0">
-                <td className="px-5 py-4">
-                  <p className="font-medium">{p.name}</p>
-                  <p className="text-xs text-muted">{p.sku}</p>
-                </td>
-                <td className="px-5 py-4 text-muted">{p.supplier?.business_name}</td>
-                <td className="px-5 py-4 text-muted">{p.category?.name}</td>
-                <td className="px-5 py-4">{formatUSD(p.factory_price)}</td>
-                <td className="px-5 py-4">
-                  <span className={`text-xs px-2.5 py-1 rounded-full capitalize ${STATUS_STYLE[p.status]}`}>
-                    {p.status}
-                  </span>
-                </td>
-                <td className="px-5 py-4">
-                  {perms.products.write && (
-                    <Link href={`/admin/products/${p.id}/edit`} className="text-terracotta text-sm font-medium">
-                      Edit
-                    </Link>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {(products ?? []).length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-muted">
-                  No merchandise products yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <ProductsTable products={products ?? []} canWrite={perms.products.write} />
     </div>
   );
 }
