@@ -12,7 +12,11 @@ export default async function NewAdminProductPage() {
       supabase.from("suppliers").select("id, business_name").order("business_name"),
       supabase.from("categories").select("id, name").eq("business_type", "wedding").order("sort_order"),
       supabase.from("print_techniques").select("name").order("sort_order"),
-      supabase.from("products").select("id, name").order("name"),
+      supabase
+        .from("products")
+        .select("id, name, category:categories!inner(business_type)")
+        .eq("category.business_type", "wedding")
+        .order("name"),
     ]);
 
   return (
@@ -23,7 +27,7 @@ export default async function NewAdminProductPage() {
         suppliers={suppliers ?? []}
         categories={categories ?? []}
         techniqueOptions={(techniques ?? []).map((t) => t.name)}
-        otherProducts={otherProductRows ?? []}
+        otherProducts={(otherProductRows ?? []).map((p) => ({ id: p.id, name: p.name }))}
       />
     </div>
   );

@@ -20,25 +20,35 @@ export default async function EditSupplierProductPage({
     .maybeSingle();
   if (!supplier) redirect("/login");
 
-  const [{ data: categories }, { data: techniques }, { data: otherProductRows }] = await Promise.all([
+  const [{ data: categories }, { data: techniques }, { data: product }] = await Promise.all([
     supabase.from("categories").select("id, name").order("sort_order"),
     supabase.from("print_techniques").select("name").order("sort_order"),
-    supabase.from("products").select("id, name").neq("id", id).order("name"),
+    supabase
+      .from("products")
+      .select(
+        `*, category:categories(business_type),
+         images:product_images(id, url, sort_order),
+         techniques:product_print_techniques(technique),
+         zones:product_print_zones(width_mm, height_mm, max_chars_per_line, corners_pct, image_id),
+         variants:product_variants(id, label, sku, price_delta, stock_on_hand, image_url, sort_order)`
+      )
+      .eq("id", id)
+      .eq("supplier_id", supplier.id)
+      .maybeSingle(),
   ]);
 
-  const { data: product } = await supabase
-    .from("products")
-    .select(
-      `*, images:product_images(id, url, sort_order),
-       techniques:product_print_techniques(technique),
-       zones:product_print_zones(width_mm, height_mm, max_chars_per_line, corners_pct, image_id),
-       variants:product_variants(id, label, sku, price_delta, stock_on_hand, image_url, sort_order)`
-    )
-    .eq("id", id)
-    .eq("supplier_id", supplier.id)
-    .maybeSingle();
-
   if (!product) notFound();
+
+  // Same rule as the admin edit page: a merchandise product's suggested
+  // add-ons should only ever list other merchandise products, never wedding
+  // ones, even though both verticals share this one `products` table.
+  const businessType = product.category?.business_type === "merchandise" ? "merchandise" : "wedding";
+  const { data: otherProductRows } = await supabase
+    .from("products")
+    .select("id, name, category:categories!inner(business_type)")
+    .eq("category.business_type", businessType)
+    .neq("id", id)
+    .order("name");
 
   const zone = product.zones?.[0];
   const initial: InitialProduct = {
@@ -94,7 +104,7 @@ export default async function EditSupplierProductPage({
         supplierId={supplier.id}
         categories={categories ?? []}
         techniqueOptions={(techniques ?? []).map((t) => t.name)}
-        otherProducts={otherProductRows ?? []}
+        otherProducts={(otherProductRows ?? []).map((p) => ({ id: p.id, name: p.name }))}
         initial={initial}
       />
     </div>
