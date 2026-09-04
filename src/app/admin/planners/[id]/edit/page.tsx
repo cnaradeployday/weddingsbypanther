@@ -3,6 +3,7 @@ import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { getBackofficePermissions } from "@/lib/permissions";
 import { PlannerSettingsForm } from "@/components/PlannerSettingsForm";
 import { VettingStatusControl } from "@/components/VettingStatusControl";
+import { isBusinessType, STOREFRONT_ORIGIN } from "@/lib/businessType";
 
 export default async function EditPlannerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -15,6 +16,9 @@ export default async function EditPlannerPage({ params }: { params: Promise<{ id
   const { data: planner } = await supabase.from("planners").select("*").eq("id", id).maybeSingle();
   if (!planner) notFound();
 
+  const businessType = isBusinessType(planner.business_type) ? planner.business_type : "wedding";
+  const storefrontUrl = `${STOREFRONT_ORIGIN[businessType]}/store/${planner.slug}`;
+
   return (
     <div>
       <div className="flex items-center justify-between gap-4 mb-1">
@@ -24,12 +28,12 @@ export default async function EditPlannerPage({ params }: { params: Promise<{ id
       <p className="text-muted mb-8">
         Storefront live at{" "}
         <a
-          href={`/store/${planner.slug}`}
+          href={storefrontUrl}
           target="_blank"
           rel="noreferrer"
           className="text-terracotta underline underline-offset-2"
         >
-          /store/{planner.slug}
+          {storefrontUrl.replace(/^https?:\/\//, "")}
         </a>{" "}
         — everything here is exactly what this planner can edit themselves from their own Storefront
         settings.
