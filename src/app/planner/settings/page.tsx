@@ -25,6 +25,7 @@ export default async function PlannerSettingsPage() {
         initial={{
           business_name: planner.business_name,
           tagline: planner.tagline,
+          storefront_subtitle: planner.storefront_subtitle,
           initials: planner.initials,
           default_markup_pct: planner.default_markup_pct,
           logo_url: planner.logo_url,
@@ -33,6 +34,7 @@ export default async function PlannerSettingsPage() {
           font_choice: planner.font_choice,
           storefront_banner_url: planner.storefront_banner_url,
           catalog_banner_url: planner.catalog_banner_url,
+          ai_render_enabled: planner.ai_render_enabled,
         }}
       />
     </div>

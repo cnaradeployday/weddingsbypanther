@@ -47,7 +47,7 @@ export default async function PlannerProductsPage() {
         {rows.length} products available · {rows.filter((r) => r.enabled).length} enabled on your
         storefront
       </p>
-      <PlannerProductsTable rows={rows} />
+      <PlannerProductsTable plannerId={planner.id} rows={rows} />
     </div>
   );
 }

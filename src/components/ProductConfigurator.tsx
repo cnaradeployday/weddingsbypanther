@@ -276,6 +276,7 @@ export function ProductConfigurator({
     variants: Variant[];
     plannerSlug: string;
     businessType: BusinessType;
+    aiRenderEnabled: boolean;
   };
 }) {
   const router = useRouter();
@@ -1454,7 +1455,7 @@ export function ProductConfigurator({
           </div>
         )}
 
-        {product.personalizable && (
+        {product.personalizable && product.aiRenderEnabled && (
           <AiRenderPanel
             productId={product.id}
             names={names}

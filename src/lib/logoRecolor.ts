@@ -25,7 +25,7 @@ export function recolorLogoToSolid(dataUrl: string, hex: string): Promise<string
       }
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      keyOutWhiteBackground(imageData.data, canvas.width, canvas.height);
+      keyOutWhiteBackground(imageData.data);
       ctx.putImageData(imageData, 0, 0);
       ctx.globalCompositeOperation = "source-in";
       ctx.fillStyle = hex;
