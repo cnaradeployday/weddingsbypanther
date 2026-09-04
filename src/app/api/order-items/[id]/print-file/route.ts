@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import { techniqueInkColor } from "@/lib/printTechniqueColors";
-import { buildOutlineArtworkSvg, type OutlineLayoutParams } from "@/lib/personalizationOutline";
+import { buildOutlineArtworkSvg, type LogoVector, type OutlineLayoutParams } from "@/lib/personalizationOutline";
 import { buildOutlinePdfDocument } from "@/lib/personalizationOutlinePdf";
 import type { ElemKey, Corner } from "@/lib/personalizationComposite";
 
@@ -13,6 +13,8 @@ type Personalization = {
   frame?: string;
   textFont?: string;
   technique?: string;
+  inkColorHex?: string;
+  logoVector?: LogoVector | null;
   elemScale?: Partial<Record<ElemKey, number>>;
   elemRotationOffset?: Partial<Record<ElemKey, number>>;
   positions?: Record<string, Corner>;
@@ -43,7 +45,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   const p = (item.personalization ?? null) as Personalization | null;
-  if (!p || !(p.names?.trim() || p.date?.trim() || p.monogram?.trim())) {
+  if (!p || !(p.names?.trim() || p.date?.trim() || p.monogram?.trim() || p.logoVector?.ds?.length)) {
     return NextResponse.json({ error: "This item has no personalization to outline" }, { status: 400 });
   }
 
@@ -62,7 +64,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     monogram: p.monogram ?? "",
     frame: p.frame ?? "",
     textFont: p.textFont ?? "",
-    inkColor: techniqueInkColor(p.technique),
+    inkColor: p.inkColorHex ?? techniqueInkColor(p.technique),
+    logoVector: p.logoVector ?? null,
     fontScale: p.elemScale,
     rotations: p.elemRotationOffset,
   };

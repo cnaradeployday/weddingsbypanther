@@ -333,6 +333,8 @@ export type Database = {
           finish_description: string
           id: string
           name: string
+          single_color_fill_mode: string
+          single_color_ink: boolean
           sort_order: number
           strip_source_color: boolean
         }
@@ -342,6 +344,8 @@ export type Database = {
           finish_description?: string
           id?: string
           name: string
+          single_color_fill_mode?: string
+          single_color_ink?: boolean
           sort_order?: number
           strip_source_color?: boolean
         }
@@ -351,6 +355,8 @@ export type Database = {
           finish_description?: string
           id?: string
           name?: string
+          single_color_fill_mode?: string
+          single_color_ink?: boolean
           sort_order?: number
           strip_source_color?: boolean
         }

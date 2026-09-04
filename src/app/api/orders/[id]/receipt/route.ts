@@ -37,11 +37,16 @@ type Personalization = {
   technique?: string;
   renderUrl?: string;
   snapshotUrl?: string;
+  inkColorHex?: string;
+  inkPantoneCode?: string;
 };
 
 function personalizationSummary(p: Personalization | null): string | null {
   if (!p) return null;
-  const parts = [p.names, p.date, p.technique].filter(Boolean);
+  const ink = p.inkColorHex
+    ? `Ink ${p.inkColorHex.toUpperCase()}${p.inkPantoneCode ? ` (${p.inkPantoneCode} approx.)` : ""}`
+    : null;
+  const parts = [p.names, p.date, p.technique, ink].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 

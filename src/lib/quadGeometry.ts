@@ -89,6 +89,34 @@ export function nearestEdgeDistance(origin: Point, corners: Point[]): number {
   return best;
 }
 
+// Inward unit normal + a reference point on each of the quad's 4 edges —
+// the sign is corrected against the quad's own centroid so it works
+// regardless of winding order. Shared by every function below that measures
+// distance to the quad's boundary.
+function inwardEdges(corners: Point[]): { a: Point; nx: number; ny: number }[] {
+  const centroid = {
+    x: (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4,
+    y: (corners[0].y + corners[1].y + corners[2].y + corners[3].y) / 4,
+  };
+  const edges: { a: Point; nx: number; ny: number }[] = [];
+  for (let i = 0; i < 4; i++) {
+    const a = corners[i];
+    const b = corners[(i + 1) % 4];
+    const ex = b.x - a.x;
+    const ey = b.y - a.y;
+    const len = Math.hypot(ex, ey);
+    if (len < 1e-9) continue;
+    let nx = -ey / len;
+    let ny = ex / len;
+    if ((centroid.x - a.x) * nx + (centroid.y - a.y) * ny < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    edges.push({ a, nx, ny });
+  }
+  return edges;
+}
+
 // Clamps `point` to stay inside the convex quad (respecting `margin` —
 // e.g. half of a dragged element's own size — from every edge), by
 // projecting it inward along each violated edge's normal in turn. A few
@@ -98,27 +126,7 @@ export function clampPointToQuad(point: Point, corners: Point[], margin = 0): Po
   if (corners.length !== 4) return point;
   let p = point;
   for (let pass = 0; pass < 4; pass++) {
-    for (let i = 0; i < 4; i++) {
-      const a = corners[i];
-      const b = corners[(i + 1) % 4];
-      const ex = b.x - a.x;
-      const ey = b.y - a.y;
-      const len = Math.hypot(ex, ey);
-      if (len < 1e-9) continue;
-      // Inward normal — corners are wound so the quad's interior is
-      // consistently on one side; probe with the quad's own centroid to
-      // pick the sign that points inward regardless of winding order.
-      const centroid = {
-        x: (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4,
-        y: (corners[0].y + corners[1].y + corners[2].y + corners[3].y) / 4,
-      };
-      let nx = -ey / len;
-      let ny = ex / len;
-      const centroidSide = (centroid.x - a.x) * nx + (centroid.y - a.y) * ny;
-      if (centroidSide < 0) {
-        nx = -nx;
-        ny = -ny;
-      }
+    for (const { a, nx, ny } of inwardEdges(corners)) {
       const dist = (p.x - a.x) * nx + (p.y - a.y) * ny;
       if (dist < margin) {
         const push = margin - dist;
@@ -127,4 +135,68 @@ export function clampPointToQuad(point: Point, corners: Point[], margin = 0): Po
     }
   }
   return p;
+}
+
+// How far a `halfW`x`halfH` box, rotated by `rotationRad` and centered at
+// the origin, extends toward unit direction (nx, ny) — the standard support
+// function of an oriented rectangle. Used below instead of a single
+// circular margin, which either clamps a tilted element's drag/resize far
+// too early along its short axis or lets it cross the boundary along its
+// long axis, depending on how the print area itself is inclined.
+function boxSupport(halfW: number, halfH: number, rotationRad: number, nx: number, ny: number): number {
+  const cos = Math.cos(rotationRad);
+  const sin = Math.sin(rotationRad);
+  const localX = nx * cos + ny * sin;
+  const localY = -nx * sin + ny * cos;
+  return halfW * Math.abs(localX) + halfH * Math.abs(localY);
+}
+
+// Clamps `center` so a `halfW`x`halfH` box rotated by `rotationRad` and
+// centered there stays inside the quad — the rotation-aware sibling of
+// clampPointToQuad's scalar-margin version, for a dragged element that's
+// tilted to match an angled print area.
+export function clampOrientedBoxToQuad(
+  center: Point,
+  corners: Point[],
+  halfW: number,
+  halfH: number,
+  rotationRad: number
+): Point {
+  if (corners.length !== 4) return center;
+  let p = center;
+  for (let pass = 0; pass < 4; pass++) {
+    for (const { a, nx, ny } of inwardEdges(corners)) {
+      const margin = boxSupport(halfW, halfH, rotationRad, nx, ny);
+      const dist = (p.x - a.x) * nx + (p.y - a.y) * ny;
+      if (dist < margin) {
+        const push = margin - dist;
+        p = { x: p.x + nx * push, y: p.y + ny * push };
+      }
+    }
+  }
+  return p;
+}
+
+// Largest uniform scale multiplier (applied to both halfW and halfH at
+// once, relative to their current size) that keeps a box of that size,
+// rotated by `rotationRad` and centered at `center`, inside the quad.
+// Replaces a single conservative nearestEdgeDistance-based radius, which
+// under-caps a box that's aligned with the print area's own tilt (it always
+// assumed the box could need equal room in every direction).
+export function maxOrientedBoxScale(
+  center: Point,
+  corners: Point[],
+  halfW: number,
+  halfH: number,
+  rotationRad: number
+): number {
+  if (corners.length !== 4 || halfW <= 0 || halfH <= 0) return Infinity;
+  let best = Infinity;
+  for (const { a, nx, ny } of inwardEdges(corners)) {
+    const dist = (center.x - a.x) * nx + (center.y - a.y) * ny;
+    const support = boxSupport(halfW, halfH, rotationRad, nx, ny);
+    if (support < 1e-9) continue;
+    best = Math.min(best, dist / support);
+  }
+  return best;
 }
