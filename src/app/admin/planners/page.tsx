@@ -4,6 +4,7 @@ import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { VettingStatusControl } from "@/components/VettingStatusControl";
 import { NewPlannerForm } from "@/components/NewPlannerForm";
 import { getBackofficePermissions } from "@/lib/permissions";
+import { STOREFRONT_ORIGIN } from "@/lib/businessType";
 
 export default async function AdminPlannersPage() {
   const session = await getSessionProfile();
@@ -45,7 +46,12 @@ export default async function AdminPlannersPage() {
               <tr key={p.id} className="border-b border-line last:border-0">
                 <td className="px-5 py-4 font-medium">{p.business_name}</td>
                 <td className="px-5 py-4">
-                  <a href={`/store/${p.slug}`} target="_blank" rel="noreferrer" className="text-terracotta">
+                  <a
+                    href={`${STOREFRONT_ORIGIN.wedding}/store/${p.slug}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-terracotta"
+                  >
                     /store/{p.slug}
                   </a>
                 </td>

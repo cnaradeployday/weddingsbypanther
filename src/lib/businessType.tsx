@@ -19,6 +19,21 @@ export function isBusinessType(value: string): value is BusinessType {
   return value === "wedding" || value === "merchandise";
 }
 
+// The public origin for each vertical's own deployment — used any time the
+// back office links out to a specific storefront (e.g. "Storefront live
+// at…"), so that link always points at the right domain for that planner's
+// own business_type regardless of which of the two admin domains happens
+// to be rendering the page (an admin working a merchandise account from
+// inside the wedding deployment would otherwise get a relative /store/…
+// link that resolves onto weddingsbypanther.vercel.app — a merchandise
+// storefront's real link should never read "wedding" in the URL). Set
+// NEXT_PUBLIC_WEDDING_ORIGIN / NEXT_PUBLIC_MERCHANDISE_ORIGIN if either
+// project's domain changes from the ones observed at setup time.
+export const STOREFRONT_ORIGIN: Record<BusinessType, string> = {
+  wedding: process.env.NEXT_PUBLIC_WEDDING_ORIGIN || "https://weddingsbypanther.vercel.app",
+  merchandise: process.env.NEXT_PUBLIC_MERCHANDISE_ORIGIN || "https://merchandise-three.vercel.app",
+};
+
 type BusinessCopy = {
   siteName: string;
   tagline: string;
