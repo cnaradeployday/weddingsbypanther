@@ -45,6 +45,7 @@ export default async function ProductPage({
         variants: product.variants,
         plannerSlug: slug,
         businessType: isBusinessType(product.planner.business_type) ? product.planner.business_type : "wedding",
+        aiRenderEnabled: product.planner.ai_render_enabled,
       }}
       relatedProducts={relatedProducts}
     />

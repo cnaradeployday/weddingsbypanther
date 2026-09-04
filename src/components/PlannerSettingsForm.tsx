@@ -8,6 +8,7 @@ import { FONT_CHOICES, FONT_PAIR_VARS } from "@/lib/fontChoices";
 type Initial = {
   business_name: string;
   tagline: string | null;
+  storefront_subtitle: string | null;
   initials: string | null;
   default_markup_pct: number;
   logo_url: string | null;
@@ -16,6 +17,7 @@ type Initial = {
   font_choice: string;
   storefront_banner_url: string | null;
   catalog_banner_url: string | null;
+  ai_render_enabled: boolean;
 };
 
 async function uploadAsset(
@@ -118,6 +120,7 @@ export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string;
         .update({
           business_name: form.business_name,
           tagline: form.tagline,
+          storefront_subtitle: form.storefront_subtitle,
           initials: form.initials,
           default_markup_pct: form.default_markup_pct,
           logo_url: logoUrl,
@@ -126,6 +129,7 @@ export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string;
           font_choice: form.font_choice,
           storefront_banner_url: storefrontBannerUrl,
           catalog_banner_url: catalogBannerUrl,
+          ai_render_enabled: form.ai_render_enabled,
         })
         .eq("id", plannerId);
 
@@ -192,6 +196,21 @@ export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string;
           onChange={(e) => setForm((f) => ({ ...f, tagline: e.target.value }))}
           className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
         />
+      </div>
+      <div>
+        <label className="text-xs uppercase tracking-wide text-muted block mb-1">
+          Header subtitle
+        </label>
+        <input
+          value={form.storefront_subtitle ?? ""}
+          onChange={(e) => setForm((f) => ({ ...f, storefront_subtitle: e.target.value }))}
+          placeholder="Wedding Studio"
+          className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+        />
+        <p className="text-xs text-muted mt-1">
+          Shown under the store name in the header. Leave blank to use the default for this
+          storefront&apos;s type.
+        </p>
       </div>
       <div className="grid grid-cols-3 gap-4">
         <div>
@@ -281,6 +300,29 @@ export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string;
           setCatalogBannerPreview(URL.createObjectURL(file));
         }}
       />
+
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-line px-4 py-3">
+        <div>
+          <p className="text-sm font-medium">AI-generated preview</p>
+          <p className="text-xs text-muted">
+            Lets customers render their personalization onto the product photo with AI on this
+            storefront.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setForm((f) => ({ ...f, ai_render_enabled: !f.ai_render_enabled }))}
+          className={`h-6 w-11 shrink-0 rounded-full transition-colors relative ${
+            form.ai_render_enabled ? "bg-sage" : "bg-line"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+              form.ai_render_enabled ? "translate-x-5" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+      </div>
 
       {error && <p className="text-sm text-terracotta-dark">{error}</p>}
       <button

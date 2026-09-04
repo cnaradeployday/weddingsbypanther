@@ -264,6 +264,7 @@ export type Database = {
       planners: {
         Row: {
           accent_color: string
+          ai_render_enabled: boolean
           business_name: string
           business_type: string
           catalog_banner_url: string | null
@@ -278,11 +279,13 @@ export type Database = {
           slug: string
           status: string
           storefront_banner_url: string | null
+          storefront_subtitle: string | null
           tagline: string | null
           theme_dark: boolean
         }
         Insert: {
           accent_color?: string
+          ai_render_enabled?: boolean
           business_name: string
           business_type?: string
           catalog_banner_url?: string | null
@@ -297,11 +300,13 @@ export type Database = {
           slug: string
           status?: string
           storefront_banner_url?: string | null
+          storefront_subtitle?: string | null
           tagline?: string | null
           theme_dark?: boolean
         }
         Update: {
           accent_color?: string
+          ai_render_enabled?: boolean
           business_name?: string
           business_type?: string
           catalog_banner_url?: string | null
@@ -316,6 +321,7 @@ export type Database = {
           slug?: string
           status?: string
           storefront_banner_url?: string | null
+          storefront_subtitle?: string | null
           tagline?: string | null
           theme_dark?: boolean
         }

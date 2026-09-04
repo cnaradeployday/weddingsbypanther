@@ -6,56 +6,28 @@
 // treat the *entire* rectangle as opaque artwork, producing a solid block
 // instead of the logo's true shape.
 //
-// Flood-fills inward from the image's four edges, turning near-white pixels
-// connected to the border transparent. Starting from the border (rather than
-// thresholding every pixel) means genuine white *inside* the artwork — the
-// counter of a letter "O", a white highlight — survives untouched as long as
-// it doesn't touch the edge.
+// Keys every near-white pixel to transparent, wherever it sits — including
+// the counter of a letter like "A" or "R", which almost never touches the
+// image's outer edge. An earlier version only flood-filled inward from the
+// border to preserve intentional white *inside* the artwork, but in
+// practice that left every enclosed letterform hole filled solid with the
+// chosen ink color instead of cut through, which reads far worse than the
+// rare case of a genuinely white interior design element getting keyed out
+// too.
 //
 // No-ops (returns false) if the image already carries real transparency:
 // that alpha is trustworthy and must not be second-guessed.
-export function keyOutWhiteBackground(
-  data: Uint8ClampedArray | Uint8Array,
-  width: number,
-  height: number,
-  tolerance = 32
-): boolean {
+export function keyOutWhiteBackground(data: Uint8ClampedArray | Uint8Array, tolerance = 32): boolean {
   for (let i = 3; i < data.length; i += 4) {
     if (data[i] < 250) return false;
   }
 
-  const isNearWhite = (idx: number) =>
-    255 - data[idx] <= tolerance && 255 - data[idx + 1] <= tolerance && 255 - data[idx + 2] <= tolerance;
-
-  const visited = new Uint8Array(width * height);
-  const stack: number[] = [];
-  const pushIfSeed = (x: number, y: number) => {
-    const p = y * width + x;
-    if (visited[p]) return;
-    visited[p] = 1;
-    if (isNearWhite(p * 4)) stack.push(p);
-  };
-
-  for (let x = 0; x < width; x++) {
-    pushIfSeed(x, 0);
-    pushIfSeed(x, height - 1);
-  }
-  for (let y = 0; y < height; y++) {
-    pushIfSeed(0, y);
-    pushIfSeed(width - 1, y);
-  }
-
   let removed = 0;
-  while (stack.length) {
-    const p = stack.pop()!;
-    data[p * 4 + 3] = 0;
-    removed++;
-    const x = p % width;
-    const y = (p / width) | 0;
-    if (x > 0) pushIfSeed(x - 1, y);
-    if (x < width - 1) pushIfSeed(x + 1, y);
-    if (y > 0) pushIfSeed(x, y - 1);
-    if (y < height - 1) pushIfSeed(x, y + 1);
+  for (let i = 0; i < data.length; i += 4) {
+    if (255 - data[i] <= tolerance && 255 - data[i + 1] <= tolerance && 255 - data[i + 2] <= tolerance) {
+      data[i + 3] = 0;
+      removed++;
+    }
   }
   return removed > 0;
 }

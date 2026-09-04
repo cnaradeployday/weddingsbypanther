@@ -5,6 +5,7 @@ import { StoreFooter } from "@/components/StoreFooter";
 import { getPlannerBySlug } from "@/lib/queries";
 import { darken } from "@/lib/color";
 import { fontChoiceVars } from "@/lib/fontChoices";
+import { DEFAULT_STOREFRONT_SUBTITLE, isBusinessType } from "@/lib/businessType";
 
 export default async function StorefrontLayout({
   children,
@@ -45,6 +46,10 @@ export default async function StorefrontLayout({
         <StoreHeader
           plannerSlug={slug}
           businessName={planner.business_name}
+          subtitle={
+            planner.storefront_subtitle?.trim() ||
+            DEFAULT_STOREFRONT_SUBTITLE[isBusinessType(planner.business_type) ? planner.business_type : "wedding"]
+          }
           initials={planner.initials}
           logoUrl={planner.logo_url}
           showProposalBuilder={planner.business_type !== "merchandise"}

@@ -23,7 +23,7 @@ export async function vectorizeLogo(imageBuffer: Buffer): Promise<VectorizedLogo
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  keyOutWhiteBackground(data, info.width, info.height);
+  keyOutWhiteBackground(data);
 
   // Flatten onto white — potrace works from luminance, and a
   // transparent-background PNG's unpremultiplied edges would otherwise trace

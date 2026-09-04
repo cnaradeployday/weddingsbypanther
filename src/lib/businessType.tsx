@@ -34,6 +34,16 @@ export const STOREFRONT_ORIGIN: Record<BusinessType, string> = {
   merchandise: process.env.NEXT_PUBLIC_MERCHANDISE_ORIGIN || "https://merchandise-three.vercel.app",
 };
 
+// The small label under a storefront's name in its header (e.g. "Wedding
+// Studio") — used only when a planner hasn't set their own
+// `storefront_subtitle` (see PlannerSettingsForm). Business-type-keyed so a
+// merchandise storefront never falls back to wedding wording, the way the
+// previously-hardcoded label always did.
+export const DEFAULT_STOREFRONT_SUBTITLE: Record<BusinessType, string> = {
+  wedding: "Wedding Studio",
+  merchandise: "Promotional Products",
+};
+
 type BusinessCopy = {
   siteName: string;
   tagline: string;

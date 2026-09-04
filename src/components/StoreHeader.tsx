@@ -7,12 +7,14 @@ import { useCart } from "@/lib/cart";
 export function StoreHeader({
   plannerSlug,
   businessName,
+  subtitle,
   initials,
   logoUrl,
   showProposalBuilder = true,
 }: {
   plannerSlug: string;
   businessName: string;
+  subtitle: string;
   initials: string | null;
   logoUrl?: string | null;
   showProposalBuilder?: boolean;
@@ -36,7 +38,7 @@ export function StoreHeader({
           <span className="leading-tight">
             <span className="block font-serif text-lg">{businessName}</span>
             <span className="block text-[10px] uppercase tracking-[0.18em] text-muted">
-              Wedding Studio
+              {subtitle}
             </span>
           </span>
         </Link>

@@ -5,7 +5,10 @@ import { createClient } from "@/lib/supabase/client";
 import { applyMarkup, formatUSD } from "@/lib/format";
 
 export type PlannerProductRow = {
-  id: string;
+  // Null when this product has never been added to this storefront's
+  // catalog (no planner_products row exists yet) — saving such a row
+  // inserts one instead of updating.
+  id: string | null;
   productId: string;
   name: string;
   sku: string | null;
@@ -16,21 +19,38 @@ export type PlannerProductRow = {
   enabled: boolean;
 };
 
-export function PlannerProductsTable({ rows: initialRows }: { rows: PlannerProductRow[] }) {
+export function PlannerProductsTable({
+  plannerId,
+  rows: initialRows,
+}: {
+  plannerId: string;
+  rows: PlannerProductRow[];
+}) {
   const supabase = createClient();
   const [rows, setRows] = useState(initialRows);
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  const updateRow = (id: string, patch: Partial<PlannerProductRow>) => {
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const updateRow = (productId: string, patch: Partial<PlannerProductRow>) => {
+    setRows((prev) => prev.map((r) => (r.productId === productId ? { ...r, ...patch } : r)));
   };
 
   const save = async (row: PlannerProductRow) => {
-    setSavingId(row.id);
-    await supabase
-      .from("planner_products")
-      .update({ markup_pct: row.markupPct, enabled: row.enabled })
-      .eq("id", row.id);
+    setSavingId(row.productId);
+    if (row.id) {
+      await supabase.from("planner_products").update({ markup_pct: row.markupPct, enabled: row.enabled }).eq("id", row.id);
+    } else {
+      const { data } = await supabase
+        .from("planner_products")
+        .insert({
+          planner_id: plannerId,
+          product_id: row.productId,
+          markup_pct: row.markupPct,
+          enabled: row.enabled,
+        })
+        .select("id")
+        .single();
+      if (data) updateRow(row.productId, { id: data.id });
+    }
     setSavingId(null);
   };
 
@@ -50,7 +70,7 @@ export function PlannerProductsTable({ rows: initialRows }: { rows: PlannerProdu
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id} className="border-b border-line last:border-0">
+            <tr key={row.productId} className="border-b border-line last:border-0">
               <td className="px-5 py-4">
                 <p className="font-medium">{row.name}</p>
                 <p className="text-xs text-muted">
@@ -64,7 +84,7 @@ export function PlannerProductsTable({ rows: initialRows }: { rows: PlannerProdu
                   <input
                     type="number"
                     value={row.markupPct}
-                    onChange={(e) => updateRow(row.id, { markupPct: Number(e.target.value) })}
+                    onChange={(e) => updateRow(row.productId, { markupPct: Number(e.target.value) })}
                     className="w-16 rounded-md border border-line px-2 py-1"
                   />
                   <span className="text-muted">%</span>
@@ -75,7 +95,7 @@ export function PlannerProductsTable({ rows: initialRows }: { rows: PlannerProdu
               </td>
               <td className="px-5 py-4">
                 <button
-                  onClick={() => updateRow(row.id, { enabled: !row.enabled })}
+                  onClick={() => updateRow(row.productId, { enabled: !row.enabled })}
                   className={`h-6 w-11 rounded-full transition-colors relative ${
                     row.enabled ? "bg-sage" : "bg-line"
                   }`}
@@ -90,10 +110,10 @@ export function PlannerProductsTable({ rows: initialRows }: { rows: PlannerProdu
               <td className="px-5 py-4">
                 <button
                   onClick={() => save(row)}
-                  disabled={savingId === row.id}
+                  disabled={savingId === row.productId}
                   className="text-xs text-terracotta font-medium disabled:opacity-50"
                 >
-                  {savingId === row.id ? "Saving…" : "Save"}
+                  {savingId === row.productId ? "Saving…" : "Save"}
                 </button>
               </td>
             </tr>
