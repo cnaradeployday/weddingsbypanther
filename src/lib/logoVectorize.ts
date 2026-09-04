@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import potrace from "potrace";
+import { keyOutWhiteBackground } from "./backgroundKey";
 
 export type VectorizedLogo = { ds: string[]; width: number; height: number };
 
@@ -12,11 +13,22 @@ export type VectorizedLogo = { ds: string[]; width: number; height: number };
 // one coarse blob — an inherent limit of bitmap tracing, not a bug.
 export async function vectorizeLogo(imageBuffer: Buffer): Promise<VectorizedLogo> {
   const TRACE_SIZE = 512;
-  // Flatten onto white first — potrace works from luminance, and a
+  // Many real-world logo uploads (a JPG, or a PNG exported "flattened" by
+  // a design tool) have no real alpha transparency of their own — the
+  // whole canvas, background included, is opaque. Key a flat white
+  // background out into transparency first so the flatten below only
+  // re-fills genuine background, not artwork that happens to sit on white.
+  const { data, info } = await sharp(imageBuffer)
+    .resize(TRACE_SIZE, TRACE_SIZE, { fit: "inside", withoutEnlargement: true })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  keyOutWhiteBackground(data, info.width, info.height);
+
+  // Flatten onto white — potrace works from luminance, and a
   // transparent-background PNG's unpremultiplied edges would otherwise trace
   // noisy artifacts around the shape's border.
-  const flattened = await sharp(imageBuffer)
-    .resize(TRACE_SIZE, TRACE_SIZE, { fit: "inside", withoutEnlargement: true })
+  const flattened = await sharp(data, { raw: { width: info.width, height: info.height, channels: info.channels } })
     .flatten({ background: "#ffffff" })
     .png()
     .toBuffer();

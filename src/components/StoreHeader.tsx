@@ -9,11 +9,13 @@ export function StoreHeader({
   businessName,
   initials,
   logoUrl,
+  showProposalBuilder = true,
 }: {
   plannerSlug: string;
   businessName: string;
   initials: string | null;
   logoUrl?: string | null;
+  showProposalBuilder?: boolean;
 }) {
   const { totalPieces } = useCart();
   const base = `/store/${plannerSlug}`;
@@ -43,9 +45,11 @@ export function StoreHeader({
           <Link href={`${base}/shop`} className="hover:text-terracotta transition-colors">
             Products
           </Link>
-          <Link href={`${base}/builder`} className="hover:text-terracotta transition-colors">
-            Proposal Builder
-          </Link>
+          {showProposalBuilder && (
+            <Link href={`${base}/builder`} className="hover:text-terracotta transition-colors">
+              Proposal Builder
+            </Link>
+          )}
           <Link href={base} className="hover:text-terracotta transition-colors">
             Our work
           </Link>

@@ -117,3 +117,34 @@ export function nearestPantone(hex: string): PantoneMatch | null {
   }
   return best;
 }
+
+// "PMS 355 C", "PMS 355", "355 C", "355" and "reflex blue" should all match
+// the same reference row — people type Pantone codes in whatever shorthand
+// they're used to, not the exact "PMS ### C" form this table stores them in.
+function normalizePantoneCode(code: string): string {
+  return code
+    .trim()
+    .toUpperCase()
+    .replace(/^PMS\s*/, "")
+    .replace(/\s*C$/, "")
+    .replace(/\s+/g, " ");
+}
+
+// Resolves free-form text typed into the ink-color box — a hex value
+// ("#1a2b3c", "1a2b3c") or a Pantone code in any of the ways people actually
+// write it — into a concrete hex color, alongside the exact matched code
+// when it came from a Pantone lookup rather than a hex value. Returns null
+// for input that matches neither shape, so the caller can leave the current
+// color untouched rather than guess at a partial/invalid entry.
+export function resolveColorInput(input: string): { hex: string; pantoneCode?: string } | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const asRgb = hexToRgb(trimmed);
+  if (asRgb) {
+    const digits = /^#?([0-9a-f]{6})$/i.exec(trimmed)![1];
+    return { hex: `#${digits.toUpperCase()}` };
+  }
+  const norm = normalizePantoneCode(trimmed);
+  const match = PANTONE_REFERENCE.find((ref) => normalizePantoneCode(ref.code) === norm);
+  return match ? { hex: match.hex, pantoneCode: match.code } : null;
+}

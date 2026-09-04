@@ -34,6 +34,9 @@ export default async function StorefrontHome({
 
   const featured = products.slice(0, 4);
   const base = `/store/${slug}`;
+  // The "budget in, ideas out" proposal builder is a wedding-specific
+  // concept — a promotional-merchandise storefront just shops a catalog.
+  const showProposalBuilder = planner.business_type !== "merchandise";
 
   return (
     <div>
@@ -59,12 +62,14 @@ export default async function StorefrontHome({
               >
                 Browse Products
               </Link>
-              <Link
-                href={`${base}/builder`}
-                className="px-6 py-3 rounded-full border border-dark/20 text-sm font-medium hover:border-dark transition-colors"
-              >
-                Build My Proposal
-              </Link>
+              {showProposalBuilder && (
+                <Link
+                  href={`${base}/builder`}
+                  className="px-6 py-3 rounded-full border border-dark/20 text-sm font-medium hover:border-dark transition-colors"
+                >
+                  Build My Proposal
+                </Link>
+              )}
             </div>
           </div>
           <div className="relative h-[420px] rounded-2xl overflow-hidden">
@@ -80,7 +85,7 @@ export default async function StorefrontHome({
       </section>
 
       <section className="mx-auto max-w-7xl px-6 pb-20">
-        <div className="grid md:grid-cols-2 gap-6 mb-14">
+        <div className={`grid gap-6 mb-14 ${showProposalBuilder ? "md:grid-cols-2" : ""}`}>
           <Link
             href={`${base}/shop`}
             className="rounded-2xl border border-line p-8 flex items-center justify-between hover:border-dark/40 transition-colors"
@@ -93,18 +98,20 @@ export default async function StorefrontHome({
             </div>
             <span className="text-terracotta text-sm shrink-0">Explore →</span>
           </Link>
-          <Link
-            href={`${base}/builder`}
-            className="rounded-2xl bg-sage text-cream-light p-8 flex items-center justify-between hover:opacity-95 transition-opacity"
-          >
-            <div>
-              <h2 className="font-serif text-2xl mb-1">Build My Proposal</h2>
-              <p className="text-sm text-cream-light/75">
-                Budget in, a complete set of ideas out.
-              </p>
-            </div>
-            <span className="text-gold text-sm shrink-0">Start →</span>
-          </Link>
+          {showProposalBuilder && (
+            <Link
+              href={`${base}/builder`}
+              className="rounded-2xl bg-sage text-cream-light p-8 flex items-center justify-between hover:opacity-95 transition-opacity"
+            >
+              <div>
+                <h2 className="font-serif text-2xl mb-1">Build My Proposal</h2>
+                <p className="text-sm text-cream-light/75">
+                  Budget in, a complete set of ideas out.
+                </p>
+              </div>
+              <span className="text-gold text-sm shrink-0">Start →</span>
+            </Link>
+          )}
         </div>
 
         <h2 className="font-serif text-3xl mb-6">Shop by category</h2>
