@@ -1,9 +1,40 @@
 import { monogramSvgInner } from "./monograms";
 import { frameSvgInner } from "./frameTemplates";
-import { fitTextFontSize, estimateTextWidth, textLineCount } from "./textFit";
-import { textLinesToPathData } from "./textOutline";
+import { textLineCount } from "./textFit";
+import { textLinesToPathData, measureLineWidth } from "./textOutline";
 import { boundingBox, quadUV, type Point } from "./quadGeometry";
 import type { ElemKey } from "./personalizationComposite";
+
+// Shrinks `desiredSize` down to fit `text`'s longest line within
+// `availableWidth`, measured with the outline's own real font metrics
+// (measureLineWidth) rather than textFit.ts's cheap average-character-width
+// estimate. That estimate is tuned for the raster preview, which has no
+// hard edge to clip against; the print-ready outline's page is sized
+// exactly to the print area in real mm, so an underestimated width let text
+// run past the page boundary and get clipped there instead of just looking
+// a little off. Advance widths (and a proportional letterSpacing) scale
+// linearly with font size, so measuring once at `desiredSize` gives an
+// exact scale-down ratio — no iteration needed.
+async function fitFontSizeToWidth(
+  text: string,
+  fontId: string,
+  desiredSize: number,
+  availableWidth: number,
+  letterSpacingRatio = 0
+): Promise<number> {
+  if (!text.trim() || availableWidth <= 0) return desiredSize;
+  const width = await measureLineWidth(fontId, text, desiredSize, desiredSize * letterSpacingRatio);
+  if (width <= 0 || width <= availableWidth) return desiredSize;
+  // A 1.5mm floor, not textFit.ts's 6 — that floor is a minimum legible
+  // size in *raster pixels* for the live preview; reused here against real
+  // millimeters it was nearly a centimeter tall, which stopped shrinking
+  // well before the text actually fit and let it overflow the page anyway.
+  // A genuinely tiny result here means the customer scaled/positioned that
+  // element into a spot it can't fit — an unreadably-small but correctly
+  // bounded outline is still far more usable to a print shop than one that
+  // bleeds off the physical page.
+  return Math.max(1.5, desiredSize * (availableWidth / width));
+}
 
 export type OutlineLayoutItem =
   | { kind: "monogram"; markup: string; cx: number; cy: number; rotationDeg: number; scale: number }
@@ -135,11 +166,19 @@ export async function computeOutlineLayout({
     const trimmed = names.trim();
     const lines = trimmed.split("\n").map((l) => l.trim());
     const lineCount = textLineCount(trimmed);
-    const fontSize = fitTextFontSize(trimmed, canvasH * 0.11 * (fontScale.names ?? 1), canvasW * 0.92);
+    // Text is centered on cx, so the room actually available is bounded by
+    // whichever side of cx is closer to the canvas edge — not a flat
+    // fraction of the full canvas width. An element dragged/scaled off
+    // -center (as the live builder's own resize handles now allow, right up
+    // to the print area's true edge) has much less room on its near side
+    // than that flat bound assumed, which was letting the text run past the
+    // page boundary and get clipped there instead of shrinking to fit.
+    const availableWidth = Math.max(1, 2 * Math.min(cx, canvasW - cx) * 0.98);
+    const fontSize = await fitFontSizeToWidth(trimmed, textFont, canvasH * 0.11 * (fontScale.names ?? 1), availableWidth);
     const lineHeight = fontSize * 1.25;
 
     if (frame.trim()) {
-      const textW = estimateTextWidth(trimmed, fontSize);
+      const textW = await measureLineWidth(textFont, trimmed, fontSize);
       const textH = lineHeight * lineCount;
       const padX = fontSize * 0.7;
       const padY = fontSize * 0.45;
@@ -168,7 +207,10 @@ export async function computeOutlineLayout({
   if (date.trim()) {
     const { x: cx, y: cy } = toCanvasPoint("date", { x: 50, y: 82 });
     const trimmed = date.trim();
-    const fontSize = fitTextFontSize(trimmed, canvasH * 0.05 * (fontScale.date ?? 1), canvasW * 0.92);
+    // See the "names" block above — bounded by the nearer edge from cx, not
+    // a flat fraction of the full canvas width.
+    const availableWidth = Math.max(1, 2 * Math.min(cx, canvasW - cx) * 0.98);
+    const fontSize = await fitFontSizeToWidth(trimmed, textFont, canvasH * 0.05 * (fontScale.date ?? 1), availableWidth, 0.08);
     const [d] = await textLinesToPathData([trimmed], textFont, fontSize, cx, [cy], fontSize * 0.08);
     if (d) {
       items.push({ kind: "text", ds: [d], color: inkColor, cx, cy, rotationDeg: rotations.date ?? 0 });

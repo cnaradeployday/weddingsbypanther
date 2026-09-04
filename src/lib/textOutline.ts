@@ -57,6 +57,28 @@ function linePath(font: opentype.Font, line: string, startX: number, baselineY: 
   return combined.toPathData(3);
 }
 
+// Exact width (in the same units as `fontSize`) of the longest line of
+// `text`, from the real font's own glyph metrics — used to fit text into
+// the print-ready outline's fixed page bounds, which (unlike the raster
+// preview) clips anything past its edge rather than just looking a little
+// off. The cheap AVG_CHAR_WIDTH_RATIO estimate in textFit.ts is tuned for
+// the raster preview and can under-measure real glyph widths (all-caps
+// text especially), which was letting outline text run past the page edge.
+export async function measureLineWidth(
+  fontId: string,
+  text: string,
+  fontSize: number,
+  letterSpacing = 0
+): Promise<number> {
+  const font = await loadFont(fontId);
+  const line = longestLine(text);
+  return line ? lineAdvanceWidth(font, line, fontSize, letterSpacing) : 0;
+}
+
+function longestLine(text: string): string {
+  return text.split("\n").reduce((longest, l) => (l.length > longest.length ? l : longest), "");
+}
+
 // Renders `text` as one outlined path per line, each centered on `cx` with
 // its own vertical position from `centerYs`, matching the vertical
 // centering buildArtworkImage gets from dominant-baseline="central" on its
