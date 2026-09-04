@@ -23,6 +23,8 @@ export default async function EditPrintTechniquePage({ params }: { params: Promi
     colorModeDescription: technique.color_mode_description,
     sortOrder: technique.sort_order,
     stripSourceColor: technique.strip_source_color,
+    singleColorInk: technique.single_color_ink,
+    singleColorFillMode: technique.single_color_fill_mode === "reference" ? "reference" : "silhouette",
   };
 
   return (

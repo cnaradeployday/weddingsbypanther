@@ -14,10 +14,13 @@ type Personalization = {
   renderUrl?: string;
   renderContextUrl?: string;
   snapshotUrl?: string;
+  inkColorHex?: string;
+  inkPantoneCode?: string;
+  logoVector?: { ds: string[] } | null;
 };
 
 function hasOutlinableText(p: Personalization | null): boolean {
-  return Boolean(p?.names?.trim() || p?.date?.trim() || p?.monogram?.trim());
+  return Boolean(p?.names?.trim() || p?.date?.trim() || p?.monogram?.trim() || p?.logoVector?.ds?.length);
 }
 
 export default async function SupplierOrdersPage() {
@@ -119,6 +122,17 @@ export default async function SupplierOrdersPage() {
                       {p.hasLogo && (
                         <p>
                           <span className="text-muted">Logo:</span> Customer uploaded a custom logo
+                        </p>
+                      )}
+                      {p.inkColorHex && (
+                        <p className="flex items-center gap-1.5">
+                          <span className="text-muted">Ink color:</span>
+                          <span
+                            className="inline-block h-3 w-3 rounded-full border border-line shrink-0"
+                            style={{ backgroundColor: p.inkColorHex }}
+                          />
+                          {p.inkColorHex.toUpperCase()}
+                          {p.inkPantoneCode && ` · ${p.inkPantoneCode} (approx.)`}
                         </p>
                       )}
                     </div>

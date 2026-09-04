@@ -17,6 +17,9 @@ type Personalization = {
   renderUrl?: string;
   renderContextUrl?: string;
   snapshotUrl?: string;
+  inkColorHex?: string;
+  inkPantoneCode?: string;
+  logoVector?: { ds: string[] } | null;
 };
 
 export default async function AdminOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -114,6 +117,17 @@ export default async function AdminOrderDetailPage({ params }: { params: Promise
                         <span className="text-muted">Logo:</span> Customer uploaded a custom logo
                       </p>
                     )}
+                    {p.inkColorHex && (
+                      <p className="flex items-center gap-1.5">
+                        <span className="text-muted">Ink color:</span>
+                        <span
+                          className="inline-block h-3 w-3 rounded-full border border-line shrink-0"
+                          style={{ backgroundColor: p.inkColorHex }}
+                        />
+                        {p.inkColorHex.toUpperCase()}
+                        {p.inkPantoneCode && ` · ${p.inkPantoneCode} (approx.)`}
+                      </p>
+                    )}
                     {(p.renderUrl || p.renderContextUrl || p.snapshotUrl) && (
                       <div className="pt-2">
                         <p className="text-xs uppercase tracking-wide text-muted mb-2">
@@ -133,7 +147,7 @@ export default async function AdminOrderDetailPage({ params }: { params: Promise
                         </div>
                       </div>
                     )}
-                    {(p.names?.trim() || p.date?.trim() || p.monogram?.trim()) && (
+                    {(p.names?.trim() || p.date?.trim() || p.monogram?.trim() || p.logoVector?.ds?.length) && (
                       <div className="pt-1 flex gap-2">
                         <a
                           href={`/api/order-items/${item.id}/print-file`}

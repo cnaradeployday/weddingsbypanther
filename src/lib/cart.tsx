@@ -37,6 +37,17 @@ export type CartItem = {
     renderUrl?: string;
     renderContextUrl?: string;
     snapshotUrl?: string;
+    // Only set for a single-color-ink print technique: the exact ink color
+    // the customer picked for their logo, plus the closest approximate
+    // PANTONE Solid Coated match (not an official Pantone conversion — no
+    // licensed Pantone data is integrated in this app).
+    inkColorHex?: string;
+    inkPantoneCode?: string;
+    // The logo traced into vector path data at upload time (see
+    // src/lib/logoVectorize.ts) — only present for single-color-ink
+    // techniques, so the print-ready outline file can include the logo as
+    // true curves instead of an embedded raster.
+    logoVector?: { ds: string[]; width: number; height: number } | null;
   };
 };
 

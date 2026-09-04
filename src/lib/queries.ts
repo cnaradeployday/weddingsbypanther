@@ -171,7 +171,9 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
       .eq("slug", productSlug)
       .eq("status", "approved")
       .maybeSingle(),
-    supabase.from("print_techniques").select("name, strip_source_color"),
+    supabase
+      .from("print_techniques")
+      .select("name, strip_source_color, single_color_ink, single_color_fill_mode"),
   ]);
 
   if (productError || !p) return null;
@@ -187,12 +189,19 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
   if (linkError || !link) return null;
 
   const images = (p.images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
-  const techniques = (p.techniques ?? []).map((t) => ({
-    ...t,
-    stripSourceColor:
-      (techniqueCatalog ?? []).find((tc) => tc.name.trim().toLowerCase() === t.technique.trim().toLowerCase())
-        ?.strip_source_color ?? false,
-  }));
+  const techniques = (p.techniques ?? []).map((t) => {
+    const catalogEntry = (techniqueCatalog ?? []).find(
+      (tc) => tc.name.trim().toLowerCase() === t.technique.trim().toLowerCase()
+    );
+    return {
+      ...t,
+      stripSourceColor: catalogEntry?.strip_source_color ?? false,
+      singleColorInk: catalogEntry?.single_color_ink ?? false,
+      singleColorFillMode: (catalogEntry?.single_color_fill_mode === "reference"
+        ? "reference"
+        : "silhouette") as "reference" | "silhouette",
+    };
+  });
   const zones = (p.zones ?? []).map((z) => ({
     ...z,
     corners_pct: (z.corners_pct as { x: number; y: number }[] | null) ?? [],

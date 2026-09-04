@@ -8,7 +8,25 @@ import type { ElemKey } from "./personalizationComposite";
 export type OutlineLayoutItem =
   | { kind: "monogram"; markup: string; cx: number; cy: number; rotationDeg: number; scale: number }
   | { kind: "frame"; markup: string; cx: number; cy: number; rotationDeg: number; scaleX: number; scaleY: number }
-  | { kind: "text"; ds: string[]; color: string; cx: number; cy: number; rotationDeg: number };
+  | { kind: "text"; ds: string[]; color: string; cx: number; cy: number; rotationDeg: number }
+  | {
+      kind: "logo";
+      ds: string[];
+      color: string;
+      cx: number;
+      cy: number;
+      rotationDeg: number;
+      scale: number;
+      sourceWidth: number;
+      sourceHeight: number;
+    };
+
+// A logo traced into vector path data at upload time (see
+// src/lib/logoVectorize.ts) — only available for single-color-ink
+// techniques, where the print-ready outline needs the logo as true curves
+// rather than an embedded raster. `ds` are the traced path(s)' `d`
+// attributes in the traced bitmap's own pixel space (width x height).
+export type LogoVector = { ds: string[]; width: number; height: number };
 
 export type OutlineLayoutParams = {
   canvasW: number;
@@ -23,7 +41,8 @@ export type OutlineLayoutParams = {
   frame?: string;
   textFont?: string;
   inkColor: string;
-  fontScale?: Partial<Record<Exclude<ElemKey, "logo">, number>>;
+  logoVector?: LogoVector | null;
+  fontScale?: Partial<Record<ElemKey, number>>;
   rotations?: Partial<Record<ElemKey, number>>;
 };
 
@@ -43,6 +62,7 @@ export async function computeOutlineLayout({
   frame = "",
   textFont = "",
   inkColor,
+  logoVector,
   fontScale = {},
   rotations = {},
 }: OutlineLayoutParams): Promise<OutlineLayoutItem[]> {
@@ -75,6 +95,27 @@ export async function computeOutlineLayout({
   };
 
   const items: OutlineLayoutItem[] = [];
+
+  if (logoVector && logoVector.ds.length) {
+    const { x: cx, y: cy } = toCanvasPoint("logo", { x: 50, y: 35 });
+    // Mirrors defaultLogoBoxSize() in personalizationComposite.ts: 45% of
+    // the print area's smaller physical dimension, as a square bounding
+    // box the traced logo is fit into (its larger dimension touching the
+    // box's edge, matching the live builder's object-contain sizing).
+    const boxMm = Math.min(canvasW, canvasH) * 0.45 * (fontScale.logo ?? 1);
+    const scale = boxMm / Math.max(logoVector.width, logoVector.height, 1);
+    items.push({
+      kind: "logo",
+      ds: logoVector.ds,
+      color: inkColor,
+      cx,
+      cy,
+      rotationDeg: rotations.logo ?? 0,
+      scale,
+      sourceWidth: logoVector.width,
+      sourceHeight: logoVector.height,
+    });
+  }
 
   if (monogram.trim()) {
     const { x: cx, y: cy } = toCanvasPoint("monogram", { x: 50, y: 15 });
@@ -154,6 +195,10 @@ export async function buildOutlineArtworkSvg(params: OutlineLayoutParams): Promi
     }
     if (item.kind === "frame") {
       return `<g transform="translate(${item.cx} ${item.cy}) rotate(${item.rotationDeg}) scale(${item.scaleX} ${item.scaleY}) translate(-100 -45)">${item.markup}</g>`;
+    }
+    if (item.kind === "logo") {
+      const paths = item.ds.map((d) => `<path d="${d}" fill="${item.color}" />`).join("");
+      return `<g transform="translate(${item.cx} ${item.cy}) rotate(${item.rotationDeg}) scale(${item.scale}) translate(${-item.sourceWidth / 2} ${-item.sourceHeight / 2})">${paths}</g>`;
     }
     const paths = item.ds.map((d) => `<path d="${d}" fill="${item.color}" />`).join("");
     return `<g${item.rotationDeg ? ` transform="rotate(${item.rotationDeg} ${item.cx} ${item.cy})"` : ""}>${paths}</g>`;

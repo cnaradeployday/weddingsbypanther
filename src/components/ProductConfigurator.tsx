@@ -14,8 +14,15 @@ import { TEXT_FONTS, DEFAULT_TEXT_FONT, textFontStyle } from "@/lib/textFonts";
 import { fitTextFontSize, estimateTextWidth, textLineCount } from "@/lib/textFit";
 import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
 import { dataUrlToBlob } from "@/lib/dataUrl";
+import { recolorLogoToSolid } from "@/lib/logoRecolor";
+import { nearestPantone } from "@/lib/pantoneMatch";
 import type { BusinessType } from "@/lib/businessType";
-import { availableAlongAxis, nearestEdgeDistance, clampPointToQuad, type Point } from "@/lib/quadGeometry";
+import {
+  availableAlongAxis,
+  clampOrientedBoxToQuad,
+  maxOrientedBoxScale,
+  type Point,
+} from "@/lib/quadGeometry";
 import type { RelatedProduct } from "@/lib/queries";
 import { AiRenderPanel } from "./AiRenderPanel";
 import { RelatedProductsRail } from "./RelatedProductsRail";
@@ -40,6 +47,8 @@ type Technique = {
   extra_price: number;
   is_default: boolean;
   stripSourceColor?: boolean;
+  singleColorInk?: boolean;
+  singleColorFillMode?: "silhouette" | "reference";
 };
 type ProductImage = { id: string; url: string };
 type Variant = {
@@ -155,6 +164,13 @@ function CollapsibleSection({
   );
 }
 
+// A handle at each of the 4 corners (not just one) — resize is a uniform
+// scale from the element's own center regardless of which corner drives it,
+// so every corner behaves identically. With several personalization
+// elements able to overlap, having 4 grab points instead of 1 makes it much
+// more likely at least one is clear of whatever else is on top of it. The
+// dashed outline traces the element's own box so it's unambiguous which
+// element is currently selected once a few of them overlap.
 function AdjustHandles({
   onResizeStart,
   onRotateStart,
@@ -162,12 +178,21 @@ function AdjustHandles({
   onResizeStart: (e: React.PointerEvent) => void;
   onRotateStart: (e: React.PointerEvent) => void;
 }) {
+  const corner =
+    "absolute h-5 w-5 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-nwse-resize touch-none pointer-events-auto";
   return (
     <>
-      <div
-        onPointerDown={onResizeStart}
-        className="absolute -right-2.5 -bottom-2.5 h-5 w-5 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-nwse-resize touch-none pointer-events-auto"
-      >
+      <div className="absolute inset-0 rounded-sm border border-dashed border-terracotta pointer-events-none" />
+      <div onPointerDown={onResizeStart} className={`${corner} -left-2.5 -top-2.5`}>
+        <ResizeIcon />
+      </div>
+      <div onPointerDown={onResizeStart} className={`${corner} -right-2.5 -top-2.5`}>
+        <ResizeIcon />
+      </div>
+      <div onPointerDown={onResizeStart} className={`${corner} -left-2.5 -bottom-2.5`}>
+        <ResizeIcon />
+      </div>
+      <div onPointerDown={onResizeStart} className={`${corner} -right-2.5 -bottom-2.5`}>
         <ResizeIcon />
       </div>
       <div
@@ -276,6 +301,13 @@ export function ProductConfigurator({
   );
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(handoff?.logoDataUrl ?? null);
+  // Only meaningful for a single-color-ink technique: the ink color the
+  // customer picks for their logo, the resulting flattened silhouette
+  // preview (fill-mode "silhouette"), and the logo traced into vector path
+  // data so the print-ready outline can include it as true curves.
+  const [inkColor, setInkColor] = useState("#1a1a1a");
+  const [logoSilhouetteUrl, setLogoSilhouetteUrl] = useState<string | null>(null);
+  const [logoVector, setLogoVector] = useState<{ ds: string[]; width: number; height: number } | null>(null);
 
   // The handoff logo is only a data URL (its File object couldn't survive
   // navigation) — reconstitute it as a real File async so it can still be
@@ -305,12 +337,23 @@ export function ProductConfigurator({
   // Resize/rotate handles only show on the element the customer tapped —
   // otherwise the photo stays uncluttered.
   const [activeElem, setActiveElem] = useState<ElemKey | null>(null);
+  // Whichever element was tapped most recently renders on top of the
+  // others — without this, overlapping elements always hit-test in a fixed
+  // DOM order (logo, then monogram, then names, then date), so a later
+  // element's invisible box can steal clicks meant for one drawn earlier
+  // even where the later element has no visible pixels there.
+  const [elemOrder, setElemOrder] = useState<ElemKey[]>(["logo", "monogram", "names", "date"]);
+  const bringToFront = useCallback((key: ElemKey) => {
+    setElemOrder((prev) => (prev[prev.length - 1] === key ? prev : [...prev.filter((k) => k !== key), key]));
+  }, []);
   const dragState = useRef<{
     key: ElemKey;
     startX: number;
     startY: number;
     originPx: Point;
-    marginPx: number;
+    halfW: number;
+    halfH: number;
+    rotationRad: number;
   } | null>(null);
   const elemAdjustState = useRef<{
     key: ElemKey;
@@ -447,7 +490,7 @@ export function ProductConfigurator({
       };
       const clamped =
         quadCornersPx && quadCornersPx.length === 4
-          ? clampPointToQuad(candidate, quadCornersPx, state.marginPx)
+          ? clampOrientedBoxToQuad(candidate, quadCornersPx, state.halfW, state.halfH, state.rotationRad)
           : candidate;
       if (!zoneBox || !photoSize.width || !photoSize.height) return;
       const fullPctX = (clamped.x / photoSize.width) * 100;
@@ -476,19 +519,22 @@ export function ProductConfigurator({
       e.preventDefault();
       e.stopPropagation();
       setActiveElem(key);
+      bringToFront(key);
       const box = elemBoxRefs.current[key];
       const originPx = posToPhotoPx(positions[key]);
       if (!originPx) return;
-      // A single circular margin (the larger of the box's own half-width/
-      // half-height) rather than separate X/Y margins — offsetWidth/Height
-      // is the element's own untransformed layout size, not the rotated
-      // getBoundingClientRect, which once inflated this margin and could
-      // pin the element off-center or let it clip the zone edge once
-      // rotated to match an angled print area.
-      const marginPx = box ? Math.max(box.offsetWidth / 2, box.offsetHeight / 2) : 0;
-      dragState.current = { key, startX: e.clientX, startY: e.clientY, originPx, marginPx };
+      // Half-width/half-height from the element's own untransformed layout
+      // size (not the rotated getBoundingClientRect, which would inflate
+      // these) combined with its current on-screen rotation — so the quad
+      // clamp below sees the element's true rotated footprint instead of a
+      // single circular margin that either clamps too early along its short
+      // axis or lets it cross the boundary along its long axis.
+      const halfW = box ? box.offsetWidth / 2 : 0;
+      const halfH = box ? box.offsetHeight / 2 : 0;
+      const rotationRad = (elemRotationDeg[key] * Math.PI) / 180;
+      dragState.current = { key, startX: e.clientX, startY: e.clientY, originPx, halfW, halfH, rotationRad };
     },
-    [positions, posToPhotoPx]
+    [positions, posToPhotoPx, bringToFront, elemRotationDeg]
   );
 
   // Direct-manipulation resize/rotate for each element, mirroring the
@@ -626,29 +672,32 @@ export function ProductConfigurator({
       const framePadY = key === "names" && frame ? nameFontPx * 0.9 : 0;
       const naturalW = box.offsetWidth + framePadX;
       const naturalH = box.offsetHeight + framePadY;
-      // The available room is the distance from the element's *current
-      // position* to the nearest edge of the print area's true quad — not
-      // the zone's axis-aligned bounding box, which is looser than the
-      // real (possibly angled/trapezoidal) boundary drawn in the admin
-      // print-area tool, and not just the zone's total width/height either
-      // (an element dragged off-center has less room on its near side than
-      // the zone's full extent would suggest). A single conservative
-      // radius bounds growth in every direction at once — precise enough
-      // to reach the true edge, safe enough to never cross it.
+      // The available room is measured against the element's own true
+      // rotated footprint (its actual on-screen orientation, matching the
+      // print area's incline) rather than a single conservative
+      // nearestEdgeDistance radius — that circular bound always assumed the
+      // element could need equal room in every direction, which under-caps
+      // an element that's tilted to align with the print area (it should be
+      // able to grow right up along the incline's long axis, not just to
+      // whatever the shortest nearby edge allows).
       const centerPhotoPx = posToPhotoPx(positions[key]);
-      const edgeDist = quadCornersPx && centerPhotoPx ? nearestEdgeDistance(centerPhotoPx, quadCornersPx) : null;
+      const rotationRad = (elemRotationDeg[key] * Math.PI) / 180;
+      const growthRatio =
+        quadCornersPx && centerPhotoPx && naturalW > 0 && naturalH > 0
+          ? maxOrientedBoxScale(centerPhotoPx, quadCornersPx, naturalW / 2, naturalH / 2, rotationRad)
+          : null;
       // A hard ceiling on the *absolute* elemScale value, not a multiplier
       // off whatever the current scale happens to be — currentScale cancels
-      // out of this ratio (naturalW/H already reflect it), so this is the
-      // one true scale at which the element/frame's larger dimension would
-      // exactly reach the nearest true edge from its current position. No
-      // flooring at currentScale: if something already exceeds that (e.g.
-      // a stale/looser cap from before this fix), the next resize gesture
-      // must be allowed to shrink it back down, not just refuse to grow it
-      // further.
+      // out of growthRatio (naturalW/H already reflect it), so
+      // currentScale * growthRatio is the one true scale at which the
+      // element/frame's rotated footprint would exactly reach the quad's
+      // boundary from its current position. No flooring at currentScale: if
+      // something already exceeds that (e.g. a stale/looser cap from before
+      // this fix), the next resize gesture must be allowed to shrink it back
+      // down, not just refuse to grow it further.
       const maxScale =
-        edgeDist != null && naturalW > 0 && naturalH > 0
-          ? Math.max(0.3, (currentScale * (2 * edgeDist * 0.98)) / Math.max(naturalW, naturalH))
+        growthRatio != null && Number.isFinite(growthRatio)
+          ? Math.max(0.3, currentScale * growthRatio * 0.98)
           : 4;
       elemAdjustState.current = {
         key,
@@ -662,11 +711,76 @@ export function ProductConfigurator({
         maxScale,
       };
     },
-    [elemScale, elemRotationOffset, frame, nameFontPx, posToPhotoPx, positions, quadCornersPx]
+    [elemScale, elemRotationOffset, elemRotationDeg, frame, nameFontPx, posToPhotoPx, positions, quadCornersPx]
   );
 
   const technique = product.techniques.find((t) => t.id === techniqueId);
   const variant = product.variants.find((v) => v.id === variantId);
+
+  const singleColorFillMode = technique?.singleColorInk ? technique.singleColorFillMode ?? "silhouette" : null;
+  const pantoneMatch = useMemo(
+    () => (technique?.singleColorInk ? nearestPantone(inkColor) : null),
+    [technique?.singleColorInk, inkColor]
+  );
+
+  // Flattens the uploaded logo into a solid silhouette in the customer's
+  // chosen ink color — only for a single-color-ink technique in
+  // "silhouette" fill mode. Recomputed whenever the logo or chosen color
+  // changes; the technique's own fill-mode choice doesn't affect the
+  // *shape*, only whether this recolored version is what actually gets
+  // shown/submitted.
+  useEffect(() => {
+    if (!logoPreview || singleColorFillMode !== "silhouette") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLogoSilhouetteUrl(null);
+      return;
+    }
+    let cancelled = false;
+    recolorLogoToSolid(logoPreview, inkColor)
+      .then((url) => {
+        if (!cancelled) setLogoSilhouetteUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setLogoSilhouetteUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [logoPreview, inkColor, singleColorFillMode]);
+
+  // The logo image actually shown/submitted: the ink-colored silhouette
+  // when that fill mode is active, otherwise the logo exactly as uploaded.
+  const effectiveLogoDataUrl =
+    singleColorFillMode === "silhouette" && logoSilhouetteUrl ? logoSilhouetteUrl : logoPreview;
+
+  // Traces the uploaded logo into vector path data as soon as it's picked,
+  // for single-color-ink techniques only — that's the only case where the
+  // print-ready outline file needs the logo as true curves. Keyed off the
+  // logo itself (not the chosen color): the traced shape doesn't change
+  // when the ink color changes, only its fill at render/export time.
+  useEffect(() => {
+    if (!logoPreview || !technique?.singleColorInk) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLogoVector(null);
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/vectorize-logo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ logoDataUrl: logoPreview }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (!cancelled) setLogoVector(json && json.ds ? json : null);
+      })
+      .catch(() => {
+        if (!cancelled) setLogoVector(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [logoPreview, technique?.singleColorInk]);
 
   const basePrice = product.factoryPrice + (variant?.price_delta ?? 0);
   const unitPriceWithVariant = applyMarkup(basePrice, product.markupPct);
@@ -771,7 +885,7 @@ export function ProductConfigurator({
     const hasPersonalizationContent = !!(names.trim() || date.trim() || monogram.trim() || logoFile);
     if (!snapshotUrl && product.personalizable && zone && hasPersonalizationContent) {
       try {
-        const logoDataUrl = logoFile ? await fileToDataUrl(logoFile) : undefined;
+        const logoDataUrl = effectiveLogoDataUrl ?? undefined;
         const res = await fetch("/api/personalization-snapshot", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -836,6 +950,9 @@ export function ProductConfigurator({
             renderUrl,
             renderContextUrl,
             snapshotUrl,
+            inkColorHex: technique?.singleColorInk ? inkColor : undefined,
+            inkPantoneCode: technique?.singleColorInk ? pantoneMatch?.code : undefined,
+            logoVector: technique?.singleColorInk ? logoVector : undefined,
           }
         : undefined,
     });
@@ -897,16 +1014,21 @@ export function ProductConfigurator({
                     top: `${positions.logo.y}%`,
                     width: `${logoWidthPct}%`,
                     aspectRatio: "1",
+                    zIndex: elemOrder.indexOf("logo"),
                     transform: `translate(-50%, -50%) rotate(${elemRotationDeg.logo}deg)`,
                   }}
                 >
                   <div className="relative w-full h-full pointer-events-none">
                     <Image
-                      src={logoPreview}
+                      src={effectiveLogoDataUrl ?? logoPreview}
                       alt=""
                       fill
                       className="object-contain"
-                      style={technique?.stripSourceColor ? { filter: "grayscale(1)" } : undefined}
+                      style={
+                        technique?.stripSourceColor && !technique?.singleColorInk
+                          ? { filter: "grayscale(1)" }
+                          : undefined
+                      }
                       unoptimized
                     />
                   </div>
@@ -928,6 +1050,7 @@ export function ProductConfigurator({
                     top: `${positions.monogram.y}%`,
                     width: monogramFontPx,
                     height: monogramFontPx,
+                    zIndex: elemOrder.indexOf("monogram"),
                     transform: `translate(-50%, -50%) rotate(${elemRotationDeg.monogram}deg)`,
                   }}
                 >
@@ -956,6 +1079,7 @@ export function ProductConfigurator({
                   style={{
                     left: `${positions.names.x}%`,
                     top: `${positions.names.y}%`,
+                    zIndex: elemOrder.indexOf("names"),
                     transform: `translate(-50%, -50%) rotate(${elemRotationDeg.names}deg)`,
                     fontSize: nameFontPx,
                     ...textFontStyle(textFont),
@@ -998,6 +1122,7 @@ export function ProductConfigurator({
                   style={{
                     left: `${positions.date.x}%`,
                     top: `${positions.date.y}%`,
+                    zIndex: elemOrder.indexOf("date"),
                     transform: `translate(-50%, -50%) rotate(${elemRotationDeg.date}deg)`,
                     fontSize: dateFontPx,
                     ...textFontStyle(textFont),
@@ -1099,8 +1224,8 @@ export function ProductConfigurator({
             <CollapsibleSection title="Your logo" optional>
               <div className="flex items-center gap-3">
                 <label className="relative h-16 w-16 rounded-lg overflow-hidden border border-line cursor-pointer bg-white shrink-0">
-                  {logoPreview ? (
-                    <Image src={logoPreview} alt="" fill className="object-contain" unoptimized />
+                  {effectiveLogoDataUrl ? (
+                    <Image src={effectiveLogoDataUrl} alt="" fill className="object-contain" unoptimized />
                   ) : (
                     <span className="absolute inset-0 flex items-center justify-center text-[10px] text-muted text-center px-1">
                       Upload
@@ -1119,6 +1244,28 @@ export function ProductConfigurator({
                 )}
               </div>
               {logoPreview && logoSizeLabel && <p className="text-xs text-muted mt-1">{logoSizeLabel}</p>}
+              {logoPreview && technique?.singleColorInk && (
+                <div className="flex items-center gap-3 mt-3 pt-3 border-t border-line">
+                  <input
+                    type="color"
+                    value={inkColor}
+                    onChange={(e) => setInkColor(e.target.value)}
+                    className="h-9 w-9 rounded border border-line cursor-pointer p-0 bg-transparent shrink-0"
+                    aria-label="Ink color"
+                  />
+                  <div className="text-xs">
+                    <p className="text-muted">
+                      Ink color for this technique — {inkColor.toUpperCase()}
+                    </p>
+                    {pantoneMatch && (
+                      <p className="text-muted/80">
+                        Closest match: {pantoneMatch.code} (approximate, not an official Pantone
+                        conversion)
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
             </CollapsibleSection>
             <CollapsibleSection title="Template frame" optional>
               <div className="flex flex-wrap gap-2">

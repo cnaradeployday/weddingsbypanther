@@ -78,6 +78,16 @@ function CartLineItem({
             {item.personalization.technique}
           </p>
         )}
+        {item.personalization?.inkColorHex && (
+          <p className="text-xs text-muted mt-1 flex items-center gap-1.5">
+            <span
+              className="inline-block h-3 w-3 rounded-full border border-line shrink-0"
+              style={{ backgroundColor: item.personalization.inkColorHex }}
+            />
+            Ink: {item.personalization.inkColorHex.toUpperCase()}
+            {item.personalization.inkPantoneCode && ` · ${item.personalization.inkPantoneCode} (approx.)`}
+          </p>
+        )}
         {delivery && <p className="text-xs text-muted mt-1">{delivery}</p>}
         <div className="flex items-center gap-4 mt-3">
           <div className="flex items-center gap-2 rounded-full border border-line px-3 py-1">

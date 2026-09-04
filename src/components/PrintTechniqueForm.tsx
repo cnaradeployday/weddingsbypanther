@@ -11,6 +11,8 @@ export type InitialPrintTechnique = {
   colorModeDescription: string;
   sortOrder: number;
   stripSourceColor: boolean;
+  singleColorInk: boolean;
+  singleColorFillMode: "silhouette" | "reference";
 };
 
 export function PrintTechniqueForm({ initial }: { initial?: InitialPrintTechnique }) {
@@ -25,6 +27,10 @@ export function PrintTechniqueForm({ initial }: { initial?: InitialPrintTechniqu
   );
   const [sortOrder, setSortOrder] = useState(initial?.sortOrder ?? 0);
   const [stripSourceColor, setStripSourceColor] = useState(initial?.stripSourceColor ?? false);
+  const [singleColorInk, setSingleColorInk] = useState(initial?.singleColorInk ?? false);
+  const [singleColorFillMode, setSingleColorFillMode] = useState<"silhouette" | "reference">(
+    initial?.singleColorFillMode ?? "silhouette"
+  );
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +46,8 @@ export function PrintTechniqueForm({ initial }: { initial?: InitialPrintTechniqu
       color_mode_description: colorModeDescription,
       sort_order: sortOrder,
       strip_source_color: stripSourceColor,
+      single_color_ink: singleColorInk,
+      single_color_fill_mode: singleColorFillMode,
     };
 
     const { error: saveError } = initial
@@ -137,6 +145,61 @@ export function PrintTechniqueForm({ initial }: { initial?: InitialPrintTechniqu
             (like a logo&apos;s accent dot) must never survive.
           </span>
         </label>
+      </div>
+
+      <div className="rounded-xl border border-line bg-white p-6 space-y-4">
+        <p className="text-xs uppercase tracking-wide text-muted">Single ink color</p>
+        <p className="text-xs text-muted -mt-2">
+          For techniques that print in exactly one color chosen per order (one-color screen
+          print, engraving, embroidery thread, vinyl, pad print) — not a full-color reproduction
+          of whatever the customer uploads.
+        </p>
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={singleColorInk}
+            onChange={(e) => setSingleColorInk(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            This technique prints in one ink color the customer picks. The product builder shows
+            a color picker with an approximate PANTONE match, and that color is carried through
+            the cart, receipt, and order detail.
+          </span>
+        </label>
+        {singleColorInk && (
+          <div className="pl-6 space-y-2">
+            <label className="text-xs text-muted block mb-1">
+              What happens to the uploaded logo
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="singleColorFillMode"
+                checked={singleColorFillMode === "silhouette"}
+                onChange={() => setSingleColorFillMode("silhouette")}
+                className="mt-0.5"
+              />
+              <span>
+                Flatten it into a solid silhouette filled with the chosen ink color (matches how
+                a one-color print/engrave/embroider actually reproduces it).
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="singleColorFillMode"
+                checked={singleColorFillMode === "reference"}
+                onChange={() => setSingleColorFillMode("reference")}
+                className="mt-0.5"
+              />
+              <span>
+                Keep the logo&apos;s original colors on screen — the chosen color is only
+                captured as a reference label, not applied to the artwork.
+              </span>
+            </label>
+          </div>
+        )}
       </div>
 
       {error && <p className="text-sm text-terracotta-dark">{error}</p>}

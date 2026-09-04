@@ -44,6 +44,18 @@ export async function buildOutlinePdfDocument(params: OutlineLayoutParams) {
                 </G>
               );
             }
+            if (item.kind === "logo") {
+              return (
+                <G
+                  key={i}
+                  transform={`translate(${item.cx} ${item.cy}) rotate(${item.rotationDeg}) scale(${item.scale}) translate(${-item.sourceWidth / 2} ${-item.sourceHeight / 2})`}
+                >
+                  {item.ds.map((d, j) => (
+                    <Path key={j} d={d} fill={item.color} />
+                  ))}
+                </G>
+              );
+            }
             const paths = item.ds.map((d, j) => <Path key={j} d={d} fill={item.color} />);
             return item.rotationDeg ? (
               <G key={i} transform={`rotate(${item.rotationDeg} ${item.cx} ${item.cy})`}>
