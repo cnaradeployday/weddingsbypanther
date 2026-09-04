@@ -22,8 +22,17 @@ export default async function EditPlannerPage({ params }: { params: Promise<{ id
         <VettingStatusControl table="planners" id={planner.id} status={planner.status} />
       </div>
       <p className="text-muted mb-8">
-        Storefront live at /store/{planner.slug} — everything here is exactly what this planner can edit
-        themselves from their own Storefront settings.
+        Storefront live at{" "}
+        <a
+          href={`/store/${planner.slug}`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-terracotta underline underline-offset-2"
+        >
+          /store/{planner.slug}
+        </a>{" "}
+        — everything here is exactly what this planner can edit themselves from their own Storefront
+        settings.
       </p>
       <PlannerSettingsForm
         plannerId={planner.id}

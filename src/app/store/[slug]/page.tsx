@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCategories, getPlannerBySlug, getStorefrontCatalog } from "@/lib/queries";
 import { formatUSD } from "@/lib/format";
+import { isBusinessType } from "@/lib/businessType";
 
 const CATEGORY_IMAGES: Record<string, string> = {
   "wedding-favors": "/images/favors-ringbox-flatlay.jpg",
@@ -11,6 +12,10 @@ const CATEGORY_IMAGES: Record<string, string> = {
   "place-cards": "/images/placecards-waxseal-charger.jpg",
   "guest-books": "/images/guestbooks-waxseal-press.jpg",
   "welcome-bags": "/images/welcomebags-floral-card.jpg",
+  notebooks: "/images/merch-placeholder-notebooks.png",
+  drinkware: "/images/merch-placeholder-drinkware.png",
+  bags: "/images/merch-placeholder-bags.png",
+  writing: "/images/merch-placeholder-writing.png",
 };
 
 export default async function StorefrontHome({
@@ -23,7 +28,7 @@ export default async function StorefrontHome({
   if (!planner) notFound();
 
   const [categories, products] = await Promise.all([
-    getCategories(),
+    getCategories(isBusinessType(planner.business_type) ? planner.business_type : "wedding"),
     getStorefrontCatalog(slug),
   ]);
 

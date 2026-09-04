@@ -11,7 +11,10 @@ const STATUS_STYLE: Record<string, string> = {
   draft: "bg-line text-muted",
 };
 
-export default async function AdminProductsPage() {
+// The promotional-merchandise sibling of /admin/products — same table, same
+// edit route, just filtered to products whose category belongs to the
+// merchandise vertical, so the two catalogs never mix in one list.
+export default async function AdminMerchandiseProductsPage() {
   const session = await getSessionProfile();
   if (!session) redirect("/login");
   const supabase = await createClient();
@@ -20,19 +23,19 @@ export default async function AdminProductsPage() {
   const { data: products } = await supabase
     .from("products")
     .select("*, category:categories!inner(name, business_type), supplier:suppliers(business_name)")
-    .eq("category.business_type", "wedding")
+    .eq("category.business_type", "merchandise")
     .order("created_at", { ascending: false });
 
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="font-serif text-3xl mb-1">Products</h1>
-          <p className="text-muted">{products?.length ?? 0} wedding products across all suppliers</p>
+          <h1 className="font-serif text-3xl mb-1">Merchandise products</h1>
+          <p className="text-muted">{products?.length ?? 0} promotional-merchandise products</p>
         </div>
         {perms.products.write && (
           <Link
-            href="/admin/products/new"
+            href="/admin/merchandise/products/new"
             className="px-5 py-2.5 rounded-full bg-sage text-cream-light text-sm font-medium hover:opacity-90 transition-opacity"
           >
             Add product
@@ -76,6 +79,13 @@ export default async function AdminProductsPage() {
                 </td>
               </tr>
             ))}
+            {(products ?? []).length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-5 py-8 text-center text-muted">
+                  No merchandise products yet.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

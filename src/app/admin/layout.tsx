@@ -12,6 +12,7 @@ const NAV: { href: string; label: string; section: BackofficeSection }[] = [
   { href: "/admin/suppliers", label: "Suppliers", section: "suppliers" },
   { href: "/admin/planners", label: "Planners", section: "planners" },
   { href: "/admin/merchandise", label: "Merchandise", section: "planners" },
+  { href: "/admin/merchandise/products", label: "Merchandise products", section: "products" },
   { href: "/admin/planner-leads", label: "Planner leads", section: "planners" },
   { href: "/admin/orders", label: "Orders", section: "orders" },
   { href: "/admin/categories", label: "Categories", section: "categories" },

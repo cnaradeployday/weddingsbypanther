@@ -14,9 +14,11 @@ function slugify(input: string) {
 
 export function CategoryManager({
   categories,
+  businessType,
   canWrite = true,
 }: {
   categories: { id: string; name: string; slug: string; sort_order: number }[];
+  businessType: "wedding" | "merchandise";
   canWrite?: boolean;
 }) {
   const router = useRouter();
@@ -32,6 +34,7 @@ export function CategoryManager({
       name,
       slug: slugify(name),
       sort_order: categories.length + 1,
+      business_type: businessType,
     });
     setName("");
     setSubmitting(false);

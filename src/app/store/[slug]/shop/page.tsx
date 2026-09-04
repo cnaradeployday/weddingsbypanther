@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCategories, getPlannerBySlug, getStorefrontCatalog } from "@/lib/queries";
 import { CatalogSearch } from "@/components/CatalogSearch";
+import { isBusinessType } from "@/lib/businessType";
 
 export default async function ShopPage({
   params,
@@ -17,7 +18,7 @@ export default async function ShopPage({
   if (!planner) notFound();
 
   const [categories, allProducts] = await Promise.all([
-    getCategories(),
+    getCategories(isBusinessType(planner.business_type) ? planner.business_type : "wedding"),
     getStorefrontCatalog(slug),
   ]);
 

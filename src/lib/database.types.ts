@@ -16,18 +16,21 @@ export type Database = {
     Tables: {
       categories: {
         Row: {
+          business_type: string
           id: string
           name: string
           slug: string
           sort_order: number
         }
         Insert: {
+          business_type?: string
           id?: string
           name: string
           slug: string
           sort_order?: number
         }
         Update: {
+          business_type?: string
           id?: string
           name?: string
           slug?: string
