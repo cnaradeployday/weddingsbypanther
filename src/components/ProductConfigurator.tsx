@@ -753,13 +753,17 @@ export function ProductConfigurator({
   const effectiveLogoDataUrl =
     singleColorFillMode === "silhouette" && logoSilhouetteUrl ? logoSilhouetteUrl : logoPreview;
 
-  // Traces the uploaded logo into vector path data as soon as it's picked,
-  // for single-color-ink techniques only — that's the only case where the
-  // print-ready outline file needs the logo as true curves. Keyed off the
-  // logo itself (not the chosen color): the traced shape doesn't change
-  // when the ink color changes, only its fill at render/export time.
+  // Traces the uploaded logo into vector path data as soon as it's picked —
+  // any personalizable product's print-ready outline file needs the logo as
+  // true curves, not just single-color-ink ones (that flag only decides
+  // which color fills it and whether the live preview shows a recolored
+  // silhouette; every technique still needs *some* vector representation of
+  // the logo in its outline export, filled with that technique's own ink
+  // color as a fallback). Keyed off the logo itself, not the chosen color:
+  // the traced shape doesn't change when the ink color changes, only its
+  // fill at render/export time.
   useEffect(() => {
-    if (!logoPreview || !technique?.singleColorInk) {
+    if (!logoPreview) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLogoVector(null);
       return;
@@ -780,7 +784,7 @@ export function ProductConfigurator({
     return () => {
       cancelled = true;
     };
-  }, [logoPreview, technique?.singleColorInk]);
+  }, [logoPreview]);
 
   const basePrice = product.factoryPrice + (variant?.price_delta ?? 0);
   const unitPriceWithVariant = applyMarkup(basePrice, product.markupPct);
@@ -952,7 +956,7 @@ export function ProductConfigurator({
             snapshotUrl,
             inkColorHex: technique?.singleColorInk ? inkColor : undefined,
             inkPantoneCode: technique?.singleColorInk ? pantoneMatch?.code : undefined,
-            logoVector: technique?.singleColorInk ? logoVector : undefined,
+            logoVector,
           }
         : undefined,
     });
