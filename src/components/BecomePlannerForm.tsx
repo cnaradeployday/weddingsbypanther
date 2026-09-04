@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
+import type { BusinessType } from "@/lib/businessType";
 
-export function BecomePlannerForm() {
+export function BecomePlannerForm({ businessType }: { businessType: BusinessType }) {
   const [contactName, setContactName] = useState("");
   const [businessName, setBusinessName] = useState("");
   const [email, setEmail] = useState("");
@@ -34,6 +35,7 @@ export function BecomePlannerForm() {
       country: country.trim() || null,
       years_in_business: yearsInBusiness ? Number(yearsInBusiness) : null,
       message: message.trim() || null,
+      business_type: businessType,
     });
 
     if (insertError) {

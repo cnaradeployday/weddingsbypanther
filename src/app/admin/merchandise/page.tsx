@@ -5,35 +5,39 @@ import { VettingStatusControl } from "@/components/VettingStatusControl";
 import { NewPlannerForm } from "@/components/NewPlannerForm";
 import { getBackofficePermissions } from "@/lib/permissions";
 
-export default async function AdminPlannersPage() {
+// Merchandise accounts are the exact same `planners` entity as wedding
+// planners (same storefront/catalog/checkout machinery) — this is just a
+// second, filtered view onto that table for the promotional-merchandise
+// vertical, so it can have its own "new account" flow (business_type set
+// to 'merchandise' from the start) without touching the wedding Planners
+// page at all. Editing reuses the existing /admin/planners/[id]/edit route
+// unchanged — it already works for any planner id regardless of type.
+export default async function AdminMerchandisePage() {
   const session = await getSessionProfile();
   if (!session) redirect("/login");
   const supabase = await createClient();
   const perms = await getBackofficePermissions(supabase, session.profile);
 
-  // Merchandise accounts are the same underlying entity but get their own
-  // admin section (see /admin/merchandise) so the two verticals don't mix
-  // in one list.
-  const { data: planners } = await supabase
+  const { data: accounts } = await supabase
     .from("planners")
     .select("*")
-    .eq("business_type", "wedding")
+    .eq("business_type", "merchandise")
     .order("business_name");
 
   return (
     <div>
       <div className="flex items-start justify-between gap-4 mb-8">
         <div>
-          <h1 className="font-serif text-3xl mb-1">Planners</h1>
-          <p className="text-muted">{planners?.length ?? 0} planner storefronts</p>
+          <h1 className="font-serif text-3xl mb-1">Merchandise</h1>
+          <p className="text-muted">{accounts?.length ?? 0} promotional-merchandise storefronts</p>
         </div>
-        {perms.planners.write && <NewPlannerForm />}
+        {perms.planners.write && <NewPlannerForm businessType="merchandise" />}
       </div>
       <div className="rounded-xl border border-line bg-white overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
-              <th className="px-5 py-3 font-medium">Studio</th>
+              <th className="px-5 py-3 font-medium">Business</th>
               <th className="px-5 py-3 font-medium">Storefront</th>
               <th className="px-5 py-3 font-medium">Default markup</th>
               <th className="px-5 py-3 font-medium">Status</th>
@@ -41,7 +45,7 @@ export default async function AdminPlannersPage() {
             </tr>
           </thead>
           <tbody>
-            {(planners ?? []).map((p) => (
+            {(accounts ?? []).map((p) => (
               <tr key={p.id} className="border-b border-line last:border-0">
                 <td className="px-5 py-4 font-medium">{p.business_name}</td>
                 <td className="px-5 py-4">
@@ -62,6 +66,13 @@ export default async function AdminPlannersPage() {
                 </td>
               </tr>
             ))}
+            {(accounts ?? []).length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-5 py-8 text-center text-muted">
+                  No merchandise accounts yet.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

@@ -12,6 +12,7 @@ export const FONT_CHOICES = [
   { id: "baskerville", label: "Baskerville", description: "Traditional, literary serif" },
   { id: "marcellus", label: "Marcellus", description: "Refined all-caps-friendly serif" },
   { id: "fraunces", label: "Fraunces", description: "Warm, soft serif" },
+  { id: "modern", label: "Modern Sans", description: "Clean sans-serif — corporate/promotional" },
 ] as const;
 
 export type FontChoiceId = (typeof FONT_CHOICES)[number]["id"];
@@ -28,6 +29,10 @@ const FONT_PAIR_VARS: Record<FontChoiceId, { serif: string; sans: string }> = {
   baskerville: { serif: "var(--font-serif-baskerville)", sans: "var(--font-sans-karla)" },
   marcellus: { serif: "var(--font-serif-marcellus)", sans: "var(--font-sans-jost)" },
   fraunces: { serif: "var(--font-serif-fraunces)", sans: "var(--font-sans-manrope)" },
+  // Both slots point at the same sans family (Manrope, already loaded for
+  // the fraunces pairing) — a deliberately headline-less look for
+  // storefronts that shouldn't read as wedding-editorial serif.
+  modern: { serif: "var(--font-sans-manrope)", sans: "var(--font-sans-manrope)" },
 };
 
 // CSS custom-property overrides for a storefront wrapper — inherits down to

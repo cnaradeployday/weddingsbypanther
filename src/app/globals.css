@@ -30,6 +30,26 @@
   --font-sans: var(--font-sans);
 }
 
+/* Re-skins the shared marketing/backoffice chrome (root home page, become-a-
+   X signup, /admin, /login, /signup) for the promotional-merchandise
+   deployment — a data attribute set once in the root layout from the
+   NEXT_PUBLIC_BUSINESS_TYPE env var, not per-request, since this is a
+   deployment-wide default rather than something that varies per visitor.
+   Individual planner storefronts (/store/[slug]) already override
+   --color-terracotta inline from that planner's own accent_color, which
+   wins over this for anything nested inside one — so a wedding planner's
+   shop still looks correct even when viewed from the merchandise domain. */
+:root[data-business="merchandise"] {
+  --color-terracotta: #2a5c8c;
+  --color-terracotta-dark: #1e4568;
+  --color-gold: #8c9caa;
+  /* Both slots point at the same already-loaded sans family (Manrope) —
+     see the "modern" font choice in fontChoices.ts — for a clean,
+     headline-less look instead of the wedding-editorial serif. */
+  --font-serif: var(--font-sans-manrope);
+  --font-sans: var(--font-sans-manrope);
+}
+
 body {
   background: var(--color-cream-light);
   color: var(--color-dark);

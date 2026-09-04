@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { BackofficeShell } from "@/components/BackofficeShell";
 import { getBackofficePermissions, hasAnyReadAccess, type BackofficeSection } from "@/lib/permissions";
+import { DEPLOYMENT_BUSINESS_TYPE } from "@/lib/businessType";
 
 const NAV: { href: string; label: string; section: BackofficeSection }[] = [
   { href: "/admin", label: "Dashboard", section: "dashboard" },
@@ -10,6 +11,7 @@ const NAV: { href: string; label: string; section: BackofficeSection }[] = [
   { href: "/admin/print-techniques", label: "Print techniques", section: "products" },
   { href: "/admin/suppliers", label: "Suppliers", section: "suppliers" },
   { href: "/admin/planners", label: "Planners", section: "planners" },
+  { href: "/admin/merchandise", label: "Merchandise", section: "planners" },
   { href: "/admin/planner-leads", label: "Planner leads", section: "planners" },
   { href: "/admin/orders", label: "Orders", section: "orders" },
   { href: "/admin/categories", label: "Categories", section: "categories" },
@@ -39,24 +41,42 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     );
   }
 
-  const [{ count: pendingProducts }, { count: pendingSuppliers }, { count: pendingPlanners }, { count: newLeads }] =
-    await Promise.all([
-      supabase.from("products").select("id", { count: "exact", head: true }).eq("status", "pending"),
-      supabase.from("suppliers").select("id", { count: "exact", head: true }).eq("status", "pending"),
-      supabase.from("planners").select("id", { count: "exact", head: true }).eq("status", "pending"),
-      supabase.from("planner_leads").select("id", { count: "exact", head: true }).eq("status", "new"),
-    ]);
+  const [
+    { count: pendingProducts },
+    { count: pendingSuppliers },
+    { count: pendingPlanners },
+    { count: pendingMerchandise },
+    { count: newLeads },
+  ] = await Promise.all([
+    supabase.from("products").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    supabase.from("suppliers").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    supabase
+      .from("planners")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending")
+      .eq("business_type", "wedding"),
+    supabase
+      .from("planners")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending")
+      .eq("business_type", "merchandise"),
+    supabase.from("planner_leads").select("id", { count: "exact", head: true }).eq("status", "new"),
+  ]);
 
   const nav = NAV.filter((n) => perms[n.section].read).map((n) => {
     if (n.href === "/admin/approvals" && pendingProducts) return { ...n, label: `${n.label} (${pendingProducts})` };
     if (n.href === "/admin/suppliers" && pendingSuppliers) return { ...n, label: `${n.label} (${pendingSuppliers})` };
     if (n.href === "/admin/planners" && pendingPlanners) return { ...n, label: `${n.label} (${pendingPlanners})` };
+    if (n.href === "/admin/merchandise" && pendingMerchandise)
+      return { ...n, label: `${n.label} (${pendingMerchandise})` };
     if (n.href === "/admin/planner-leads" && newLeads) return { ...n, label: `${n.label} (${newLeads})` };
     return n;
   });
 
+  const brand = DEPLOYMENT_BUSINESS_TYPE === "merchandise" ? "Merchandise" : "BespokeWedding";
+
   return (
-    <BackofficeShell brand="BespokeWedding" subtitle="Marketplace admin" nav={nav}>
+    <BackofficeShell brand={brand} subtitle="Marketplace admin" nav={nav}>
       {children}
     </BackofficeShell>
   );
