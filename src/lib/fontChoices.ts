@@ -23,7 +23,7 @@ export function isFontChoiceId(value: string): value is FontChoiceId {
   return FONT_CHOICES.some((f) => f.id === value);
 }
 
-const FONT_PAIR_VARS: Record<FontChoiceId, { serif: string; sans: string }> = {
+export const FONT_PAIR_VARS: Record<FontChoiceId, { serif: string; sans: string }> = {
   cormorant: { serif: "var(--font-serif-cormorant)", sans: "var(--font-sans-instrument)" },
   playfair: { serif: "var(--font-serif-playfair)", sans: "var(--font-sans-worksans)" },
   baskerville: { serif: "var(--font-serif-baskerville)", sans: "var(--font-sans-karla)" },

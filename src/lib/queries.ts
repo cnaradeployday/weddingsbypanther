@@ -55,10 +55,11 @@ export async function getPlanners() {
   return data ?? [];
 }
 
-export async function getCategories() {
+export async function getCategories(businessType: "wedding" | "merchandise" = "wedding") {
   const { data } = await supabase
     .from("categories")
     .select("*")
+    .eq("business_type", businessType)
     .order("sort_order");
   return data ?? [];
 }

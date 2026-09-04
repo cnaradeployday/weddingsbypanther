@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
-import { FONT_CHOICES } from "@/lib/fontChoices";
+import { FONT_CHOICES, FONT_PAIR_VARS } from "@/lib/fontChoices";
 
 type Initial = {
   business_name: string;
@@ -251,6 +251,9 @@ export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string;
                 form.font_choice === opt.id ? "border-dark bg-cream" : "border-line"
               }`}
             >
+              <span className="block text-xl leading-tight mb-1" style={{ fontFamily: FONT_PAIR_VARS[opt.id].serif }}>
+                {form.business_name?.trim() || "Amelia & Ravi"}
+              </span>
               <span className="block font-medium">{opt.label}</span>
               <span className="block text-xs text-muted">{opt.description}</span>
             </button>
