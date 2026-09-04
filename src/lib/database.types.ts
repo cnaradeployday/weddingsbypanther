@@ -785,6 +785,63 @@ export type Database = {
           },
         ]
       }
+      quote_requests: {
+        Row: {
+          company_name: string | null
+          contact_name: string
+          created_at: string
+          email: string
+          id: string
+          message: string | null
+          phone: string | null
+          planner_id: string | null
+          product_id: string | null
+          quantity: number
+          status: string
+        }
+        Insert: {
+          company_name?: string | null
+          contact_name: string
+          created_at?: string
+          email: string
+          id?: string
+          message?: string | null
+          phone?: string | null
+          planner_id?: string | null
+          product_id?: string | null
+          quantity: number
+          status?: string
+        }
+        Update: {
+          company_name?: string | null
+          contact_name?: string
+          created_at?: string
+          email?: string
+          id?: string
+          message?: string | null
+          phone?: string | null
+          planner_id?: string | null
+          product_id?: string | null
+          quantity?: number
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quote_requests_planner_id_fkey"
+            columns: ["planner_id"]
+            isOneToOne: false
+            referencedRelation: "planners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quote_requests_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       role_permissions: {
         Row: {
           can_read: boolean

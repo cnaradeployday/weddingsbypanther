@@ -16,6 +16,7 @@ import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
 import { dataUrlToBlob } from "@/lib/dataUrl";
 import { recolorLogoToSolid } from "@/lib/logoRecolor";
 import { nearestPantone, resolveColorInput } from "@/lib/pantoneMatch";
+import { leadTimeRange } from "@/lib/leadTime";
 import type { BusinessType } from "@/lib/businessType";
 import {
   availableAlongAxis,
@@ -26,6 +27,7 @@ import {
 import type { RelatedProduct } from "@/lib/queries";
 import { AiRenderPanel } from "./AiRenderPanel";
 import { RelatedProductsRail } from "./RelatedProductsRail";
+import { QuoteRequestForm } from "./QuoteRequestForm";
 
 // Approximates how each print technique looks on the manual (non-AI) live
 // preview — a plain color swap for printed techniques, plus a debossed
@@ -275,6 +277,7 @@ export function ProductConfigurator({
     zones: Zone[];
     variants: Variant[];
     plannerSlug: string;
+    plannerId: string;
     businessType: BusinessType;
     aiRenderEnabled: boolean;
   };
@@ -802,6 +805,7 @@ export function ProductConfigurator({
   const unitPriceWithVariant = applyMarkup(basePrice, product.markupPct);
   const unitPriceWithTechnique = unitPriceWithVariant + (technique?.extra_price ?? 0);
   const total = unitPriceWithTechnique * quantity;
+  const productionTime = leadTimeRange(product.leadTimeMin, product.leadTimeMax);
 
   const displayImage = variant?.image_url ?? product.images[activeImage]?.url ?? product.images[0]?.url;
   const showOverlayHere = !zone?.image_id || product.images[activeImage]?.id === zone.image_id;
@@ -1206,6 +1210,7 @@ export function ProductConfigurator({
             per piece · min {product.minOrder}
           </span>
         </p>
+        {productionTime && <p className="text-sm text-muted mb-3">Production time: {productionTime}</p>}
         <p className="text-muted mb-8">{product.description}</p>
 
         {product.variants.length > 0 && (
@@ -1554,6 +1559,16 @@ export function ProductConfigurator({
                 ? "Sample added ✓"
                 : `Buy 1 sample — +${formatUSD(SAMPLE_FEE)}`}
           </button>
+        )}
+        {isMerchandise && (
+          <div className="mt-3">
+            <QuoteRequestForm
+              productId={product.id}
+              productName={product.name}
+              plannerId={product.plannerId}
+              defaultQuantity={quantity}
+            />
+          </div>
         )}
         <button
           onClick={() => router.push(`/store/${product.plannerSlug}/cart`)}
