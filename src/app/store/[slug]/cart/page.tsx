@@ -87,6 +87,14 @@ function CartLineItem({
             {item.personalization.inkPantoneCode && ` · ${item.personalization.inkPantoneCode} (approx.)`}
           </p>
         )}
+        {item.personalization?.additionalAreas?.map((area) => (
+          <p key={area.zoneId} className="text-xs text-muted mt-1">
+            + {area.label}
+            {area.extraPrice > 0 && ` (${formatUSD(area.extraPrice)})`}
+            {area.names || area.date || area.monogram ? " — " : ""}
+            {[area.names, area.date, area.monogram].filter(Boolean).join(" · ")}
+          </p>
+        ))}
         {delivery && <p className="text-xs text-muted mt-1">{delivery}</p>}
         <div className="flex items-center gap-4 mt-3">
           <div className="flex items-center gap-2 rounded-full border border-line px-3 py-1">

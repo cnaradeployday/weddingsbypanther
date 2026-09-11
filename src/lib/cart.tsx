@@ -23,6 +23,9 @@ export type CartItem = {
   isSample?: boolean;
   sampleFee?: number;
   personalization?: {
+    // The primary print area's own id — always present alongside the flat
+    // design fields below, which describe that primary area specifically.
+    zoneId?: string;
     names?: string;
     date?: string;
     monogram?: string;
@@ -48,7 +51,34 @@ export type CartItem = {
     // techniques, so the print-ready outline file can include the logo as
     // true curves instead of an embedded raster.
     logoVector?: { ds: string[]; width: number; height: number } | null;
+    // Secondary/tertiary print areas the shopper added on top of the
+    // primary one above — each carries its own independent design (it's
+    // usually a different logo/text sized for a differently-shaped area)
+    // and its own per-unit surcharge, already folded into this item's
+    // unitPrice the same way a technique's extra_price is (not part of
+    // personalizationFee).
+    additionalAreas?: AreaPersonalization[];
   };
+};
+
+export type AreaPersonalization = {
+  zoneId: string;
+  label: string;
+  extraPrice: number;
+  names?: string;
+  date?: string;
+  monogram?: string;
+  frame?: string;
+  textFont?: string;
+  positions?: Record<string, { x: number; y: number }>;
+  elemScale?: Record<string, number>;
+  elemRotationOffset?: Record<string, number>;
+  hasLogo?: boolean;
+  renderUrl?: string;
+  snapshotUrl?: string;
+  inkColorHex?: string;
+  inkPantoneCode?: string;
+  logoVector?: { ds: string[]; width: number; height: number } | null;
 };
 
 type CartContextValue = {

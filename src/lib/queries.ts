@@ -166,7 +166,7 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
          supplier:suppliers ( business_name ),
          images:product_images ( id, url, sort_order ),
          techniques:product_print_techniques ( id, technique, extra_price, is_default ),
-         zones:product_print_zones ( id, label, width_mm, height_mm, max_chars_per_line, max_lines, corners_pct, image_id ),
+         zones:product_print_zones ( id, label, width_mm, height_mm, max_chars_per_line, max_lines, corners_pct, image_id, sort_order, extra_price ),
          variants:product_variants ( id, label, sku, price_delta, image_url, sort_order )`
       )
       .eq("slug", productSlug)
@@ -203,10 +203,15 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
         : "silhouette") as "reference" | "silhouette",
     };
   });
-  const zones = (p.zones ?? []).map((z) => ({
-    ...z,
-    corners_pct: (z.corners_pct as { x: number; y: number }[] | null) ?? [],
-  }));
+  // Sorted so index 0 is always the primary area (sort_order 0) — the
+  // nested embed above carries no ordering guarantee of its own.
+  const zones = (p.zones ?? [])
+    .slice()
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((z) => ({
+      ...z,
+      corners_pct: (z.corners_pct as { x: number; y: number }[] | null) ?? [],
+    }));
   const variants = (p.variants ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
 
   return {
@@ -254,7 +259,7 @@ export async function getRelatedProducts(
          id, slug, name, factory_price, min_order, lead_time_days_min, lead_time_days_max, personalizable, status,
          images:product_images ( id, url, sort_order ),
          techniques:product_print_techniques ( technique, is_default ),
-         zones:product_print_zones ( width_mm, height_mm, corners_pct, image_id )
+         zones:product_print_zones ( width_mm, height_mm, corners_pct, image_id, sort_order )
        )`
     )
     .eq("planner_id", planner.id)
@@ -267,7 +272,9 @@ export async function getRelatedProducts(
       const p = row.product!;
       const images = (p.images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
       const defaultTechnique = (p.techniques ?? []).find((t) => t.is_default) ?? p.techniques?.[0];
-      const zone = p.zones?.[0];
+      // Lowest sort_order is the primary area — this small related-product
+      // thumbnail only ever needs that one, not the optional extras.
+      const zone = (p.zones ?? []).slice().sort((a, b) => a.sort_order - b.sort_order)[0];
       // The personalization overlay's corners_pct are percentages of
       // whichever photo was picked as the print-area reference in the admin
       // tool — not necessarily the product's first/main photo. Using the

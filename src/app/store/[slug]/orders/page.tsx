@@ -11,6 +11,7 @@ type Personalization = {
   hasLogo?: boolean;
   renderUrl?: string;
   snapshotUrl?: string;
+  additionalAreas?: { label?: string }[];
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -90,6 +91,7 @@ export default async function CustomerOrdersPage() {
                           {item.quantity} × {formatUSD(item.unit_price)}
                           {p?.names ? ` · ${p.names}` : ""}
                           {p?.date ? ` · ${p.date}` : ""}
+                          {p?.additionalAreas?.length ? ` · +${p.additionalAreas.length} more area(s)` : ""}
                         </p>
                       </div>
                     </div>

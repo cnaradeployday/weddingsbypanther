@@ -47,6 +47,7 @@ function RenderCard({ label, src }: { label: string; src: string }) {
 
 export function AiRenderPanel({
   productId,
+  zoneId,
   names,
   date,
   monogram,
@@ -62,6 +63,7 @@ export function AiRenderPanel({
   onGenerated,
 }: {
   productId: string;
+  zoneId?: string | null;
   names: string;
   date: string;
   monogram: string;
@@ -112,6 +114,7 @@ export function AiRenderPanel({
           elemScale,
           elemRotationOffsetDeg: elemRotationOffset,
           imageId,
+          zoneId,
         }),
       });
       const json = await res.json();

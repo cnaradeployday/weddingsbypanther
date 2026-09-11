@@ -4,15 +4,8 @@ import { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { PrintAreaTool, type Quad } from "./PrintAreaTool";
+import { ProductAreasEditor, toAreaDrafts, type AreaDraft, type AreaInput } from "./ProductAreasEditor";
 import { STYLE_TAGS } from "@/lib/styleTags";
-
-const DEFAULT_CORNERS: Quad = [
-  { x: 30, y: 35 },
-  { x: 70, y: 35 },
-  { x: 70, y: 60 },
-  { x: 30, y: 60 },
-];
 
 function slugify(input: string) {
   const base = input
@@ -44,13 +37,7 @@ export type InitialProduct = {
   techniques: string[];
   styleTags: string[];
   relatedProductIds: string[];
-  zone: {
-    width: number;
-    height: number;
-    maxChars: number;
-    corners: Quad;
-    imageId: string | null;
-  } | null;
+  areas: AreaInput[];
   images: ExistingImage[];
   variants: {
     id: string;
@@ -120,15 +107,11 @@ export function SupplierProductForm({
   const [techniques, setTechniques] = useState<string[]>(initial?.techniques ?? ["Foil stamp"]);
   const [styleTags, setStyleTags] = useState<string[]>(initial?.styleTags ?? []);
   const [relatedIds, setRelatedIds] = useState<string[]>(initial?.relatedProductIds ?? []);
-  const [zoneWidth, setZoneWidth] = useState(initial?.zone?.width ?? 60);
-  const [zoneHeight, setZoneHeight] = useState(initial?.zone?.height ?? 30);
-  const [maxChars, setMaxChars] = useState(initial?.zone?.maxChars ?? 24);
-  const [corners, setCorners] = useState<Quad>(initial?.zone?.corners ?? DEFAULT_CORNERS);
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [existingImages, setExistingImages] = useState<ExistingImage[]>(initial?.images ?? []);
-  const [zoneImageId, setZoneImageId] = useState<string | null>(
-    initial?.zone?.imageId ?? initial?.images[0]?.id ?? null
+  const [areas, setAreas] = useState<AreaDraft[]>(
+    toAreaDrafts(initial?.areas, initial?.images?.[0]?.id ?? null)
   );
   const [variants, setVariants] = useState<VariantRow[]>(
     (initial?.variants ?? []).map((v) => ({
@@ -154,13 +137,15 @@ export function SupplierProductForm({
 
   const removeExistingImage = (id: string) => {
     setExistingImages((prev) => prev.filter((img) => img.id !== id));
-    setZoneImageId((prev) => (prev === id ? null : prev));
+    setAreas((prev) => prev.map((a) => (a.imageId === id ? { ...a, imageId: null } : a)));
   };
 
   const removePendingPhoto = (index: number) => {
     setPhotos((prev) => prev.filter((_, i) => i !== index));
     setPreviews((prev) => prev.filter((_, i) => i !== index));
-    setZoneImageId((prev) => (prev === `pending:${index}` ? null : prev));
+    setAreas((prev) =>
+      prev.map((a) => (a.imageId === `pending:${index}` ? { ...a, imageId: null } : a))
+    );
   };
 
   const addVariant = () => setVariants((prev) => [...prev, newVariantRow()]);
@@ -304,20 +289,25 @@ export function SupplierProductForm({
       );
     }
 
-    if (personalizable) {
-      const resolvedZoneImageId = zoneImageId?.startsWith("pending:")
-        ? pendingIdByIndex.get(Number(zoneImageId.split(":")[1])) ?? null
-        : zoneImageId;
-      await supabase.from("product_print_zones").insert({
-        product_id: productId,
-        label: "Zone 1",
-        width_mm: zoneWidth,
-        height_mm: zoneHeight,
-        max_chars_per_line: maxChars,
-        max_lines: 2,
-        corners_pct: corners,
-        image_id: resolvedZoneImageId,
-      });
+    if (personalizable && areas.length > 0) {
+      const resolveImageId = (imageId: string | null) =>
+        imageId?.startsWith("pending:")
+          ? pendingIdByIndex.get(Number(imageId.split(":")[1])) ?? null
+          : imageId;
+      await supabase.from("product_print_zones").insert(
+        areas.map((area, index) => ({
+          product_id: productId,
+          label: area.label.trim() || (index === 0 ? "Main area" : `Area ${index + 1}`),
+          width_mm: area.width,
+          height_mm: area.height,
+          max_chars_per_line: area.maxChars,
+          max_lines: 2,
+          corners_pct: area.corners,
+          image_id: resolveImageId(area.imageId),
+          sort_order: index,
+          extra_price: index === 0 ? 0 : area.extraPrice,
+        }))
+      );
     }
 
     const namedVariants = variants.filter((v) => v.label.trim());
@@ -575,89 +565,16 @@ export function SupplierProductForm({
       </div>
 
       <div className="rounded-xl border border-line bg-white p-6 space-y-5">
-        <p className="text-xs uppercase tracking-wide text-muted">Print area</p>
+        <p className="text-xs uppercase tracking-wide text-muted">Print areas</p>
         {personalizable ? (
-          <div>
-            {existingImages.length + previews.length > 1 && (
-              <div className="mb-3">
-                <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-                  Reference photo for the print area
-                </label>
-                <div className="flex gap-2">
-                  {existingImages.map((img) => (
-                    <button
-                      key={img.id}
-                      type="button"
-                      onClick={() => setZoneImageId(img.id)}
-                      className={`relative h-14 w-14 rounded-lg overflow-hidden border-2 ${
-                        zoneImageId === img.id ? "border-terracotta" : "border-transparent"
-                      }`}
-                    >
-                      <Image src={img.url} alt="" fill className="object-cover" />
-                    </button>
-                  ))}
-                  {previews.map((src, i) => (
-                    <button
-                      key={src}
-                      type="button"
-                      onClick={() => setZoneImageId(`pending:${i}`)}
-                      className={`relative h-14 w-14 rounded-lg overflow-hidden border-2 ${
-                        zoneImageId === `pending:${i}` ? "border-terracotta" : "border-transparent"
-                      }`}
-                    >
-                      <Image src={src} alt="" fill className="object-cover" unoptimized />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <p className="text-xs uppercase tracking-wide text-muted mb-2">
-              Drag the shape to move it, drag any corner to reshape it (useful when the surface is at
-              an angle in the photo)
-            </p>
-            <PrintAreaTool
-              imageUrl={
-                (zoneImageId?.startsWith("pending:")
-                  ? previews[Number(zoneImageId.split(":")[1])]
-                  : existingImages.find((i) => i.id === zoneImageId)?.url) ??
-                existingImages[0]?.url ??
-                previews[0] ??
-                null
-              }
-              corners={corners}
-              onChange={setCorners}
-              sizeLabel={`${zoneWidth} × ${zoneHeight}mm`}
-            />
-            <div className="grid grid-cols-3 gap-3 mt-3">
-              <div>
-                <label className="text-xs text-muted block mb-1">Width (mm)</label>
-                <input
-                  type="number"
-                  value={zoneWidth}
-                  onChange={(e) => setZoneWidth(Number(e.target.value))}
-                  className="w-full rounded-lg border border-line px-3 py-2 focus:outline-none focus:border-dark"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted block mb-1">Height (mm)</label>
-                <input
-                  type="number"
-                  value={zoneHeight}
-                  onChange={(e) => setZoneHeight(Number(e.target.value))}
-                  className="w-full rounded-lg border border-line px-3 py-2 focus:outline-none focus:border-dark"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted block mb-1">Max chars/line</label>
-                <input
-                  type="number"
-                  value={maxChars}
-                  onChange={(e) => setMaxChars(Number(e.target.value))}
-                  className="w-full rounded-lg border border-line px-3 py-2 focus:outline-none focus:border-dark"
-                />
-              </div>
-            </div>
-          </div>
+          <ProductAreasEditor
+            areas={areas}
+            onChange={setAreas}
+            images={[
+              ...existingImages,
+              ...previews.map((src, i) => ({ id: `pending:${i}`, url: src })),
+            ]}
+          />
         ) : (
           <p className="text-sm text-muted">This product isn&apos;t personalizable, so it has no print area.</p>
         )}

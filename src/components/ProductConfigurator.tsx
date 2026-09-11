@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { formatUSD } from "@/lib/format";
 import { applyMarkup } from "@/lib/format";
-import { useCart } from "@/lib/cart";
+import { useCart, type AreaPersonalization } from "@/lib/cart";
 import { createClient } from "@/lib/supabase/client";
 import { techniqueInkColor } from "@/lib/printTechniqueColors";
 import { MONOGRAM_OPTIONS, monogramSvgInner } from "@/lib/monograms";
@@ -72,6 +72,7 @@ type Zone = {
   height_mm: number | null;
   corners_pct: { x: number; y: number }[];
   image_id: string | null;
+  extra_price: number;
 };
 
 // The live CSS preview shows the bounding box of the (possibly angled/
@@ -87,6 +88,29 @@ function boundingBox(corners: { x: number; y: number }[]) {
 
 type ElemKey = "logo" | "monogram" | "names" | "date";
 type ElemPos = { x: number; y: number };
+
+// Everything about a print area's personalization that's specific to that
+// one area — a shopper who adds a secondary/tertiary area gets a fresh,
+// independent design for it rather than reusing whatever's on the primary
+// area, since the two areas usually differ in size/shape and often call for
+// a different logo entirely. Kept out of the DB row shape (Zone) itself:
+// this is only ever in-memory, on-page state, snapshotted per zone id while
+// the shopper switches between areas.
+type ZoneDesign = {
+  names: string;
+  date: string;
+  monogram: string;
+  frame: string;
+  textFont: string;
+  logoFile: File | null;
+  logoPreview: string | null;
+  inkColor: string;
+  colorTextInput: string;
+  positions: Record<ElemKey, ElemPos>;
+  elemScale: Record<ElemKey, number>;
+  elemRotationOffset: Record<ElemKey, number>;
+  elemOrder: ElemKey[];
+};
 
 // Direct-manipulation resize/rotate handles shared by all four
 // personalization elements: drag the corner icon to scale (uniformly,
@@ -405,11 +429,107 @@ export function ProductConfigurator({
   const [latestRender, setLatestRender] = useState<{
     imageDataUrl: string;
     contextImageDataUrl: string | null;
+    zoneId: string;
   } | null>(null);
 
-  const zone = product.zones[0];
+  const primaryZone = product.zones[0];
+  // Which print area the shopper is currently viewing/personalizing. The
+  // primary area is always included in the order; secondary/tertiary ones
+  // (selectedExtraZoneIds) are additive add-ons the shopper opts into, each
+  // with its own surcharge and its own independent design (see ZoneDesign
+  // above) — switching areas doesn't discard what was configured elsewhere.
+  const [activeZoneId, setActiveZoneId] = useState(primaryZone?.id ?? "");
+  const [selectedExtraZoneIds, setSelectedExtraZoneIds] = useState<Set<string>>(new Set());
+  const zoneDesignsRef = useRef<Record<string, ZoneDesign>>({});
+  const zone = product.zones.find((z) => z.id === activeZoneId) ?? primaryZone;
   const zoneImageIndex = zone?.image_id ? product.images.findIndex((i) => i.id === zone.image_id) : -1;
   const [activeImage, setActiveImage] = useState(zoneImageIndex >= 0 ? zoneImageIndex : 0);
+
+  // Fresh, unconfigured design for a print area the shopper hasn't visited
+  // yet — same placeholder/default values the component itself starts with,
+  // minus the cross-page handoff (that only ever applies to the area the
+  // shopper actually landed on).
+  const makeDefaultDesign = useCallback(
+    (): ZoneDesign => ({
+      names: isMerchandise ? "Your Company" : "Amelia & Ravi",
+      date: isMerchandise ? "" : "2026-06-14",
+      monogram: "",
+      frame: "",
+      textFont: isMerchandise ? "montserrat" : DEFAULT_TEXT_FONT,
+      logoFile: null,
+      logoPreview: null,
+      inkColor: "#1a1a1a",
+      colorTextInput: "",
+      positions: DEFAULT_POSITIONS,
+      elemScale: DEFAULT_SCALES,
+      elemRotationOffset: DEFAULT_ROTATIONS,
+      elemOrder: ["logo", "monogram", "names", "date"],
+    }),
+    [isMerchandise]
+  );
+
+  // Switches which print area is active: snapshots the outgoing area's
+  // current on-screen design so it isn't lost, then loads the incoming
+  // area's own saved design (or a fresh one if this is the first visit to
+  // it) and jumps the displayed photo to that area's own reference image.
+  const switchActiveZone = (newZoneId: string) => {
+    if (newZoneId === activeZoneId) return;
+    zoneDesignsRef.current[activeZoneId] = {
+      names,
+      date,
+      monogram,
+      frame,
+      textFont,
+      logoFile,
+      logoPreview,
+      inkColor,
+      colorTextInput,
+      positions,
+      elemScale,
+      elemRotationOffset,
+      elemOrder,
+    };
+    const next = zoneDesignsRef.current[newZoneId] ?? makeDefaultDesign();
+    setNames(next.names);
+    setDate(next.date);
+    setMonogram(next.monogram);
+    setFrame(next.frame);
+    setTextFont(next.textFont);
+    setLogoFile(next.logoFile);
+    setLogoPreview(next.logoPreview);
+    setInkColor(next.inkColor);
+    setColorTextInput(next.colorTextInput);
+    setPositions(next.positions);
+    setElemScale(next.elemScale);
+    setElemRotationOffset(next.elemRotationOffset);
+    setElemOrder(next.elemOrder);
+    setActiveElem(null);
+    setActiveZoneId(newZoneId);
+
+    const newZone = product.zones.find((z) => z.id === newZoneId);
+    if (newZone?.image_id) {
+      const idx = product.images.findIndex((img) => img.id === newZone.image_id);
+      if (idx >= 0) setActiveImage(idx);
+    }
+  };
+
+  // Toggles a secondary/tertiary area's inclusion in this order — adding
+  // one also switches to it so the shopper can personalize it immediately;
+  // removing one falls back to viewing the primary area.
+  const toggleExtraZone = (zoneId: string) => {
+    const wasSelected = selectedExtraZoneIds.has(zoneId);
+    setSelectedExtraZoneIds((prev) => {
+      const next = new Set(prev);
+      if (wasSelected) next.delete(zoneId);
+      else next.add(zoneId);
+      return next;
+    });
+    if (wasSelected) {
+      if (activeZoneId === zoneId && primaryZone) switchActiveZone(primaryZone.id);
+    } else {
+      switchActiveZone(zoneId);
+    }
+  };
 
   const [zoneRef, zoneSize] = useElementSize<HTMLDivElement>();
   // Measures the full photo container (not just the zone sub-box) so the
@@ -874,7 +994,9 @@ export function ProductConfigurator({
 
   const basePrice = product.factoryPrice + (variant?.price_delta ?? 0);
   const unitPriceWithVariant = applyMarkup(basePrice, product.markupPct);
-  const unitPriceWithTechnique = unitPriceWithVariant + (technique?.extra_price ?? 0);
+  const extraAreas = product.zones.filter((z) => selectedExtraZoneIds.has(z.id));
+  const areasExtraPrice = extraAreas.reduce((sum, z) => sum + z.extra_price, 0);
+  const unitPriceWithTechnique = unitPriceWithVariant + (technique?.extra_price ?? 0) + areasExtraPrice;
   const total = unitPriceWithTechnique * quantity;
   const productionTime = leadTimeRange(product.leadTimeMin, product.leadTimeMax);
 
@@ -930,36 +1052,41 @@ export function ProductConfigurator({
   // render/snapshot capture either way, since a sample is exactly the
   // customer's current configuration, just forced to a single piece with
   // its own flat setup fee instead of the product's usual quantity rules.
-  const submitToCart = async (sample: boolean) => {
-    if (sample) setAddingSample(true);
-    else setAddingToCart(true);
-
-    // If the customer generated an AI render for this exact configuration,
-    // persist it to storage so it isn't lost once the tab closes — the
-    // planner/supplier/admin need to see it later against the real order.
+  // Builds one print area's render/snapshot fields — shared by the primary
+  // area and every additional one the shopper added, since each needs the
+  // same capture against its own design and its own reference photo.
+  const buildAreaResult = async (
+    client: ReturnType<typeof createClient>,
+    uploadBase: string,
+    zoneId: string,
+    design: ZoneDesign,
+    precomputedLogoVector?: { ds: string[]; width: number; height: number } | null
+  ) => {
     let renderUrl: string | undefined;
     let renderContextUrl: string | undefined;
-    const client = createClient();
-    const uploadBase = `${product.plannerSlug}/${product.id}/${crypto.randomUUID()}`;
-    if (latestRender) {
+    // Only whichever area the AI render was actually generated for gets it
+    // — the AI preview is an explicit, rate-limited action the shopper
+    // triggers per area, never auto-run for every area on Add to Cart.
+    if (latestRender && latestRender.zoneId === zoneId) {
       try {
         const productBlob = await dataUrlToBlob(latestRender.imageDataUrl);
         const { error: uploadError } = await client.storage
           .from("personalization-renders")
-          .upload(`${uploadBase}-product.png`, productBlob, { contentType: "image/png" });
+          .upload(`${uploadBase}-${zoneId}-product.png`, productBlob, { contentType: "image/png" });
         if (!uploadError) {
-          renderUrl = client.storage.from("personalization-renders").getPublicUrl(`${uploadBase}-product.png`)
-            .data.publicUrl;
+          renderUrl = client.storage
+            .from("personalization-renders")
+            .getPublicUrl(`${uploadBase}-${zoneId}-product.png`).data.publicUrl;
         }
         if (latestRender.contextImageDataUrl) {
           const contextBlob = await dataUrlToBlob(latestRender.contextImageDataUrl);
           const { error: contextError } = await client.storage
             .from("personalization-renders")
-            .upload(`${uploadBase}-context.png`, contextBlob, { contentType: "image/png" });
+            .upload(`${uploadBase}-${zoneId}-context.png`, contextBlob, { contentType: "image/png" });
           if (!contextError) {
             renderContextUrl = client.storage
               .from("personalization-renders")
-              .getPublicUrl(`${uploadBase}-context.png`).data.publicUrl;
+              .getPublicUrl(`${uploadBase}-${zoneId}-context.png`).data.publicUrl;
           }
         }
       } catch {
@@ -968,40 +1095,47 @@ export function ProductConfigurator({
     }
 
     // Always capture a plain (non-AI) snapshot of exactly what the customer
-    // configured — photo, text, positions, technique — so the supplier and
-    // admin have a visual record even when the customer skipped the
-    // optional AI preview. Reuse the AI render if one was already made
-    // (it's the same configuration, already uploaded).
+    // configured for this area — photo, text, positions, technique — so the
+    // supplier and admin have a visual record even when the customer
+    // skipped the optional AI preview. Reuse the AI render if one was
+    // already made for this area (it's the same configuration, already
+    // uploaded).
     let snapshotUrl: string | undefined = renderUrl;
-    const hasPersonalizationContent = !!(names.trim() || date.trim() || monogram.trim() || logoFile);
-    if (!snapshotUrl && product.personalizable && zone && hasPersonalizationContent) {
+    const hasContent = !!(design.names.trim() || design.date.trim() || design.monogram.trim() || design.logoFile);
+    if (!snapshotUrl && product.personalizable && hasContent) {
       try {
-        const logoDataUrl = effectiveLogoDataUrl ?? undefined;
+        const logoDataUrl =
+          design.logoPreview && singleColorFillMode === "silhouette"
+            ? await recolorLogoToSolid(design.logoPreview, design.inkColor).catch(() => design.logoPreview!)
+            : design.logoPreview ?? undefined;
+        const zoneRow = product.zones.find((z) => z.id === zoneId);
         const res = await fetch("/api/personalization-snapshot", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             productId: product.id,
-            names,
-            date,
-            monogram,
-            frame,
-            textFont,
+            zoneId,
+            imageId: zoneRow?.image_id ?? undefined,
+            names: design.names,
+            date: design.date,
+            monogram: design.monogram,
+            frame: design.frame,
+            textFont: design.textFont,
             logoDataUrl,
-            positions,
-            elemScale,
-            elemRotationOffsetDeg: elemRotationOffset,
+            positions: design.positions,
+            elemScale: design.elemScale,
+            elemRotationOffsetDeg: design.elemRotationOffset,
           }),
         });
         if (res.ok) {
           const json = await res.json();
           const blob = await dataUrlToBlob(json.imageDataUrl);
+          const path = `${uploadBase}-${zoneId}-snapshot.png`;
           const { error: uploadError } = await client.storage
             .from("personalization-renders")
-            .upload(`${uploadBase}-snapshot.png`, blob, { contentType: "image/png" });
+            .upload(path, blob, { contentType: "image/png" });
           if (!uploadError) {
-            snapshotUrl = client.storage.from("personalization-renders").getPublicUrl(`${uploadBase}-snapshot.png`)
-              .data.publicUrl;
+            snapshotUrl = client.storage.from("personalization-renders").getPublicUrl(path).data.publicUrl;
           }
         }
       } catch {
@@ -1009,14 +1143,123 @@ export function ProductConfigurator({
       }
     }
 
+    // The logo's traced outline — needed for the print-ready export
+    // regardless of technique, same as the live logoVector effect above.
+    // Reuse the currently-active area's already-fetched vector (it started
+    // tracing as soon as that logo was picked, see the effect above) rather
+    // than re-requesting it; any other area fetches fresh here.
+    let logoVector = precomputedLogoVector ?? null;
+    if (precomputedLogoVector === undefined && design.logoPreview) {
+      try {
+        const res = await fetch("/api/vectorize-logo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ logoDataUrl: design.logoPreview }),
+        });
+        const json = res.ok ? await res.json() : null;
+        logoVector = json && json.ds ? json : null;
+      } catch {
+        logoVector = null;
+      }
+    }
+
+    return { renderUrl, renderContextUrl, snapshotUrl, logoVector };
+  };
+
+  const submitToCart = async (sample: boolean) => {
+    if (sample) setAddingSample(true);
+    else setAddingToCart(true);
+
+    const client = createClient();
+    const uploadBase = `${product.plannerSlug}/${product.id}/${crypto.randomUUID()}`;
+
+    // Every zone's design, including whatever's live on screen right now
+    // for the currently active one — zoneDesignsRef only has the *other*
+    // zones' saved snapshots, since the active one lives in plain state.
+    const liveDesign: ZoneDesign = {
+      names,
+      date,
+      monogram,
+      frame,
+      textFont,
+      logoFile,
+      logoPreview,
+      inkColor,
+      colorTextInput,
+      positions,
+      elemScale,
+      elemRotationOffset,
+      elemOrder,
+    };
+    const allDesigns: Record<string, ZoneDesign> = { ...zoneDesignsRef.current, [activeZoneId]: liveDesign };
+
+    const primaryDesign = (primaryZone && allDesigns[primaryZone.id]) ?? liveDesign;
+    const primaryResult = primaryZone
+      ? await buildAreaResult(
+          client,
+          uploadBase,
+          primaryZone.id,
+          primaryDesign,
+          primaryZone.id === activeZoneId ? logoVector : undefined
+        )
+      : { renderUrl: undefined, renderContextUrl: undefined, snapshotUrl: undefined, logoVector: null };
+
+    const additionalAreas: AreaPersonalization[] = [];
+    for (const z of extraAreas) {
+      const design = allDesigns[z.id] ?? makeDefaultDesign();
+      const result = await buildAreaResult(
+        client,
+        uploadBase,
+        z.id,
+        design,
+        z.id === activeZoneId ? logoVector : undefined
+      );
+      additionalAreas.push({
+        zoneId: z.id,
+        label: z.label,
+        extraPrice: z.extra_price,
+        names: design.names,
+        date: design.date,
+        monogram: design.monogram,
+        frame: design.frame,
+        textFont: design.textFont,
+        positions: design.positions,
+        elemScale: design.elemScale,
+        elemRotationOffset: design.elemRotationOffset,
+        hasLogo: !!design.logoFile,
+        renderUrl: result.renderUrl,
+        snapshotUrl: result.snapshotUrl,
+        inkColorHex: technique?.singleColorInk ? design.inkColor : undefined,
+        inkPantoneCode: technique?.singleColorInk ? nearestPantone(design.inkColor)?.code : undefined,
+        logoVector: result.logoVector,
+      });
+    }
+
+    // Primary area's own reference photo — kept stable for the cart line's
+    // thumbnail regardless of which area happened to be on screen when the
+    // customer clicked Add to Cart.
+    const primaryImageIndex = primaryZone?.image_id
+      ? product.images.findIndex((i) => i.id === primaryZone.image_id)
+      : -1;
+    const primaryDisplayImage =
+      variant?.image_url ?? product.images[primaryImageIndex >= 0 ? primaryImageIndex : 0]?.url ?? product.images[0]?.url;
+
+    const extraKeyPart = extraAreas
+      .map((z) => {
+        const d = allDesigns[z.id] ?? makeDefaultDesign();
+        return `${z.id}:${d.names}:${d.date}:${d.monogram}:${d.frame}`;
+      })
+      .sort()
+      .join("|");
+
     addItem({
       key: sample
-        ? `${product.id}:${variantId}:${names}:${date}:${monogram}:${frame}:${techniqueId}:sample:${crypto.randomUUID()}`
-        : `${product.id}:${variantId}:${names}:${date}:${monogram}:${frame}:${techniqueId}`,
+        ? `${product.id}:${variantId}:${primaryDesign.names}:${primaryDesign.date}:${primaryDesign.monogram}:${primaryDesign.frame}:${techniqueId}:${extraKeyPart}:sample:${crypto.randomUUID()}`
+        : `${product.id}:${variantId}:${primaryDesign.names}:${primaryDesign.date}:${primaryDesign.monogram}:${primaryDesign.frame}:${techniqueId}:${extraKeyPart}`,
       productId: product.id,
       slug: product.slug,
       name: variant ? `${product.name} — ${variant.label}` : product.name,
-      image: displayImage ?? null,
+      image: primaryDisplayImage ?? null,
       unitPrice: unitPriceWithTechnique,
       quantity: sample ? 1 : quantity,
       minOrder: sample ? 1 : product.minOrder,
@@ -1028,22 +1271,24 @@ export function ProductConfigurator({
       sampleFee: sample ? SAMPLE_FEE : undefined,
       personalization: product.personalizable
         ? {
-            names,
-            date,
-            monogram,
-            frame,
-            textFont,
+            zoneId: primaryZone?.id,
+            names: primaryDesign.names,
+            date: primaryDesign.date,
+            monogram: primaryDesign.monogram,
+            frame: primaryDesign.frame,
+            textFont: primaryDesign.textFont,
             technique: technique?.technique,
-            positions,
-            elemScale,
-            elemRotationOffset,
-            hasLogo: !!logoFile,
-            renderUrl,
-            renderContextUrl,
-            snapshotUrl,
-            inkColorHex: technique?.singleColorInk ? inkColor : undefined,
-            inkPantoneCode: technique?.singleColorInk ? pantoneMatch?.code : undefined,
-            logoVector,
+            positions: primaryDesign.positions,
+            elemScale: primaryDesign.elemScale,
+            elemRotationOffset: primaryDesign.elemRotationOffset,
+            hasLogo: !!primaryDesign.logoFile,
+            renderUrl: primaryResult.renderUrl,
+            renderContextUrl: primaryResult.renderContextUrl,
+            snapshotUrl: primaryResult.snapshotUrl,
+            inkColorHex: technique?.singleColorInk ? primaryDesign.inkColor : undefined,
+            inkPantoneCode: technique?.singleColorInk ? nearestPantone(primaryDesign.inkColor)?.code : undefined,
+            logoVector: primaryResult.logoVector,
+            additionalAreas: additionalAreas.length > 0 ? additionalAreas : undefined,
           }
         : undefined,
     });
@@ -1313,6 +1558,39 @@ export function ProductConfigurator({
 
         {product.personalizable && (
           <div className="space-y-6 mb-8">
+            {product.zones.length > 1 && (
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted mb-2">Print area</p>
+                <div className="flex flex-wrap gap-2">
+                  {product.zones.map((z, i) => {
+                    const isPrimary = i === 0;
+                    const isActive = z.id === activeZoneId;
+                    const isIncluded = isPrimary || selectedExtraZoneIds.has(z.id);
+                    return (
+                      <button
+                        key={z.id}
+                        type="button"
+                        onClick={() => (isPrimary ? switchActiveZone(z.id) : toggleExtraZone(z.id))}
+                        className={`px-3 py-2 rounded-lg text-sm border ${
+                          isActive ? "border-dark bg-cream" : isIncluded ? "border-dark/60" : "border-line"
+                        }`}
+                      >
+                        {z.label}
+                        {!isPrimary && (
+                          <span className="text-xs text-muted ml-1">
+                            {isIncluded
+                              ? "✓"
+                              : z.extra_price > 0
+                              ? `+${formatUSD(z.extra_price)}`
+                              : "+ add"}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <CollapsibleSection title="Your logo" optional>
               <div className="flex items-center gap-3">
                 <label className="relative h-16 w-16 rounded-lg overflow-hidden border border-line cursor-pointer bg-white shrink-0">
@@ -1568,7 +1846,9 @@ export function ProductConfigurator({
 
         {product.personalizable && product.aiRenderEnabled && (
           <AiRenderPanel
+            key={activeZoneId}
             productId={product.id}
+            zoneId={zone?.id}
             names={names}
             date={date}
             monogram={monogram}
@@ -1581,7 +1861,7 @@ export function ProductConfigurator({
             images={product.images}
             defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
             unlimited={unlimitedRenders}
-            onGenerated={setLatestRender}
+            onGenerated={(result) => setLatestRender({ ...result, zoneId: activeZoneId })}
           />
         )}
 

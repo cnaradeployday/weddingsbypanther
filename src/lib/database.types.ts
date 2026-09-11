@@ -435,6 +435,7 @@ export type Database = {
       product_print_zones: {
         Row: {
           corners_pct: Json
+          extra_price: number
           height_mm: number | null
           height_pct: number
           id: string
@@ -446,11 +447,13 @@ export type Database = {
           pos_y_pct: number
           product_id: string | null
           rotation_deg: number
+          sort_order: number
           width_mm: number | null
           width_pct: number
         }
         Insert: {
           corners_pct?: Json
+          extra_price?: number
           height_mm?: number | null
           height_pct?: number
           id?: string
@@ -462,11 +465,13 @@ export type Database = {
           pos_y_pct?: number
           product_id?: string | null
           rotation_deg?: number
+          sort_order?: number
           width_mm?: number | null
           width_pct?: number
         }
         Update: {
           corners_pct?: Json
+          extra_price?: number
           height_mm?: number | null
           height_pct?: number
           id?: string
@@ -478,6 +483,7 @@ export type Database = {
           pos_y_pct?: number
           product_id?: string | null
           rotation_deg?: number
+          sort_order?: number
           width_mm?: number | null
           width_pct?: number
         }

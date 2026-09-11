@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { AdminProductForm } from "@/components/AdminProductForm";
 import type { InitialProduct } from "@/components/SupplierProductForm";
+import type { AreaInput } from "@/components/ProductAreasEditor";
 import type { Quad } from "@/components/PrintAreaTool";
 
 export default async function EditAdminProductPage({
@@ -25,7 +26,7 @@ export default async function EditAdminProductPage({
           `*, category:categories(business_type),
            images:product_images(id, url, sort_order),
            techniques:product_print_techniques(technique),
-           zones:product_print_zones(width_mm, height_mm, max_chars_per_line, corners_pct, image_id),
+           zones:product_print_zones(label, width_mm, height_mm, max_chars_per_line, corners_pct, image_id, sort_order, extra_price),
            variants:product_variants(id, label, sku, price_delta, stock_on_hand, image_url, sort_order)`
         )
         .eq("id", id)
@@ -46,7 +47,18 @@ export default async function EditAdminProductPage({
     .neq("id", id)
     .order("name");
 
-  const zone = product.zones?.[0];
+  const areas: AreaInput[] = (product.zones ?? [])
+    .slice()
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((zone) => ({
+      label: zone.label,
+      width: zone.width_mm ?? 60,
+      height: zone.height_mm ?? 30,
+      maxChars: zone.max_chars_per_line ?? 24,
+      corners: zone.corners_pct as Quad,
+      imageId: zone.image_id,
+      extraPrice: zone.extra_price,
+    }));
   const initial: InitialProduct = {
     id: product.id,
     name: product.name,
@@ -66,15 +78,7 @@ export default async function EditAdminProductPage({
     techniques: (product.techniques ?? []).map((t) => t.technique),
     styleTags: product.style_tags ?? [],
     relatedProductIds: product.related_product_ids ?? [],
-    zone: zone
-      ? {
-          width: zone.width_mm ?? 60,
-          height: zone.height_mm ?? 30,
-          maxChars: zone.max_chars_per_line ?? 24,
-          corners: zone.corners_pct as Quad,
-          imageId: zone.image_id,
-        }
-      : null,
+    areas,
     images: (product.images ?? [])
       .slice()
       .sort((a, b) => a.sort_order - b.sort_order)

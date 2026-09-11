@@ -126,6 +126,7 @@ export async function POST(req: NextRequest) {
   const elemScale: Partial<Record<ElemKey, number>> = body?.elemScale ?? {};
   const elemRotationOffsetDeg: Partial<Record<ElemKey, number>> = body?.elemRotationOffsetDeg ?? {};
   const requestedImageId: string | undefined = body?.imageId;
+  const requestedZoneId: string | undefined = body?.zoneId;
 
   if (!productId) {
     return NextResponse.json({ error: "Missing productId." }, { status: 400 });
@@ -137,7 +138,7 @@ export async function POST(req: NextRequest) {
       .select(
         `name,
          images:product_images ( id, url, sort_order ),
-         zones:product_print_zones ( image_id, corners_pct, width_mm, height_mm ),
+         zones:product_print_zones ( id, image_id, corners_pct, width_mm, height_mm, sort_order ),
          techniques:product_print_techniques ( technique, is_default )`
       )
       .eq("id", productId)
@@ -150,7 +151,10 @@ export async function POST(req: NextRequest) {
   }
 
   const images = (product.images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
-  const rawZone = product.zones?.[0];
+  const zones = (product.zones ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
+  // Which print area this render targets — a shopper's added secondary/
+  // tertiary area has its own geometry, distinct from the primary.
+  const rawZone = zones.find((z) => z.id === requestedZoneId) ?? zones[0];
   const zone: PrintZone | undefined = rawZone
     ? { corners_pct: (rawZone.corners_pct as Corner[] | null) ?? [], width_mm: rawZone.width_mm, height_mm: rawZone.height_mm }
     : undefined;

@@ -4,7 +4,10 @@ import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { formatUSD } from "@/lib/format";
 import { OrderStatusSelect } from "@/components/OrderStatusSelect";
 
-type Personalization = {
+type AreaPersonalization = {
+  zoneId?: string;
+  label?: string;
+  extraPrice?: number;
   names?: string;
   date?: string;
   monogram?: string;
@@ -19,8 +22,117 @@ type Personalization = {
   logoVector?: { ds: string[] } | null;
 };
 
-function hasOutlinableText(p: Personalization | null): boolean {
+type Personalization = AreaPersonalization & {
+  additionalAreas?: AreaPersonalization[];
+};
+
+function hasOutlinableText(p: AreaPersonalization | null | undefined): boolean {
   return Boolean(p?.names?.trim() || p?.date?.trim() || p?.monogram?.trim() || p?.logoVector?.ds?.length);
+}
+
+// One print area's fulfillment detail (design + preview + print-file
+// downloads) — used for the primary area and, below it, each additional
+// area the shopper added, each with its own independent design.
+function SupplierAreaDetail({ area, itemId, zoneId }: { area: AreaPersonalization; itemId: string; zoneId?: string }) {
+  const previewUrl = area.snapshotUrl ?? area.renderUrl;
+  const zoneQuery = zoneId ? `zone=${zoneId}` : "";
+  const withZone = (extra?: string) => [zoneQuery, extra].filter(Boolean).join("&");
+  return (
+    <div className="rounded-lg bg-cream p-4 text-sm flex flex-wrap gap-4">
+      <div className="space-y-1 min-w-[180px]">
+        <p className="text-xs uppercase tracking-wide text-muted mb-1">
+          {area.label || "Personalization"}
+          {area.extraPrice ? ` (+${formatUSD(area.extraPrice)})` : ""}
+        </p>
+        {area.names && (
+          <p>
+            <span className="text-muted">Text:</span> {area.names}
+          </p>
+        )}
+        {area.date && (
+          <p>
+            <span className="text-muted">Date:</span> {area.date}
+          </p>
+        )}
+        {area.monogram && (
+          <p>
+            <span className="text-muted">Monogram:</span> {area.monogram}
+          </p>
+        )}
+        {area.technique && (
+          <p>
+            <span className="text-muted">Technique:</span> {area.technique}
+          </p>
+        )}
+        {area.sizeScale && area.sizeScale !== 1 && (
+          <p>
+            <span className="text-muted">Text size:</span> {Math.round(area.sizeScale * 100)}%
+          </p>
+        )}
+        {area.hasLogo && (
+          <p>
+            <span className="text-muted">Logo:</span> Customer uploaded a custom logo
+          </p>
+        )}
+        {area.inkColorHex && (
+          <p className="flex items-center gap-1.5">
+            <span className="text-muted">Ink color:</span>
+            <span
+              className="inline-block h-3 w-3 rounded-full border border-line shrink-0"
+              style={{ backgroundColor: area.inkColorHex }}
+            />
+            {area.inkColorHex.toUpperCase()}
+            {area.inkPantoneCode && ` · ${area.inkPantoneCode} (approx.)`}
+          </p>
+        )}
+      </div>
+      {(previewUrl || area.renderContextUrl) && (
+        <div>
+          <p className="text-xs uppercase tracking-wide text-muted mb-2">
+            {area.snapshotUrl && !area.renderUrl ? "Configuration snapshot" : "AI render"}
+          </p>
+          <div className="flex gap-3">
+            {previewUrl && (
+              <a
+                href={previewUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="relative h-24 w-24 rounded-lg overflow-hidden border border-line bg-white shrink-0"
+              >
+                <Image src={previewUrl} alt="Configured product" fill className="object-contain" unoptimized />
+              </a>
+            )}
+            {area.renderContextUrl && (
+              <a
+                href={area.renderContextUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="relative h-24 w-24 rounded-lg overflow-hidden border border-line bg-white shrink-0"
+              >
+                <Image src={area.renderContextUrl} alt="Wedding context render" fill className="object-contain" unoptimized />
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+      {hasOutlinableText(area) && (
+        <div className="flex items-end gap-2">
+          <a
+            href={`/api/order-items/${itemId}/print-file${zoneQuery ? `?${withZone()}` : ""}`}
+            className="rounded-full border border-terracotta px-4 py-2 text-xs font-medium text-terracotta hover:bg-terracotta hover:text-white transition"
+          >
+            Download print file (SVG, outlined)
+          </a>
+          <a
+            href={`/api/order-items/${itemId}/print-file?${withZone("format=pdf")}`}
+            className="rounded-full border border-terracotta px-4 py-2 text-xs font-medium text-terracotta hover:bg-terracotta hover:text-white transition"
+          >
+            Download PDF (outlined)
+          </a>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default async function SupplierOrdersPage() {
@@ -65,7 +177,6 @@ export default async function SupplierOrdersPage() {
         <div className="space-y-4">
           {items.map((item) => {
             const p = (item.personalization ?? null) as Personalization | null;
-            const previewUrl = p?.snapshotUrl ?? p?.renderUrl;
             return (
               <div key={item.id} className="rounded-xl border border-line bg-white p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
@@ -91,96 +202,11 @@ export default async function SupplierOrdersPage() {
                 </div>
 
                 {p && (
-                  <div className="rounded-lg bg-cream p-4 text-sm flex flex-wrap gap-4">
-                    <div className="space-y-1 min-w-[180px]">
-                      <p className="text-xs uppercase tracking-wide text-muted mb-1">Personalization</p>
-                      {p.names && (
-                        <p>
-                          <span className="text-muted">Text:</span> {p.names}
-                        </p>
-                      )}
-                      {p.date && (
-                        <p>
-                          <span className="text-muted">Date:</span> {p.date}
-                        </p>
-                      )}
-                      {p.monogram && (
-                        <p>
-                          <span className="text-muted">Monogram:</span> {p.monogram}
-                        </p>
-                      )}
-                      {p.technique && (
-                        <p>
-                          <span className="text-muted">Technique:</span> {p.technique}
-                        </p>
-                      )}
-                      {p.sizeScale && p.sizeScale !== 1 && (
-                        <p>
-                          <span className="text-muted">Text size:</span> {Math.round(p.sizeScale * 100)}%
-                        </p>
-                      )}
-                      {p.hasLogo && (
-                        <p>
-                          <span className="text-muted">Logo:</span> Customer uploaded a custom logo
-                        </p>
-                      )}
-                      {p.inkColorHex && (
-                        <p className="flex items-center gap-1.5">
-                          <span className="text-muted">Ink color:</span>
-                          <span
-                            className="inline-block h-3 w-3 rounded-full border border-line shrink-0"
-                            style={{ backgroundColor: p.inkColorHex }}
-                          />
-                          {p.inkColorHex.toUpperCase()}
-                          {p.inkPantoneCode && ` · ${p.inkPantoneCode} (approx.)`}
-                        </p>
-                      )}
-                    </div>
-                    {(previewUrl || p.renderContextUrl) && (
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-muted mb-2">
-                          {p.snapshotUrl && !p.renderUrl ? "Configuration snapshot" : "AI render"}
-                        </p>
-                        <div className="flex gap-3">
-                          {previewUrl && (
-                            <a
-                              href={previewUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="relative h-24 w-24 rounded-lg overflow-hidden border border-line bg-white shrink-0"
-                            >
-                              <Image src={previewUrl} alt="Configured product" fill className="object-contain" unoptimized />
-                            </a>
-                          )}
-                          {p.renderContextUrl && (
-                            <a
-                              href={p.renderContextUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="relative h-24 w-24 rounded-lg overflow-hidden border border-line bg-white shrink-0"
-                            >
-                              <Image src={p.renderContextUrl} alt="Wedding context render" fill className="object-contain" unoptimized />
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    {hasOutlinableText(p) && (
-                      <div className="flex items-end gap-2">
-                        <a
-                          href={`/api/order-items/${item.id}/print-file`}
-                          className="rounded-full border border-terracotta px-4 py-2 text-xs font-medium text-terracotta hover:bg-terracotta hover:text-white transition"
-                        >
-                          Download print file (SVG, outlined)
-                        </a>
-                        <a
-                          href={`/api/order-items/${item.id}/print-file?format=pdf`}
-                          className="rounded-full border border-terracotta px-4 py-2 text-xs font-medium text-terracotta hover:bg-terracotta hover:text-white transition"
-                        >
-                          Download PDF (outlined)
-                        </a>
-                      </div>
-                    )}
+                  <div className="space-y-3">
+                    <SupplierAreaDetail area={p} itemId={item.id} zoneId={p.zoneId} />
+                    {(p.additionalAreas ?? []).map((area, i) => (
+                      <SupplierAreaDetail key={area.zoneId ?? i} area={area} itemId={item.id} zoneId={area.zoneId} />
+                    ))}
                   </div>
                 )}
               </div>

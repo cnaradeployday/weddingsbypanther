@@ -6,18 +6,23 @@ import { buildOutlineArtworkSvg, type LogoVector, type OutlineLayoutParams } fro
 import { buildOutlinePdfDocument } from "@/lib/personalizationOutlinePdf";
 import type { ElemKey, Corner } from "@/lib/personalizationComposite";
 
-type Personalization = {
+type AreaPersonalization = {
+  zoneId: string;
   names?: string;
   date?: string;
   monogram?: string;
   frame?: string;
   textFont?: string;
-  technique?: string;
   inkColorHex?: string;
   logoVector?: LogoVector | null;
   elemScale?: Partial<Record<ElemKey, number>>;
   elemRotationOffset?: Partial<Record<ElemKey, number>>;
   positions?: Record<string, Corner>;
+};
+
+type Personalization = AreaPersonalization & {
+  technique?: string;
+  additionalAreas?: AreaPersonalization[];
 };
 
 // Print shops need the names/date/frame as real vector outlines, not the
@@ -32,11 +37,17 @@ type Personalization = {
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const format = request.nextUrl.searchParams.get("format") === "pdf" ? "pdf" : "svg";
+  // Which print area to export — defaults to the primary one. A shopper's
+  // additional area has its own geometry and its own design, kept in
+  // personalization.additionalAreas rather than the flat top-level fields.
+  const requestedZoneId = request.nextUrl.searchParams.get("zone");
   const supabase = await createClient();
 
   const { data: item, error } = await supabase
     .from("order_items")
-    .select(`id, personalization, product:products ( zones:product_print_zones ( width_mm, height_mm, corners_pct ) )`)
+    .select(
+      `id, personalization, product:products ( zones:product_print_zones ( id, width_mm, height_mm, corners_pct, sort_order ) )`
+    )
     .eq("id", id)
     .maybeSingle();
 
@@ -45,11 +56,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   const p = (item.personalization ?? null) as Personalization | null;
-  if (!p || !(p.names?.trim() || p.date?.trim() || p.monogram?.trim() || p.logoVector?.ds?.length)) {
+  const matchedExtraArea = requestedZoneId
+    ? p?.additionalAreas?.find((a) => a.zoneId === requestedZoneId)
+    : undefined;
+  const area: AreaPersonalization | undefined = matchedExtraArea ?? p ?? undefined;
+  if (!area || !(area.names?.trim() || area.date?.trim() || area.monogram?.trim() || area.logoVector?.ds?.length)) {
     return NextResponse.json({ error: "This item has no personalization to outline" }, { status: 400 });
   }
 
-  const zone = item.product?.zones?.[0];
+  const zones = (item.product?.zones ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
+  const zone = area.zoneId ? zones.find((z) => z.id === area.zoneId) : zones[0];
   const canvasW = zone?.width_mm ?? 60;
   const canvasH = zone?.height_mm ?? 30;
   const zoneCorners = (zone?.corners_pct as Corner[] | null) ?? undefined;
@@ -58,16 +74,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     canvasW,
     canvasH,
     zoneCorners,
-    positions: p.positions ?? {},
-    names: p.names ?? "",
-    date: p.date ?? "",
-    monogram: p.monogram ?? "",
-    frame: p.frame ?? "",
-    textFont: p.textFont ?? "",
-    inkColor: p.inkColorHex ?? techniqueInkColor(p.technique),
-    logoVector: p.logoVector ?? null,
-    fontScale: p.elemScale,
-    rotations: p.elemRotationOffset,
+    positions: area.positions ?? {},
+    names: area.names ?? "",
+    date: area.date ?? "",
+    monogram: area.monogram ?? "",
+    frame: area.frame ?? "",
+    textFont: area.textFont ?? "",
+    inkColor: area.inkColorHex ?? techniqueInkColor(p?.technique),
+    logoVector: area.logoVector ?? null,
+    fontScale: area.elemScale,
+    rotations: area.elemRotationOffset,
   };
 
   if (format === "pdf") {

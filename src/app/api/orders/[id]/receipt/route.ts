@@ -39,6 +39,7 @@ type Personalization = {
   snapshotUrl?: string;
   inkColorHex?: string;
   inkPantoneCode?: string;
+  additionalAreas?: { label?: string }[];
 };
 
 function personalizationSummary(p: Personalization | null): string | null {
@@ -46,7 +47,10 @@ function personalizationSummary(p: Personalization | null): string | null {
   const ink = p.inkColorHex
     ? `Ink ${p.inkColorHex.toUpperCase()}${p.inkPantoneCode ? ` (${p.inkPantoneCode} approx.)` : ""}`
     : null;
-  const parts = [p.names, p.date, p.technique, ink].filter(Boolean);
+  const extraAreas = p.additionalAreas?.length
+    ? `+${p.additionalAreas.length} more area${p.additionalAreas.length > 1 ? "s" : ""}`
+    : null;
+  const parts = [p.names, p.date, p.technique, ink, extraAreas].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
