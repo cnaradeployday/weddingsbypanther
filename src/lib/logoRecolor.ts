@@ -36,3 +36,37 @@ export function recolorLogoToSolid(dataUrl: string, hex: string): Promise<string
     img.src = dataUrl;
   });
 }
+
+// Removes a flat white background from the logo exactly as uploaded, with no
+// recoloring — a standalone action for a customer/admin who wants a
+// transparent logo under a full-color technique, independent of the
+// automatic silhouette flattening a single-color technique triggers via
+// recolorLogoToSolid above. keyOutWhiteBackground already no-ops when the
+// image has no white to key or already carries real transparency, so this
+// safely returns the original data URL unchanged in that case.
+export function removeLogoBackground(dataUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Canvas not supported"));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const changed = keyOutWhiteBackground(imageData.data);
+      if (!changed) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.putImageData(imageData, 0, 0);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}

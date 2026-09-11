@@ -14,7 +14,9 @@ import { TEXT_FONTS, DEFAULT_TEXT_FONT, textFontStyle } from "@/lib/textFonts";
 import { fitTextFontSize, estimateTextWidth, textLineCount } from "@/lib/textFit";
 import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
 import { dataUrlToBlob } from "@/lib/dataUrl";
-import { recolorLogoToSolid } from "@/lib/logoRecolor";
+import { recolorLogoToSolid, removeLogoBackground } from "@/lib/logoRecolor";
+import { detectLogoColors, type DetectedColor } from "@/lib/logoColors";
+import { estimatePrintDpi, MIN_PRINT_DPI } from "@/lib/logoPrintQuality";
 import { nearestPantone, resolveColorInput } from "@/lib/pantoneMatch";
 import { leadTimeRange } from "@/lib/leadTime";
 import type { BusinessType } from "@/lib/businessType";
@@ -313,6 +315,9 @@ export function ProductConfigurator({
   const [colorTextInput, setColorTextInput] = useState("");
   const [logoSilhouetteUrl, setLogoSilhouetteUrl] = useState<string | null>(null);
   const [logoVector, setLogoVector] = useState<{ ds: string[]; width: number; height: number } | null>(null);
+  const [removingBackground, setRemovingBackground] = useState(false);
+  const [logoNaturalSize, setLogoNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [detectedColors, setDetectedColors] = useState<DetectedColor[]>([]);
 
   // The handoff logo is only a data URL (its File object couldn't survive
   // navigation) — reconstitute it as a real File async so it can still be
@@ -648,6 +653,23 @@ export function ProductConfigurator({
     return (logoBoxPx / zoneSize.width) * 100;
   }, [zone, zoneSize.width, zoneSize.height, elemScale.logo]);
 
+  // The logo's real-world footprint width in mm, on the actual product —
+  // same 45%-of-the-smaller-dimension math as logoWidthPct above, just
+  // expressed in mm instead of a % of the rendered box, so it can be
+  // compared against the uploaded file's real pixel count for a print-DPI
+  // estimate below.
+  const logoWidthMm = useMemo(() => {
+    if (!zone?.width_mm || !zone?.height_mm) return null;
+    const smallerMm = Math.min(zone.width_mm, zone.height_mm);
+    return smallerMm * 0.45 * elemScale.logo;
+  }, [zone, elemScale.logo]);
+
+  const logoPrintDpi = useMemo(() => {
+    if (!logoNaturalSize || !logoWidthMm) return null;
+    return estimatePrintDpi(logoNaturalSize.width, logoWidthMm);
+  }, [logoNaturalSize, logoWidthMm]);
+  const logoIsLowRes = logoPrintDpi !== null && logoPrintDpi < MIN_PRINT_DPI;
+
   const startElemAdjust = useCallback(
     (key: ElemKey, mode: "resize" | "rotate") => (e: React.PointerEvent) => {
       e.preventDefault();
@@ -800,6 +822,55 @@ export function ProductConfigurator({
       cancelled = true;
     };
   }, [logoPreview]);
+
+  // Measures the uploaded logo's real pixel dimensions (for the print-quality
+  // check below) and samples its color palette, so the customer/back office
+  // can see both without any extra action — recomputed whenever a new logo
+  // (or a background-removed version of the same logo) is set.
+  useEffect(() => {
+    if (!logoPreview) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLogoNaturalSize(null);
+      setDetectedColors([]);
+      return;
+    }
+    let cancelled = false;
+    const img = new window.Image();
+    img.onload = () => {
+      if (!cancelled) setLogoNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.src = logoPreview;
+    // Key out a flat white background first (without touching the visible
+    // logoPreview) so a flattened upload with no real alpha doesn't count
+    // its own background as a detected "color" — removeLogoBackground
+    // already no-ops when there's nothing to key or real alpha exists.
+    removeLogoBackground(logoPreview)
+      .then((keyed) => detectLogoColors(keyed))
+      .then((colors) => {
+        if (!cancelled) setDetectedColors(colors);
+      })
+      .catch(() => {
+        if (!cancelled) setDetectedColors([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [logoPreview]);
+
+  const handleRemoveBackground = async () => {
+    if (!logoPreview) return;
+    setRemovingBackground(true);
+    try {
+      const result = await removeLogoBackground(logoPreview);
+      setLogoPreview(result);
+      const blob = await dataUrlToBlob(result);
+      setLogoFile(new File([blob], logoFile?.name ?? "logo.png", { type: blob.type || "image/png" }));
+    } catch {
+      // Best-effort — leave the logo as-is if the canvas step fails.
+    } finally {
+      setRemovingBackground(false);
+    }
+  };
 
   const basePrice = product.factoryPrice + (variant?.price_delta ?? 0);
   const unitPriceWithVariant = applyMarkup(basePrice, product.markupPct);
@@ -1255,16 +1326,51 @@ export function ProductConfigurator({
                   <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
                 </label>
                 {logoPreview && (
-                  <button
-                    type="button"
-                    onClick={clearLogo}
-                    className="text-xs text-terracotta-dark font-medium"
-                  >
-                    Remove
-                  </button>
+                  <div className="flex flex-col items-start gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleRemoveBackground}
+                      disabled={removingBackground}
+                      className="text-xs text-dark font-medium underline underline-offset-2 disabled:opacity-50"
+                    >
+                      {removingBackground ? "Removing background…" : "Remove background"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearLogo}
+                      className="text-xs text-terracotta-dark font-medium"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 )}
               </div>
               {logoPreview && logoSizeLabel && <p className="text-xs text-muted mt-1">{logoSizeLabel}</p>}
+              {logoPreview && logoIsLowRes && (
+                <p className="text-xs text-red-600 mt-2">
+                  ⚠️ This logo is low resolution for the size it&apos;s being printed at — it may look
+                  blurry or pixelated on the finished product.
+                </p>
+              )}
+              {logoPreview && detectedColors.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-line">
+                  <p className="text-xs text-muted mb-1.5">Colors detected in this logo</p>
+                  <div className="flex flex-wrap gap-2">
+                    {detectedColors.map((c) => (
+                      <span
+                        key={c.hex}
+                        className="inline-flex items-center gap-1.5 text-[11px] rounded-full border border-line px-2 py-1"
+                      >
+                        <span
+                          className="h-3 w-3 rounded-full border border-line shrink-0"
+                          style={{ backgroundColor: c.hex }}
+                        />
+                        {c.hex.toUpperCase()} · {c.pct}%
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               {logoPreview && technique?.singleColorInk && (
                 <div className="flex items-center gap-3 mt-3 pt-3 border-t border-line">
                   <input
