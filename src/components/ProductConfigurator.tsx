@@ -506,11 +506,15 @@ export function ProductConfigurator({
     setActiveElem(null);
     setActiveZoneId(newZoneId);
 
+    // Always jump to this area's own photo — even one with no explicit
+    // reference image_id set still needs to reset to the default (first)
+    // photo, or switching away from an area that does have one and back
+    // would leave the previous area's photo on screen.
     const newZone = product.zones.find((z) => z.id === newZoneId);
-    if (newZone?.image_id) {
-      const idx = product.images.findIndex((img) => img.id === newZone.image_id);
-      if (idx >= 0) setActiveImage(idx);
-    }
+    const newImageIndex = newZone?.image_id
+      ? product.images.findIndex((img) => img.id === newZone.image_id)
+      : -1;
+    setActiveImage(newImageIndex >= 0 ? newImageIndex : 0);
   };
 
   // Toggles a secondary/tertiary area's inclusion in this order — adding
