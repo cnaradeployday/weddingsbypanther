@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { getStorefrontProduct, getRelatedProducts } from "@/lib/queries";
 import { getSessionProfile } from "@/lib/supabase/server";
@@ -21,34 +22,40 @@ export default async function ProductPage({
   const unlimitedRenders = session?.profile.role === "admin";
 
   return (
-    <ProductConfigurator
-      unlimitedRenders={unlimitedRenders}
-      product={{
-        id: product.id,
-        slug: product.slug,
-        name: product.name,
-        description: product.description,
-        categoryName: product.categoryName,
-        supplierName: product.supplierName,
-        unitPrice: product.unitPrice,
-        minOrder: product.minOrder,
-        popularQty: product.popularQty,
-        allowSample: product.allowSample,
-        leadTimeMin: product.leadTimeMin,
-        leadTimeMax: product.leadTimeMax,
-        personalizable: product.personalizable,
-        factoryPrice: product.factoryPrice,
-        markupPct: product.markupPct,
-        images: product.images,
-        techniques: product.techniques,
-        zones: product.zones,
-        variants: product.variants,
-        plannerSlug: slug,
-        plannerId: product.planner.id,
-        businessType: isBusinessType(product.planner.business_type) ? product.planner.business_type : "wedding",
-        aiRenderEnabled: product.planner.ai_render_enabled,
-      }}
-      relatedProducts={relatedProducts}
-    />
+    // ProductConfigurator reads/writes the `step` query param
+    // (03-purchase-flow.md FLOW-01) via useSearchParams, which Next.js
+    // recommends wrapping in Suspense so a static build of this route
+    // doesn't fail — see node_modules/next/dist/docs/.../use-search-params.md.
+    <Suspense fallback={null}>
+      <ProductConfigurator
+        unlimitedRenders={unlimitedRenders}
+        product={{
+          id: product.id,
+          slug: product.slug,
+          name: product.name,
+          description: product.description,
+          categoryName: product.categoryName,
+          supplierName: product.supplierName,
+          unitPrice: product.unitPrice,
+          minOrder: product.minOrder,
+          popularQty: product.popularQty,
+          allowSample: product.allowSample,
+          leadTimeMin: product.leadTimeMin,
+          leadTimeMax: product.leadTimeMax,
+          personalizable: product.personalizable,
+          factoryPrice: product.factoryPrice,
+          markupPct: product.markupPct,
+          images: product.images,
+          techniques: product.techniques,
+          zones: product.zones,
+          variants: product.variants,
+          plannerSlug: slug,
+          plannerId: product.planner.id,
+          businessType: isBusinessType(product.planner.business_type) ? product.planner.business_type : "wedding",
+          aiRenderEnabled: product.planner.ai_render_enabled,
+        }}
+        relatedProducts={relatedProducts}
+      />
+    </Suspense>
   );
 }

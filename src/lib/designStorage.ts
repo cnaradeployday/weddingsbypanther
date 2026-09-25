@@ -68,7 +68,10 @@ export type SavedDesign = {
 
 // Lightweight metadata for a "pick a saved design" list (FLOW-02) — doesn't
 // require loading every version's full payload (logo included) just to show
-// a row.
+// a row. The text-only fields below (activeZoneId/textFont/namesColor/
+// namesPosition) are cheap enough to include here too — just enough for the
+// recovery modal's small recognition thumbnail (DesignThumbnail), without
+// loading every version's logo.
 export type SavedDesignSummary = {
   productId: string;
   versionId: string;
@@ -76,6 +79,10 @@ export type SavedDesignSummary = {
   techniqueId: string;
   quantity: number;
   names: string;
+  activeZoneId: string;
+  textFont: string;
+  namesColor: string;
+  namesPosition: SavedElemPos;
 };
 
 export interface DesignStorageBackend {
@@ -101,6 +108,10 @@ function toSummary(design: SavedDesign): SavedDesignSummary {
     techniqueId: design.techniqueId,
     quantity: design.quantity,
     names: primary?.names ?? "",
+    activeZoneId: design.activeZoneId,
+    textFont: primary?.textFont ?? "",
+    namesColor: primary?.namesStyle.color ?? "#1a1a1a",
+    namesPosition: primary?.positions.names ?? { x: 50, y: 65 },
   };
 }
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { formatUSD, applyMarkup } from "@/lib/format";
 import { useCart, type AreaPersonalization } from "@/lib/cart";
 import { createClient } from "@/lib/supabase/client";
@@ -12,21 +12,22 @@ import { FRAME_TEMPLATES, frameSvgInner } from "@/lib/frameTemplates";
 import { DEFAULT_TEXT_FONT, textFontStyle } from "@/lib/textFonts";
 import { fitTextFontSize, estimateTextWidth, textLineCount } from "@/lib/textFit";
 import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
-import { isNamesValid, NAMES_REQUIRED_MESSAGE } from "@/lib/personalizationValidation";
+import { isNamesValid } from "@/lib/personalizationValidation";
 import { computeDefaultPositions } from "@/lib/defaultDesignLayout";
-import { designStorage, LATEST_VERSION_ID } from "@/lib/designStorage";
+import { designStorage, type SavedDesign, type SavedDesignSummary } from "@/lib/designStorage";
 import { formatPrintDate } from "@/lib/printDate";
 import { parseQuantityInput, isQuantityBelowMinimum } from "@/lib/quantityValidation";
 import { dataUrlToBlob } from "@/lib/dataUrl";
 import { recolorLogoToSolid, removeLogoBackgroundByMode } from "@/lib/logoRecolor";
 import { detectLogoColors, type DetectedColor } from "@/lib/logoColors";
-import { estimatePrintDpi, MIN_PRINT_DPI } from "@/lib/logoPrintQuality";
+import { estimatePrintDpi, estimateLogoFootprintMm, MIN_PRINT_DPI } from "@/lib/logoPrintQuality";
 import { nearestPantone, resolveColorInput } from "@/lib/pantoneMatch";
 import { leadTimeRange } from "@/lib/leadTime";
 import { letterSpacingEm, lineHeightMultiplier, curveTextPath } from "@/lib/textStyle";
 import { computeSnap, boxSnapTargets } from "@/lib/snapping";
 import { alignHorizontal, alignVertical, type HorizontalAlign, type VerticalAlign } from "@/lib/alignment";
 import { useQrSvg } from "@/lib/useQrSvg";
+import { computeValidationIssues } from "@/lib/purchaseFlowValidation";
 import type { BusinessType } from "@/lib/businessType";
 import {
   boundingBox,
@@ -45,6 +46,7 @@ import {
   DEFAULT_SCALES,
   DEFAULT_ROTATIONS,
   DEFAULT_TEXT_STYLE,
+  ELEM_LABELS,
   isElemPresent,
   type Design,
   type ElemKey,
@@ -61,6 +63,11 @@ import { LogoCropModal } from "./customizer/LogoCropModal";
 import { QrToolPanel } from "./customizer/QrToolPanel";
 import { useKeyboardShortcuts } from "./customizer/useKeyboardShortcuts";
 import { KeyboardShortcutsHelp } from "./customizer/KeyboardShortcutsHelp";
+import { StepIndicator, MobileStepIndicator, type FlowStep } from "./customizer/StepIndicator";
+import { RecoveryModal } from "./customizer/RecoveryModal";
+import { PreviewModal, type PreviewPhoto, type PreviewAiRender } from "./customizer/PreviewModal";
+import { OptionsStep } from "./customizer/OptionsStep";
+import { ReviewStep } from "./customizer/ReviewStep";
 
 // Approximates how each print technique looks on the manual (non-AI) live
 // preview — a plain color swap for printed techniques, plus a debossed
@@ -115,7 +122,9 @@ const SAMPLE_FEE = 50;
 // forever after the first switch, freezing the measured size (and
 // everything derived from it: font sizes, the cm labels) at whatever it
 // happened to be right before that first unmount. A callback ref instead
-// re-attaches a fresh observer on every mount, including remounts.
+// re-attaches a fresh observer on every mount, including remounts — which
+// also makes it safe for the same canvas to mount/unmount across
+// 03-purchase-flow.md's Design/Options/Review steps.
 function useElementSize<T extends HTMLElement>() {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const observerRef = useRef<ResizeObserver | null>(null);
@@ -196,9 +205,36 @@ export function ProductConfigurator({
   };
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { addItem } = useCart();
   const isMerchandise = product.businessType === "merchandise";
   const primaryZone = product.zones[0];
+
+  // FLOW-01: the current step lives in the URL (?step=design|options|review)
+  // so reloading keeps it and browser back/forward moves between steps —
+  // derived straight from the URL rather than duplicated into local state.
+  const step = (searchParams.get("step") as FlowStep | null) ?? "design";
+  const goToStep = useCallback(
+    (next: FlowStep) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("step", next);
+      router.push(`${pathname}?${params.toString()}`, { scroll: true });
+    },
+    [pathname, router, searchParams]
+  );
+  // Every step the shopper has already visited stays clickable in the step
+  // indicator with a check mark (the least presumptuous reading of
+  // "completed steps show a check" — this package's own rule is to never
+  // invent a stricter definition than the doc gives). Adjusted directly
+  // during render (React's own pattern for "state that depends on a prop
+  // changing") rather than in an effect, which would cause an extra render.
+  const [visitedSteps, setVisitedSteps] = useState<Set<FlowStep>>(() => new Set([step]));
+  const [stepTrackedFor, setStepTrackedFor] = useState(step);
+  if (step !== stepTrackedFor) {
+    setStepTrackedFor(step);
+    setVisitedSteps((prev) => new Set(prev).add(step));
+  }
 
   // If the customer arrived here by tapping a suggested product on another
   // product's page, pick up the names/date/monogram/logo they'd already
@@ -258,7 +294,15 @@ export function ProductConfigurator({
   // resizing hits the print area's limit (BUG-10) or a rotation had to
   // shrink the element to keep it inside the print area (BUG-03).
   const [elemNotice, setElemNotice] = useState<{ key: ElemKey; message: string } | null>(null);
-  const [summaryOpen, setSummaryOpen] = useState(true);
+  // FLOW-06's "Fix in the design" link: which element to badge on the
+  // canvas after jumping back from a Review alert. Cleared automatically —
+  // it's a transient pointer, not part of the design itself.
+  const [badgeElem, setBadgeElem] = useState<ElemKey | null>(null);
+  useEffect(() => {
+    if (!badgeElem) return;
+    const timeout = setTimeout(() => setBadgeElem(null), 6000);
+    return () => clearTimeout(timeout);
+  }, [badgeElem]);
 
   // EDIT-03 canvas view state — never part of the undoable design (zoom
   // doesn't change what's printed).
@@ -271,6 +315,15 @@ export function ProductConfigurator({
     setActiveElem(key);
     if (key) setActiveTool(key);
   }, []);
+
+  const fixInDesign = useCallback(
+    (elemKey: string) => {
+      goToStep("design");
+      selectElem(elemKey as ElemKey);
+      setBadgeElem(elemKey as ElemKey);
+    },
+    [goToStep, selectElem]
+  );
 
   const bringToFront = useCallback((key: ElemKey) => {
     setDesignCoalescing((prev) =>
@@ -337,6 +390,14 @@ export function ProductConfigurator({
     contextImageDataUrl: string | null;
     zoneId: string;
   } | null>(null);
+  // Every AI render generated this visit (not just the latest) — feeds the
+  // views rail and the Preview modal (FLOW-05: "Generated images appear in
+  // the views rail and in the preview modal").
+  const [aiRenders, setAiRenders] = useState<
+    { imageDataUrl: string; contextImageDataUrl: string | null; zoneId: string }[]
+  >([]);
+  const [showAiViewModal, setShowAiViewModal] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
 
   // Which print area the shopper is currently viewing/personalizing. The
   // primary area is always included in the order; secondary/tertiary ones
@@ -386,43 +447,86 @@ export function ProductConfigurator({
     }
   };
 
-  // BUG-01: restores the last design saved for this product, so reloading
-  // or re-entering the URL picks up where the shopper left off instead of
-  // the sample design. A handoff from another product's page is a more
-  // recent, explicit signal than an old saved draft, so it still takes
-  // priority, unchanged from today's behavior — this only restores when
-  // there's no handoff.
-  const hasRestoredRef = useRef(false);
+  // FLOW-02: which saved version this session is editing/autosaving to.
+  // Null means "not decided yet" — either the recovery modal is pending a
+  // choice, or (when there's nothing to recover) a fresh id is minted
+  // immediately, silently. Autosave is gated on this being set (below), so
+  // nothing is written until the decision is made.
+  const [versionId, setVersionId] = useState<string | null>(() =>
+    !product.personalizable || handoff ? crypto.randomUUID() : null
+  );
+  const [recoveryVersions, setRecoveryVersions] = useState<SavedDesignSummary[]>([]);
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"saving" | "saved">("saved");
+
+  const applyVersion = useCallback(
+    (saved: SavedDesign) => {
+      const resolvedActiveZoneId =
+        saved.activeZoneId && product.zones.some((z) => z.id === saved.activeZoneId)
+          ? saved.activeZoneId
+          : primaryZone?.id ?? "";
+      zoneDesignsRef.current = saved.zones as unknown as Record<string, Design>;
+      const activeDesign = saved.zones[resolvedActiveZoneId] as unknown as Design | undefined;
+      if (activeDesign) replaceDesign(activeDesign);
+      setActiveZoneId(resolvedActiveZoneId);
+      setSelectedExtraZoneIds(
+        new Set(saved.selectedExtraZoneIds.filter((id) => product.zones.some((z) => z.id === id)))
+      );
+      if (product.techniques.some((t) => t.id === saved.techniqueId)) setTechniqueId(saved.techniqueId);
+      if (product.variants.some((v) => v.id === saved.variantId)) setVariantId(saved.variantId);
+      if (Number.isFinite(saved.quantity) && saved.quantity > 0) updateQuantity(saved.quantity);
+      const resolvedZone = product.zones.find((z) => z.id === resolvedActiveZoneId);
+      const newImageIndex = resolvedZone?.image_id
+        ? product.images.findIndex((img) => img.id === resolvedZone.image_id)
+        : -1;
+      setActiveImage(newImageIndex >= 0 ? newImageIndex : 0);
+    },
+    [product.zones, product.techniques, product.variants, product.images, primaryZone, replaceDesign]
+  );
+
+  const handleContinueVersion = useCallback(
+    async (chosenVersionId: string) => {
+      const saved = await designStorage.load(product.id, chosenVersionId);
+      if (saved) applyVersion(saved);
+      setVersionId(chosenVersionId);
+      setShowRecoveryModal(false);
+    },
+    [applyVersion, product.id]
+  );
+  const handleStartNewVersion = useCallback(() => {
+    setVersionId(crypto.randomUUID());
+    setShowRecoveryModal(false);
+  }, []);
+  const handleCloseRecoveryModal = useCallback(() => {
+    // "Close button: closes the modal and continues with the most recent
+    // version" (FLOW-02) — recoveryVersions[0] since list() returns newest
+    // first.
+    if (recoveryVersions[0]) handleContinueVersion(recoveryVersions[0].versionId);
+    else handleStartNewVersion();
+  }, [recoveryVersions, handleContinueVersion, handleStartNewVersion]);
+
+  // BUG-01 + FLOW-02: on mount, list every saved version for this product.
+  // None → this is a first visit, mint a fresh version id silently (today's
+  // behavior). One or more → show the recovery modal instead of silently
+  // picking one, so a shopper with several drafts isn't dropped into
+  // whichever happens to be newest without being asked. A handoff from
+  // another product's page is a more recent, explicit signal than any old
+  // saved draft, so it still takes priority, unchanged.
   useEffect(() => {
-    if (!product.personalizable || handoff) {
-      hasRestoredRef.current = true;
-      return;
-    }
+    // A handoff or a non-personalizable product needs no recovery check at
+    // all — handled as part of the initial state below instead, so this
+    // effect only ever does async work (listing IndexedDB), never a
+    // synchronous setState.
+    if (!product.personalizable || handoff) return;
     let cancelled = false;
-    designStorage.load(product.id, LATEST_VERSION_ID).then((saved) => {
+    designStorage.list(product.id).then((versions) => {
       if (cancelled) return;
-      if (saved) {
-        const resolvedActiveZoneId =
-          saved.activeZoneId && product.zones.some((z) => z.id === saved.activeZoneId)
-            ? saved.activeZoneId
-            : primaryZone?.id ?? "";
-        zoneDesignsRef.current = saved.zones as unknown as Record<string, Design>;
-        const activeDesign = saved.zones[resolvedActiveZoneId] as unknown as Design | undefined;
-        if (activeDesign) replaceDesign(activeDesign);
-        setActiveZoneId(resolvedActiveZoneId);
-        setSelectedExtraZoneIds(
-          new Set(saved.selectedExtraZoneIds.filter((id) => product.zones.some((z) => z.id === id)))
-        );
-        if (product.techniques.some((t) => t.id === saved.techniqueId)) setTechniqueId(saved.techniqueId);
-        if (product.variants.some((v) => v.id === saved.variantId)) setVariantId(saved.variantId);
-        if (Number.isFinite(saved.quantity) && saved.quantity > 0) updateQuantity(saved.quantity);
-        const resolvedZone = product.zones.find((z) => z.id === resolvedActiveZoneId);
-        const newImageIndex = resolvedZone?.image_id
-          ? product.images.findIndex((img) => img.id === resolvedZone.image_id)
-          : -1;
-        setActiveImage(newImageIndex >= 0 ? newImageIndex : 0);
+      if (versions.length === 0) {
+        setVersionId(crypto.randomUUID());
+        return;
       }
-      hasRestoredRef.current = true;
+      setRecoveryVersions(versions);
+      setShowRecoveryModal(true);
     });
     return () => {
       cancelled = true;
@@ -433,23 +537,31 @@ export function ProductConfigurator({
 
   // BUG-01: saves the current design shortly after each change, debounced
   // so a burst of edits (typing, dragging) writes once, not per keystroke.
+  // Gated on `versionId` being decided — nothing is written while the
+  // recovery modal is still pending a choice.
   useEffect(() => {
-    if (!product.personalizable || !hasRestoredRef.current) return;
+    if (!product.personalizable || !versionId) return;
+    // Reflects the debounced autosave's own in-flight status (FLOW-01's
+    // "Saving… / Saved" indicator), not something derivable from render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSaveStatus("saving");
     const timeout = setTimeout(() => {
-      designStorage.save({
-        productId: product.id,
-        versionId: LATEST_VERSION_ID,
-        updatedAt: Date.now(),
-        activeZoneId,
-        selectedExtraZoneIds: Array.from(selectedExtraZoneIds),
-        techniqueId,
-        variantId,
-        quantity,
-        zones: { ...zoneDesignsRef.current, [activeZoneId]: design } as never,
-      });
+      designStorage
+        .save({
+          productId: product.id,
+          versionId,
+          updatedAt: Date.now(),
+          activeZoneId,
+          selectedExtraZoneIds: Array.from(selectedExtraZoneIds),
+          techniqueId,
+          variantId,
+          quantity,
+          zones: { ...zoneDesignsRef.current, [activeZoneId]: design } as never,
+        })
+        .then(() => setSaveStatus("saved"));
     }, 600);
     return () => clearTimeout(timeout);
-  }, [product.personalizable, product.id, design, activeZoneId, selectedExtraZoneIds, techniqueId, variantId, quantity]);
+  }, [product.personalizable, product.id, design, activeZoneId, selectedExtraZoneIds, techniqueId, variantId, quantity, versionId]);
 
   const [zoneRef, zoneSize] = useElementSize<HTMLDivElement>();
   const [photoRef, photoSize] = useElementSize<HTMLDivElement>();
@@ -699,11 +811,10 @@ export function ProductConfigurator({
     return (logoBoxPx / zoneSize.width) * 100;
   }, [zone, zoneSize.width, zoneSize.height, design.elemScale.logo]);
 
-  const logoWidthMm = useMemo(() => {
-    if (!zone?.width_mm || !zone?.height_mm) return null;
-    const smallerMm = Math.min(zone.width_mm, zone.height_mm);
-    return smallerMm * 0.45 * design.elemScale.logo;
-  }, [zone, design.elemScale.logo]);
+  const logoWidthMm = useMemo(
+    () => estimateLogoFootprintMm(zone, design.elemScale.logo),
+    [zone, design.elemScale.logo]
+  );
 
   const logoPrintDpi = useMemo(() => {
     if (!logoNaturalSize || !logoWidthMm) return null;
@@ -887,15 +998,11 @@ export function ProductConfigurator({
   const dateSizeCm = mmPerPx ? (dateFontPx * mmPerPx) / 10 : null;
 
   const baseQuickQuantities = [product.minOrder, product.minOrder * 2, product.minOrder * 4, product.minOrder * 8];
+  const quickQuantities = Array.from(new Set(baseQuickQuantities)).slice(0, 4);
   const popularQty = product.popularQty && product.popularQty >= product.minOrder ? product.popularQty : null;
-  const quickQuantities =
-    popularQty && !baseQuickQuantities.includes(popularQty)
-      ? [...baseQuickQuantities, popularQty].sort((a, b) => a - b)
-      : baseQuickQuantities;
 
   const handleLogoUpload = async (file: File, dataUrl: string) => {
     setDesign((prev) => ({ ...prev, logoFile: file, logoPreview: dataUrl, logoOriginalPreview: dataUrl }));
-    selectElem("logo");
   };
   const handleLogoReplace = async (file: File, dataUrl: string) => {
     setDesign((prev) => ({ ...prev, logoFile: file, logoPreview: dataUrl, logoOriginalPreview: dataUrl }));
@@ -905,11 +1012,19 @@ export function ProductConfigurator({
   };
 
   const namesValid = !product.personalizable || isNamesValid(design.names);
-  const namesErrorId = "names-required-error";
   const quantityErrorId = "quantity-minimum-error";
 
   const handleAddToCart = () => submitToCart(false);
   const handleAddSample = () => submitToCart(true);
+
+  const handleAiGenerated = useCallback(
+    (result: { imageDataUrl: string; contextImageDataUrl: string | null }) => {
+      const entry = { ...result, zoneId: activeZoneId };
+      setLatestRender(entry);
+      setAiRenders((prev) => [...prev, entry]);
+    },
+    [activeZoneId]
+  );
 
   const buildAreaResult = async (
     client: ReturnType<typeof createClient>,
@@ -1192,9 +1307,88 @@ export function ProductConfigurator({
 
   const qrSvg = useQrSvg(design.qrUrl, effectiveQrColor);
 
+  // FLOW-06's validation engine — reuses BUG-02/BUG-09's own checks. See
+  // purchaseFlowValidation.ts for why "element outside the print area,"
+  // "color not allowed for the technique," and "QR below minimum size"
+  // aren't separately re-checked here.
+  const [checklist, setChecklistRaw] = useState<{ namesCorrect: boolean; insidePrintArea: boolean; forDesign: Design }>(
+    () => ({ namesCorrect: false, insidePrintArea: false, forDesign: design })
+  );
+  // Derived, not stored: as soon as `design` changes to a new object (any
+  // real edit — useDesignReducer always returns a fresh object), the stored
+  // checklist no longer matches `forDesign`, so both items read as
+  // unconfirmed again — FLOW-06: "If the design changes after the items
+  // were checked... the checks are cleared." No effect needed to reset
+  // anything; this recomputes every render.
+  const checklistCurrent =
+    checklist.forDesign === design ? checklist : { namesCorrect: false, insidePrintArea: false, forDesign: design };
+  const toggleChecklistItem = (item: "namesCorrect" | "insidePrintArea") => {
+    setChecklistRaw((prev) => {
+      const base = prev.forDesign === design ? prev : { namesCorrect: false, insidePrintArea: false, forDesign: design };
+      return { ...base, [item]: !base[item] };
+    });
+  };
+  const checklistConfirmed = checklistCurrent.namesCorrect && checklistCurrent.insidePrintArea;
+
+  const hiddenPresentElements = (["logo", "monogram", "frame", "names", "date", "qr"] as ElemKey[])
+    .filter((k) => design.hidden[k] && isElemPresent(design, k))
+    .map((k) => ({ key: k, label: ELEM_LABELS[k] }));
+
+  const validationIssues = computeValidationIssues({
+    names: design.names,
+    quantityInput,
+    minOrder: product.minOrder,
+    checklistConfirmed,
+    hasLogo: !!design.logoPreview,
+    logoIsLowRes,
+    hiddenElements: hiddenPresentElements,
+  });
+
+  // FLOW-04: every product photo, paired with a server-rendered snapshot
+  // request when a print zone maps to it (PreviewModal fetches and caches
+  // these lazily) — a photo with no mapping is shown as-is. Computed inside
+  // the "Preview" button's click handler (an event handler, not render)
+  // since it reads `zoneDesignsRef` — refs may only be read outside of
+  // render.
+  const [previewPhotos, setPreviewPhotos] = useState<PreviewPhoto[]>([]);
+  const openPreviewModal = useCallback(() => {
+    const photos: PreviewPhoto[] = product.images.map((img) => {
+      const mappedZone = product.zones.find((z) => z.image_id === img.id);
+      if (!mappedZone) return { id: img.id, url: img.url, snapshotRequest: null };
+      const zoneDesign =
+        mappedZone.id === activeZoneId ? design : zoneDesignsRef.current[mappedZone.id] ?? makeDefaultDesign(isMerchandise, mappedZone);
+      return {
+        id: img.id,
+        url: img.url,
+        snapshotRequest: {
+          productId: product.id,
+          zoneId: mappedZone.id,
+          imageId: img.id,
+          names: zoneDesign.names,
+          date: zoneDesign.date,
+          monogram: zoneDesign.monogram,
+          frame: zoneDesign.frame,
+          textFont: zoneDesign.textFont,
+          logoDataUrl: zoneDesign.logoPreview ?? undefined,
+          positions: zoneDesign.positions,
+          elemScale: zoneDesign.elemScale,
+          elemRotationOffsetDeg: zoneDesign.elemRotationOffset,
+        },
+      };
+    });
+    setPreviewPhotos(photos);
+    setShowPreviewModal(true);
+  }, [product.images, product.zones, product.id, activeZoneId, design, isMerchandise]);
+  const previewAiRenders: PreviewAiRender[] = aiRenders.flatMap((r, i) => [
+    { label: `AI render ${i + 1} · Product`, url: r.imageDataUrl },
+    ...(r.contextImageDataUrl ? [{ label: `AI render ${i + 1} · Wedding context`, url: r.contextImageDataUrl }] : []),
+  ]);
+
   // Renders the whole editor canvas (photo + guides + grid + elements +
-  // contextual toolbar + canvas controls) — used by both the desktop and
-  // mobile layout shells below, which only differ in the chrome around it.
+  // contextual toolbar + canvas controls) — used by the Design step's
+  // desktop/mobile layouts and reused, read-only-in-spirit but not
+  // interaction-gated, as the "design always visible" preview on the
+  // Options and Review steps (FLOW-03/FLOW-06).
   const renderCanvas = () => (
     <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-[#F1ECE3] relative overflow-hidden">
       <div className="flex-1 overflow-auto">
@@ -1228,9 +1422,9 @@ export function ProductConfigurator({
                 <polygon
                   points={zonePoints}
                   fill="none"
-                  stroke="rgba(91,46,224,0.7)"
-                  strokeWidth={0.5}
-                  strokeDasharray="2.4,1.5"
+                  stroke="#B5471B"
+                  strokeWidth="0.4"
+                  strokeDasharray="2,1.5"
                   vectorEffect="non-scaling-stroke"
                 />
               </svg>
@@ -1287,6 +1481,7 @@ export function ProductConfigurator({
                     {activeElem === "logo" && !design.locked.logo && (
                       <AdjustHandles onResizeStart={startElemAdjust("logo", "resize")} onRotateStart={startElemAdjust("logo", "rotate")} notice={elemNotice?.key === "logo" ? elemNotice.message : undefined} />
                     )}
+                    {badgeElem === "logo" && <ElementBadge />}
                   </div>
                 )}
                 {design.frame && !design.hidden.frame && (
@@ -1314,6 +1509,7 @@ export function ProductConfigurator({
                     {activeElem === "frame" && !design.locked.frame && (
                       <AdjustHandles onResizeStart={startElemAdjust("frame", "resize")} onRotateStart={startElemAdjust("frame", "rotate")} notice={elemNotice?.key === "frame" ? elemNotice.message : undefined} />
                     )}
+                    {badgeElem === "frame" && <ElementBadge />}
                   </div>
                 )}
                 {design.monogram && !design.hidden.monogram && (
@@ -1340,6 +1536,7 @@ export function ProductConfigurator({
                     {activeElem === "monogram" && !design.locked.monogram && (
                       <AdjustHandles onResizeStart={startElemAdjust("monogram", "resize")} onRotateStart={startElemAdjust("monogram", "rotate")} notice={elemNotice?.key === "monogram" ? elemNotice.message : undefined} />
                     )}
+                    {badgeElem === "monogram" && <ElementBadge />}
                   </div>
                 )}
                 {design.names && !design.hidden.names && (
@@ -1374,6 +1571,7 @@ export function ProductConfigurator({
                         expandBy={design.frame ? { x: nameFontPx * 0.7, y: nameFontPx * 0.45 } : undefined}
                       />
                     )}
+                    {badgeElem === "names" && <ElementBadge />}
                   </div>
                 )}
                 {design.date && !design.hidden.date && (
@@ -1396,6 +1594,7 @@ export function ProductConfigurator({
                     {activeElem === "date" && !design.locked.date && (
                       <AdjustHandles onResizeStart={startElemAdjust("date", "resize")} onRotateStart={startElemAdjust("date", "rotate")} notice={elemNotice?.key === "date" ? elemNotice.message : undefined} />
                     )}
+                    {badgeElem === "date" && <ElementBadge />}
                   </div>
                 )}
                 {design.qrUrl && qrSvg && !design.hidden.qr && (
@@ -1417,6 +1616,7 @@ export function ProductConfigurator({
                     {activeElem === "qr" && !design.locked.qr && (
                       <AdjustHandles onResizeStart={startElemAdjust("qr", "resize")} onRotateStart={startElemAdjust("qr", "rotate")} notice={elemNotice?.key === "qr" ? elemNotice.message : undefined} />
                     )}
+                    {badgeElem === "qr" && <ElementBadge />}
                   </div>
                 )}
                 {activeElem &&
@@ -1562,122 +1762,346 @@ export function ProductConfigurator({
         />
       )}
 
+      {showRecoveryModal && (
+        <RecoveryModal
+          versions={recoveryVersions}
+          zones={product.zones}
+          images={product.images}
+          techniques={product.techniques}
+          onContinue={handleContinueVersion}
+          onStartNew={handleStartNewVersion}
+          onClose={handleCloseRecoveryModal}
+        />
+      )}
+
+      {showPreviewModal && (
+        <PreviewModal photos={previewPhotos} aiRenders={previewAiRenders} onClose={() => setShowPreviewModal(false)} />
+      )}
+
+      {showAiViewModal && product.aiRenderEnabled && (
+        <div role="dialog" aria-modal="true" aria-label="AI render preview" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl overflow-hidden max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-end p-2">
+              <button
+                type="button"
+                onClick={() => setShowAiViewModal(false)}
+                aria-label="Close"
+                className="h-11 w-11 flex items-center justify-center text-lg text-muted"
+              >
+                ×
+              </button>
+            </div>
+            <div className="px-4 pb-4">
+              <AiRenderPanel
+                key={activeZoneId}
+                productId={product.id}
+                zoneId={zone?.id}
+                names={design.names}
+                date={design.date}
+                monogram={design.monogram}
+                frame={design.frame}
+                textFont={design.textFont}
+                logoFile={design.logoFile}
+                positions={design.positions}
+                elemScale={design.elemScale}
+                elemRotationOffset={design.elemRotationOffset}
+                images={product.images}
+                defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
+                unlimited={unlimitedRenders}
+                onGenerated={handleAiGenerated}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {product.personalizable ? (
         <div className="flex flex-col border border-line rounded-2xl overflow-hidden bg-white">
-          {/* Top bar (EDIT-01) */}
-          <header className="h-16 shrink-0 flex items-center justify-between gap-3 px-4 border-b border-line bg-white">
-            <div className="flex flex-col min-w-0">
-              <span className="font-serif text-lg leading-tight truncate">{product.name}</span>
-              <span className="text-xs text-muted truncate">
-                {product.categoryName} · {product.supplierName}
-              </span>
+          {/* Top bar (EDIT-01 / FLOW-01) */}
+          <header className="flex flex-col gap-2 shrink-0 px-4 py-3 border-b border-line bg-white md:h-16 md:flex-row md:items-center md:justify-between md:gap-3 md:py-0">
+            <div className="flex items-center justify-between gap-3 md:contents">
+              <div className="flex flex-col min-w-0">
+                <span className="font-serif text-lg leading-tight truncate">{product.name}</span>
+                <span className="text-xs text-muted truncate">
+                  {product.categoryName} · {product.supplierName}
+                </span>
+              </div>
+              <MobileStepIndicator step={step} />
             </div>
+            <StepIndicator step={step} completedSteps={visitedSteps} onSelectStep={goToStep} />
             <div className="hidden md:flex items-center gap-2 text-xs text-[#2E6B47]">
               <span className="h-2 w-2 rounded-full bg-[#2E7D4F]" />
-              Saved
+              {saveStatus === "saving" ? "Saving…" : "Saved"}
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0 justify-end">
+              {step === "design" && (
+                <>
+                  <button
+                    type="button"
+                    onClick={undo}
+                    disabled={!canUndo}
+                    aria-label="Undo"
+                    className="h-11 w-11 rounded-lg border border-line flex items-center justify-center disabled:opacity-40"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M9 14L4 9l5-5" />
+                      <path d="M4 9h10a6 6 0 0 1 0 12h-3" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={redo}
+                    disabled={!canRedo}
+                    aria-label="Redo"
+                    className="h-11 w-11 rounded-lg border border-line flex items-center justify-center disabled:opacity-40"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M15 14l5-5-5-5" />
+                      <path d="M20 9H10a6 6 0 0 0 0 12h3" />
+                    </svg>
+                  </button>
+                  <KeyboardShortcutsHelp />
+                </>
+              )}
               <button
                 type="button"
-                onClick={undo}
-                disabled={!canUndo}
-                aria-label="Undo"
-                className="h-11 w-11 rounded-lg border border-line flex items-center justify-center disabled:opacity-40"
+                onClick={openPreviewModal}
+                className="h-11 px-4 rounded-lg border border-line text-sm font-medium hover:bg-cream"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M9 14L4 9l5-5" />
-                  <path d="M4 9h10a6 6 0 0 1 0 12h-3" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                onClick={redo}
-                disabled={!canRedo}
-                aria-label="Redo"
-                className="h-11 w-11 rounded-lg border border-line flex items-center justify-center disabled:opacity-40"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M15 14l5-5-5-5" />
-                  <path d="M20 9H10a6 6 0 0 0 0 12h3" />
-                </svg>
-              </button>
-              <KeyboardShortcutsHelp />
-              <button
-                type="button"
-                onClick={() => {
-                  setSummaryOpen(true);
-                  document.getElementById("summary-panel")?.scrollIntoView({ behavior: "smooth" });
-                }}
-                className="hidden md:inline-flex h-10 px-4 rounded-lg bg-terracotta text-cream-light text-sm font-medium items-center"
-              >
-                Review &amp; buy
+                Preview
               </button>
             </div>
           </header>
 
-          {/* Desktop editor body */}
-          <div className="hidden md:flex h-[70vh] min-h-[560px]">
-            <ToolRail availableTools={availableTools} activeTool={activeTool} onSelectTool={(t) => (t === "layers" ? setActiveTool("layers") : selectElem(t as ElemKey))} />
-            <div className="w-[320px] shrink-0 border-r border-line overflow-y-auto p-5">
-              {renderToolPanelContent()}
-            </div>
-            <div className="flex-1 min-w-0 relative flex">
-              {renderCanvas()}
-            </div>
-            <aside aria-label="Views" className="w-[128px] shrink-0 border-l border-line p-3 flex flex-col gap-3 overflow-y-auto">
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted">Views</span>
-              {product.images.map((img, i) => (
-                <button
-                  key={img.id}
-                  onClick={() => setActiveImage(i)}
-                  className={`p-2 rounded-lg border flex flex-col items-center gap-1.5 text-xs ${
-                    i === activeImage ? "border-terracotta bg-cream" : "border-dashed border-line"
-                  }`}
-                >
-                  <span className="relative h-[70px] w-full block">
-                    <Image src={img.url} alt="" fill className="object-contain" />
-                  </span>
-                  {i === 0 ? "Front" : `View ${i + 1}`}
-                </button>
-              ))}
-              {product.zones.length > 1 && (
-                <div className="pt-2 border-t border-line flex flex-col gap-1.5">
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">Print area</span>
-                  {product.zones.map((z, i) => {
-                    const isPrimary = i === 0;
-                    const isActive = z.id === activeZoneId;
-                    const isIncluded = isPrimary || selectedExtraZoneIds.has(z.id);
-                    return (
-                      <button
-                        key={z.id}
-                        type="button"
-                        onClick={() => (isPrimary ? switchActiveZone(z.id) : toggleExtraZone(z.id))}
-                        className={`px-2 py-1.5 rounded-lg text-[11px] border text-left ${
-                          isActive ? "border-dark bg-cream" : isIncluded ? "border-dark/60" : "border-line"
-                        }`}
-                      >
-                        {z.label}
-                        {!isPrimary && (
-                          <span className="text-muted ml-1">{isIncluded ? "✓" : z.extra_price > 0 ? `+${formatUSD(z.extra_price)}` : "+"}</span>
-                        )}
-                      </button>
-                    );
-                  })}
+          {step === "design" && (
+            <>
+              {/* Desktop editor body */}
+              <div className="hidden md:flex h-[70vh] min-h-[560px]">
+                <ToolRail availableTools={availableTools} activeTool={activeTool} onSelectTool={(t) => (t === "layers" ? setActiveTool("layers") : selectElem(t as ElemKey))} />
+                <div className="w-[320px] shrink-0 border-r border-line overflow-y-auto p-5">
+                  {renderToolPanelContent()}
                 </div>
-              )}
-            </aside>
-          </div>
+                <div className="flex-1 min-w-0 relative flex">
+                  {renderCanvas()}
+                </div>
+                <aside aria-label="Views" className="w-[128px] shrink-0 border-l border-line p-3 flex flex-col gap-3 overflow-y-auto">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted">Views</span>
+                  {product.images.map((img, i) => (
+                    <button
+                      key={img.id}
+                      onClick={() => setActiveImage(i)}
+                      className={`p-2 rounded-lg border flex flex-col items-center gap-1.5 text-xs ${
+                        i === activeImage ? "border-terracotta bg-cream" : "border-dashed border-line"
+                      }`}
+                    >
+                      <span className="relative h-[70px] w-full block">
+                        <Image src={img.url} alt="" fill className="object-contain" />
+                      </span>
+                      {i === 0 ? "Front" : `View ${i + 1}`}
+                    </button>
+                  ))}
+                  {product.aiRenderEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAiViewModal(true)}
+                      className="p-2 rounded-lg border border-dashed border-gold flex flex-col items-center gap-1.5 text-xs"
+                    >
+                      <span className="relative h-[70px] w-full flex items-center justify-center text-gold">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18" />
+                        </svg>
+                      </span>
+                      AI view{aiRenders.length > 0 ? ` (${aiRenders.length})` : ""}
+                    </button>
+                  )}
+                  {product.zones.length > 1 && (
+                    <div className="pt-2 border-t border-line flex flex-col gap-1.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">Print area</span>
+                      {product.zones.map((z, i) => {
+                        const isPrimary = i === 0;
+                        const isActive = z.id === activeZoneId;
+                        const isIncluded = isPrimary || selectedExtraZoneIds.has(z.id);
+                        return (
+                          <button
+                            key={z.id}
+                            type="button"
+                            onClick={() => (isPrimary ? switchActiveZone(z.id) : toggleExtraZone(z.id))}
+                            className={`px-2 py-1.5 rounded-lg text-[11px] border text-left ${
+                              isActive ? "border-dark bg-cream" : isIncluded ? "border-dark/60" : "border-line"
+                            }`}
+                          >
+                            {z.label}
+                            {!isPrimary && (
+                              <span className="text-muted ml-1">{isIncluded ? "✓" : z.extra_price > 0 ? `+${formatUSD(z.extra_price)}` : "+"}</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </aside>
+              </div>
 
-          {/* Mobile editor body (EDIT-02) */}
-          <div className="flex md:hidden flex-col">
-            <div style={{ height: "50vh" }} className="flex flex-col">
-              {renderCanvas()}
+              {/* Mobile editor body (EDIT-02) */}
+              <div className="flex md:hidden flex-col">
+                <div style={{ height: "50vh" }} className="flex flex-col">
+                  {renderCanvas()}
+                </div>
+                {activeTool && (
+                  <div className="border-t border-line max-h-[45vh] overflow-y-auto p-5">{renderToolPanelContent()}</div>
+                )}
+                <ToolRail orientation="horizontal" availableTools={availableTools} activeTool={activeTool} onSelectTool={(t) => (t === "layers" ? setActiveTool("layers") : selectElem(t as ElemKey))} />
+              </div>
+
+              <div className="p-4 border-t border-line flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => goToStep("options")}
+                  className="px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors"
+                >
+                  Next: Options
+                </button>
+              </div>
+            </>
+          )}
+
+          {step === "options" && (
+            <div className="flex flex-col md:flex-row gap-6 p-4 md:p-6">
+              <div className="md:w-1/2 lg:w-3/5 h-[50vh] md:h-[70vh] flex flex-col rounded-xl overflow-hidden border border-line">
+                {renderCanvas()}
+              </div>
+              <div className="md:w-1/2 lg:w-2/5">
+                <OptionsStep
+                  productName={product.name}
+                  productDescription={product.description ?? ""}
+                  unitPrice={unitPriceWithTechnique}
+                  minOrder={product.minOrder}
+                  productionTime={productionTime}
+                  variants={product.variants}
+                  variantId={variantId}
+                  onChangeVariant={setVariantId}
+                  markupPct={product.markupPct}
+                  techniques={product.techniques}
+                  techniqueId={techniqueId}
+                  onChangeTechnique={setTechniqueId}
+                  inkColorSlot={
+                    technique?.singleColorInk ? (
+                      <div>
+                        <label htmlFor="ink-color-input" className="text-xs uppercase tracking-wide text-muted block mb-2">
+                          Ink color
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <label className="h-11 w-11 shrink-0 rounded-lg border border-line p-1 flex" aria-label="Ink color swatch">
+                            <input
+                              type="color"
+                              value={design.inkColor}
+                              onChange={(e) => setDesign((prev) => ({ ...prev, inkColor: e.target.value }))}
+                              className="w-full h-full border-none p-0 bg-transparent cursor-pointer"
+                            />
+                          </label>
+                          <div className="flex-1 h-11 rounded-lg border border-line flex items-center px-3 gap-1.5">
+                            <input
+                              id="ink-color-input"
+                              type="text"
+                              value={design.colorTextInput}
+                              placeholder="#1A1A1A or PMS 355 C"
+                              onChange={(e) => setDesign((prev) => ({ ...prev, colorTextInput: e.target.value }))}
+                              onBlur={applyColorTextInput}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  applyColorTextInput();
+                                }
+                              }}
+                              className="w-full bg-transparent text-sm"
+                              aria-label="Hex or Pantone code"
+                            />
+                          </div>
+                        </div>
+                        {pantoneMatch && (
+                          <p className="text-xs text-muted mt-2">Closest PANTONE match (approximate): {pantoneMatch.code}</p>
+                        )}
+                        <p className="text-xs text-muted mt-1">This single ink color is used for every element in this design.</p>
+                      </div>
+                    ) : null
+                  }
+                  quantity={quantity}
+                  quantityInput={quantityInput}
+                  onChangeQuantityInput={setQuantityInput}
+                  onCommitQuantityInput={commitQuantityInput}
+                  quantityBelowMinimum={quantityBelowMinimum}
+                  quantityErrorId={quantityErrorId}
+                  quickQuantities={quickQuantities}
+                  popularQty={popularQty}
+                  onSelectQuantity={updateQuantity}
+                  allowSample={product.allowSample}
+                  total={total}
+                  onNext={() => goToStep("review")}
+                />
+              </div>
             </div>
-            {activeTool && (
-              <div className="border-t border-line max-h-[45vh] overflow-y-auto p-5">{renderToolPanelContent()}</div>
-            )}
-            <ToolRail orientation="horizontal" availableTools={availableTools} activeTool={activeTool} onSelectTool={(t) => (t === "layers" ? setActiveTool("layers") : selectElem(t as ElemKey))} />
-          </div>
+          )}
+
+          {step === "review" && (
+            <div className="flex flex-col md:flex-row gap-6 p-4 md:p-6">
+              <div className="md:w-1/2 lg:w-3/5 h-[50vh] md:h-[70vh] flex flex-col rounded-xl overflow-hidden border border-line">
+                {renderCanvas()}
+              </div>
+              <div className="md:w-1/2 lg:w-2/5">
+                <ReviewStep
+                  issues={validationIssues}
+                  onFixInDesign={fixInDesign}
+                  checklist={{ namesCorrect: checklistCurrent.namesCorrect, insidePrintArea: checklistCurrent.insidePrintArea }}
+                  onToggleChecklistItem={toggleChecklistItem}
+                  technique={technique?.technique ?? null}
+                  quantity={quantity}
+                  productionTime={productionTime}
+                  total={total}
+                  unitPrice={unitPriceWithTechnique}
+                  allowSample={product.allowSample}
+                  sampleFee={SAMPLE_FEE}
+                  namesValid={namesValid}
+                  quantityBelowMinimum={quantityBelowMinimum}
+                  addingToCart={addingToCart}
+                  justAdded={justAdded}
+                  addingSample={addingSample}
+                  sampleAdded={sampleAdded}
+                  onAddToCart={handleAddToCart}
+                  onAddSample={handleAddSample}
+                  aiRenderSlot={
+                    product.aiRenderEnabled ? (
+                      <AiRenderPanel
+                        key={activeZoneId}
+                        productId={product.id}
+                        zoneId={zone?.id}
+                        names={design.names}
+                        date={design.date}
+                        monogram={design.monogram}
+                        frame={design.frame}
+                        textFont={design.textFont}
+                        logoFile={design.logoFile}
+                        positions={design.positions}
+                        elemScale={design.elemScale}
+                        elemRotationOffset={design.elemRotationOffset}
+                        images={product.images}
+                        defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
+                        unlimited={unlimitedRenders}
+                        onGenerated={handleAiGenerated}
+                      />
+                    ) : null
+                  }
+                />
+                {isMerchandise && (
+                  <div className="mt-6">
+                    <QuoteRequestForm productId={product.id} productName={product.name} plannerId={product.plannerId} defaultQuantity={quantity} />
+                  </div>
+                )}
+                <button onClick={() => router.push(`/store/${product.plannerSlug}/cart`)} className="text-sm text-muted mt-4 hover:text-terracotta">
+                  View cart →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="relative aspect-[4/5] max-w-xl mx-auto rounded-2xl overflow-hidden bg-cream mb-4">
@@ -1695,239 +2119,24 @@ export function ProductConfigurator({
         </div>
       )}
 
-      <RelatedProductsRail
-        products={relatedProducts}
-        base={`/store/${product.plannerSlug}`}
-        names={design.names}
-        date={design.date}
-        monogram={design.monogram}
-        logoDataUrl={design.logoPreview}
-        frame={design.frame}
-        textFont={design.textFont}
-        elemScale={design.elemScale}
-        positions={design.positions}
-        elemRotationOffset={design.elemRotationOffset}
-        quantity={quantity}
-      />
-
-      {/* Summary panel — technique, AI render, quantity and cart actions
-          stay reachable from the editor until 03-purchase-flow.md's Options/
-          Review steps exist (that document's own explicit instruction). */}
-      <div id="summary-panel" className="mt-8 border border-line rounded-2xl overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setSummaryOpen((o) => !o)}
-          className="w-full flex items-center justify-between px-6 py-4 bg-cream"
-        >
-          <span className="font-serif text-2xl">Technique, quantity &amp; cart</span>
-          <span className="text-2xl font-serif">{formatUSD(total)}</span>
-        </button>
-        {summaryOpen && (
-          <div className="p-6 grid md:grid-cols-2 gap-8">
-            <div>
-              <h1 className="font-serif text-3xl mb-2">{product.name}</h1>
-              <p className="text-xl mb-1">
-                {formatUSD(unitPriceWithTechnique)} <span className="text-sm text-muted font-normal">per piece · min {product.minOrder}</span>
-              </p>
-              {productionTime && <p className="text-sm text-muted mb-3">Production time: {productionTime}</p>}
-              <p className="text-muted mb-6">{product.description}</p>
-
-              {product.variants.length > 0 && (
-                <div className="mb-6">
-                  <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-                    {product.variants[0]?.sku ? "Option" : "Variant"}
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {product.variants.map((v) => (
-                      <button
-                        key={v.id}
-                        onClick={() => setVariantId(v.id)}
-                        className={`px-4 py-2 rounded-lg text-sm border text-left ${variantId === v.id ? "border-dark bg-cream" : "border-line"}`}
-                      >
-                        <span className="block font-medium">{v.label}</span>
-                        {v.price_delta !== 0 && (
-                          <span className="text-xs text-muted">
-                            {v.price_delta > 0 ? "+" : ""}
-                            {formatUSD(applyMarkup(v.price_delta, product.markupPct))}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {product.techniques.length > 0 && (
-                <div className="mb-6">
-                  <label className="text-xs uppercase tracking-wide text-muted block mb-2">Print technique</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {product.techniques.map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => setTechniqueId(t.id)}
-                        className={`rounded-lg border px-3 py-3 text-sm text-left ${techniqueId === t.id ? "border-dark bg-cream" : "border-line"}`}
-                      >
-                        <span className="block font-medium">{t.technique}</span>
-                        <span className="text-xs text-muted">{t.extra_price > 0 ? `+${formatUSD(t.extra_price)}` : "Included"}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {technique?.singleColorInk && (
-                <div className="mb-6">
-                  <label htmlFor="ink-color-input" className="text-xs uppercase tracking-wide text-muted block mb-2">
-                    Ink color
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <label className="h-11 w-11 shrink-0 rounded-lg border border-line p-1 flex" aria-label="Ink color swatch">
-                      <input
-                        type="color"
-                        value={design.inkColor}
-                        onChange={(e) => setDesign((prev) => ({ ...prev, inkColor: e.target.value }))}
-                        className="w-full h-full border-none p-0 bg-transparent cursor-pointer"
-                      />
-                    </label>
-                    <div className="flex-1 h-11 rounded-lg border border-line flex items-center px-3 gap-1.5">
-                      <input
-                        id="ink-color-input"
-                        type="text"
-                        value={design.colorTextInput}
-                        placeholder="#1A1A1A or PMS 355 C"
-                        onChange={(e) => setDesign((prev) => ({ ...prev, colorTextInput: e.target.value }))}
-                        onBlur={applyColorTextInput}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            applyColorTextInput();
-                          }
-                        }}
-                        className="w-full bg-transparent text-sm"
-                        aria-label="Hex or Pantone code"
-                      />
-                    </div>
-                  </div>
-                  {pantoneMatch && (
-                    <p className="text-xs text-muted mt-2">Closest PANTONE match (approximate): {pantoneMatch.code}</p>
-                  )}
-                  <p className="text-xs text-muted mt-1">This single ink color is used for every element in this design.</p>
-                </div>
-              )}
-
-              {product.aiRenderEnabled && (
-                <AiRenderPanel
-                  key={activeZoneId}
-                  productId={product.id}
-                  zoneId={zone?.id}
-                  names={design.names}
-                  date={design.date}
-                  monogram={design.monogram}
-                  frame={design.frame}
-                  textFont={design.textFont}
-                  logoFile={design.logoFile}
-                  positions={design.positions}
-                  elemScale={design.elemScale}
-                  elemRotationOffset={design.elemRotationOffset}
-                  images={product.images}
-                  defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
-                  unlimited={unlimitedRenders}
-                  onGenerated={(result) => setLatestRender({ ...result, zoneId: activeZoneId })}
-                />
-              )}
-            </div>
-
-            <div>
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs uppercase tracking-wide text-muted">Quantity</label>
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => updateQuantity(Math.max(product.minOrder, quantity - product.minOrder))} className="h-8 w-8 rounded-full border border-line flex items-center justify-center">
-                      −
-                    </button>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      value={quantityInput}
-                      onChange={(e) => setQuantityInput(e.target.value)}
-                      onBlur={commitQuantityInput}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") e.currentTarget.blur();
-                      }}
-                      aria-invalid={quantityBelowMinimum}
-                      aria-describedby={quantityBelowMinimum ? quantityErrorId : undefined}
-                      className={`w-16 text-center font-medium rounded-lg border py-1 focus:outline-none focus:border-dark ${quantityBelowMinimum ? "border-red-500" : "border-line"}`}
-                    />
-                    <button onClick={() => updateQuantity(quantity + product.minOrder)} className="h-8 w-8 rounded-full border border-line flex items-center justify-center">
-                      +
-                    </button>
-                  </div>
-                </div>
-                {quantityBelowMinimum && (
-                  <p id={quantityErrorId} className="text-xs text-red-600 mb-2">
-                    The minimum order is {product.minOrder} units.
-                  </p>
-                )}
-                <div className="flex gap-2 flex-wrap">
-                  {quickQuantities.map((q) => (
-                    <button
-                      key={q}
-                      onClick={() => updateQuantity(q)}
-                      className={`px-4 py-2 rounded-full text-sm border flex items-center gap-1.5 ${quantity === q ? "bg-dark text-cream-light border-dark" : "border-line"}`}
-                    >
-                      {q}
-                      {q === popularQty && (
-                        <span className={`text-[10px] uppercase tracking-wide ${quantity === q ? "text-cream-light/70" : "text-terracotta"}`}>Popular</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {!namesValid && (
-                <p id={namesErrorId} className="text-xs text-red-600 mb-3">
-                  {NAMES_REQUIRED_MESSAGE}
-                </p>
-              )}
-
-              <div className="rounded-xl bg-cream p-6 flex items-center justify-between gap-4">
-                <div>
-                  <p className="font-serif text-3xl">{formatUSD(total)}</p>
-                  <p className="text-xs text-muted">
-                    {quantity} × {formatUSD(unitPriceWithTechnique)} · proof in 48h
-                  </p>
-                </div>
-                <button
-                  onClick={handleAddToCart}
-                  disabled={addingToCart || !namesValid || quantityBelowMinimum}
-                  aria-describedby={!namesValid ? namesErrorId : quantityBelowMinimum ? quantityErrorId : undefined}
-                  className="px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors shrink-0 disabled:opacity-50"
-                >
-                  {addingToCart ? "Adding…" : justAdded ? "Added ✓" : "Add to Cart"}
-                </button>
-              </div>
-              {product.allowSample && (
-                <button
-                  onClick={handleAddSample}
-                  disabled={addingSample || !namesValid}
-                  aria-describedby={!namesValid ? namesErrorId : undefined}
-                  className="w-full mt-3 px-6 py-3 rounded-full border border-line text-sm font-medium hover:border-terracotta hover:text-terracotta transition-colors disabled:opacity-50"
-                >
-                  {addingSample ? "Adding…" : sampleAdded ? "Sample added ✓" : `Buy 1 sample — +${formatUSD(SAMPLE_FEE)}`}
-                </button>
-              )}
-              {isMerchandise && (
-                <div className="mt-3">
-                  <QuoteRequestForm productId={product.id} productName={product.name} plannerId={product.plannerId} defaultQuantity={quantity} />
-                </div>
-              )}
-              <button onClick={() => router.push(`/store/${product.plannerSlug}/cart`)} className="text-sm text-muted mt-4 hover:text-terracotta">
-                View cart →
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* FLOW-08: kept on the product page, not inside the Design step's
+          full-editor surface. */}
+      {(!product.personalizable || step !== "design") && (
+        <RelatedProductsRail
+          products={relatedProducts}
+          base={`/store/${product.plannerSlug}`}
+          names={design.names}
+          date={design.date}
+          monogram={design.monogram}
+          logoDataUrl={design.logoPreview}
+          frame={design.frame}
+          textFont={design.textFont}
+          elemScale={design.elemScale}
+          positions={design.positions}
+          elemRotationOffset={design.elemRotationOffset}
+          quantity={quantity}
+        />
+      )}
     </div>
   );
 
@@ -2066,6 +2275,19 @@ export function ProductConfigurator({
     }
     return <p className="text-sm text-muted">Pick a tool from the rail to start editing.</p>;
   }
+}
+
+// FLOW-06's "fix in the design" badge — a brief on-canvas marker for the
+// element a Review alert pointed at.
+function ElementBadge() {
+  return (
+    <span
+      aria-hidden="true"
+      className="absolute -top-2.5 -right-2.5 z-30 h-6 w-6 rounded-full bg-terracotta text-cream-light text-xs font-bold flex items-center justify-center border-2 border-white pointer-events-none animate-pulse"
+    >
+      !
+    </span>
+  );
 }
 
 // Renders text as either plain stacked lines (curve 0 — the original,

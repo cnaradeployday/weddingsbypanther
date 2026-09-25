@@ -14,3 +14,19 @@ export function estimatePrintDpi(pixelWidth: number, footprintWidthMm: number): 
   const footprintInches = footprintWidthMm / 25.4;
   return pixelWidth / footprintInches;
 }
+
+// The logo's default on-print footprint (45% of the print area's smaller
+// physical dimension, scaled by however much the customer has resized it) —
+// shared between the live editor and 03-purchase-flow.md's Review step
+// (FLOW-06), which needs the same low-res warning without access to the
+// editor's own DOM measurements. Mirrors the server compositor's
+// `defaultLogoBoxSize` (personalizationComposite.ts), expressed in real mm
+// instead of render pixels since neither caller has a canvas to measure.
+export function estimateLogoFootprintMm(
+  zone: { width_mm: number | null; height_mm: number | null } | null | undefined,
+  elemScaleLogo: number
+): number | null {
+  if (!zone?.width_mm || !zone?.height_mm) return null;
+  const smallerMm = Math.min(zone.width_mm, zone.height_mm);
+  return smallerMm * 0.45 * elemScaleLogo;
+}
