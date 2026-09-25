@@ -2,7 +2,9 @@
 
 import { formatUSD, applyMarkup } from "@/lib/format";
 
-// FLOW-03 — Step 2 · Options: technique, quantity, sample, sticky summary.
+// FLOW-03 — Step 2 · Options: variant, quantity, sample, sticky summary.
+// Print technique moved to the Design step's tool rail (it affects how the
+// whole design renders, so it needs picking before/while designing).
 // The design preview itself is rendered by the caller (same canvas as the
 // Design step, per FLOW-03: "the product with the design on the left,
 // always visible") — this component is only the right-hand options panel.
@@ -16,10 +18,6 @@ export function OptionsStep({
   variantId,
   onChangeVariant,
   markupPct,
-  techniques,
-  techniqueId,
-  onChangeTechnique,
-  inkColorSlot,
   quantity,
   quantityInput,
   onChangeQuantityInput,
@@ -42,10 +40,6 @@ export function OptionsStep({
   variantId: string;
   onChangeVariant: (id: string) => void;
   markupPct: number;
-  techniques: { id: string; technique: string; extra_price: number }[];
-  techniqueId: string;
-  onChangeTechnique: (id: string) => void;
-  inkColorSlot: React.ReactNode;
   quantity: number;
   quantityInput: string;
   onChangeQuantityInput: (v: string) => void;
@@ -95,28 +89,6 @@ export function OptionsStep({
           </div>
         </div>
       )}
-
-      {techniques.length > 0 && (
-        <div>
-          <label className="text-xs uppercase tracking-wide text-muted block mb-2">Print technique</label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {techniques.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => onChangeTechnique(t.id)}
-                aria-pressed={techniqueId === t.id}
-                className={`rounded-lg border px-3 py-3 text-sm text-left ${techniqueId === t.id ? "border-dark bg-cream" : "border-line"}`}
-              >
-                <span className="block font-medium">{t.technique}</span>
-                <span className="text-xs text-muted">{t.extra_price > 0 ? `+${formatUSD(t.extra_price)}` : "Included"}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {inkColorSlot}
 
       <div>
         <div className="flex items-center justify-between mb-2">
