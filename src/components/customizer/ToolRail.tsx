@@ -2,7 +2,7 @@
 
 import type { ElemKey } from "./types";
 
-export type ToolId = Exclude<ElemKey, never> | "layers";
+export type ToolId = Exclude<ElemKey, never> | "layers" | "technique";
 
 const TOOL_ICONS: Record<ToolId, React.ReactNode> = {
   names: (
@@ -50,6 +50,11 @@ const TOOL_ICONS: Record<ToolId, React.ReactNode> = {
       <path d="M3 13l9 5 9-5" />
     </svg>
   ),
+  technique: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 3h12v6l-3 3v9H9v-9L6 9V3z" />
+    </svg>
+  ),
 };
 
 const TOOL_LABELS: Record<ToolId, string> = {
@@ -60,6 +65,7 @@ const TOOL_LABELS: Record<ToolId, string> = {
   date: "Date",
   qr: "QR",
   layers: "Layers",
+  technique: "Technique",
 };
 
 export function ToolRail({

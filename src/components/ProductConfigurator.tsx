@@ -59,6 +59,7 @@ import { LayersPanel } from "./customizer/LayersPanel";
 import { TextToolPanel } from "./customizer/TextToolPanel";
 import { IconElementPanel } from "./customizer/IconElementPanel";
 import { LogoToolPanel } from "./customizer/LogoToolPanel";
+import { TechniqueToolPanel } from "./customizer/TechniqueToolPanel";
 import { LogoCropModal } from "./customizer/LogoCropModal";
 import { QrToolPanel } from "./customizer/QrToolPanel";
 import { useKeyboardShortcuts } from "./customizer/useKeyboardShortcuts";
@@ -175,7 +176,10 @@ function makeDefaultDesign(isMerchandise: boolean, zoneForDefaults?: Zone): Desi
     names: isMerchandise ? "Your Company" : "Amelia & Ravi",
     namesStyle: { ...DEFAULT_TEXT_STYLE },
     textFont: isMerchandise ? "montserrat" : DEFAULT_TEXT_FONT,
-    date: isMerchandise ? "" : "2026-06-14",
+    // Was "2026-06-14" for wedding products — with the Date tool removed
+    // from the editor there's no way to change or clear a pre-filled date,
+    // so it defaulted to empty for every product type.
+    date: "",
     dateStyle: { ...DEFAULT_TEXT_STYLE },
     monogram: "",
     monogramColor: "#1a1a1a",
@@ -1011,6 +1015,47 @@ export function ProductConfigurator({
     if (resolved) setDesign((prev) => ({ ...prev, inkColor: resolved.hex }));
   }, [design.colorTextInput, setDesign]);
 
+  // Shared between the Design step's Technique tool panel and (previously)
+  // the Options step — only single-color-ink techniques offer a color
+  // choice at all, since every other technique's ink/finish is fixed.
+  const inkColorSlot = technique?.singleColorInk ? (
+    <div>
+      <label htmlFor="ink-color-input" className="text-xs uppercase tracking-wide text-muted block mb-2">
+        Ink color
+      </label>
+      <div className="flex items-center gap-2">
+        <label className="h-11 w-11 shrink-0 rounded-lg border border-line p-1 flex" aria-label="Ink color swatch">
+          <input
+            type="color"
+            value={design.inkColor}
+            onChange={(e) => setDesign((prev) => ({ ...prev, inkColor: e.target.value }))}
+            className="w-full h-full border-none p-0 bg-transparent cursor-pointer"
+          />
+        </label>
+        <div className="flex-1 h-11 rounded-lg border border-line flex items-center px-3 gap-1.5">
+          <input
+            id="ink-color-input"
+            type="text"
+            value={design.colorTextInput}
+            placeholder="#1A1A1A or PMS 355 C"
+            onChange={(e) => setDesign((prev) => ({ ...prev, colorTextInput: e.target.value }))}
+            onBlur={applyColorTextInput}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                applyColorTextInput();
+              }
+            }}
+            className="w-full bg-transparent text-sm"
+            aria-label="Hex or Pantone code"
+          />
+        </div>
+      </div>
+      {pantoneMatch && <p className="text-xs text-muted mt-2">Closest PANTONE match (approximate): {pantoneMatch.code}</p>}
+      <p className="text-xs text-muted mt-1">This single ink color is used for every element in this design.</p>
+    </div>
+  ) : null;
+
   useEffect(() => {
     if (!design.logoPreview || singleColorFillMode !== "silhouette") {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -1441,8 +1486,25 @@ export function ProductConfigurator({
     setDesign((prev) => ({ ...prev, hidden: { ...prev.hidden, [key]: !prev.hidden[key] } }));
   };
 
+  // Date removed from the customer-facing editor per request — the
+  // underlying design.date/dateStyle fields, canvas rendering, and cart/
+  // server plumbing are left in place (harmless while unused) rather than
+  // ripped out, so an existing order that already has a date in its saved
+  // personalization still prints correctly; there's just no way to add a
+  // new one.
+  // Print technique moved here (Design, step 1) from the Options step per
+  // request — it affects how the whole design renders (single-color fill,
+  // engraved look, etc.), so it needs picking before/while designing.
   const availableTools: ToolId[] = product.personalizable
-    ? (["names", "logo", "frame", "monogram", "date", "qr", "layers"] as ToolId[])
+    ? ([
+        ...(product.techniques.length > 0 ? (["technique"] as ToolId[]) : []),
+        "names",
+        "logo",
+        "frame",
+        "monogram",
+        "qr",
+        "layers",
+      ] as ToolId[])
     : [];
 
   const qrSvg = useQrSvg(design.qrUrl, effectiveQrColor);
@@ -2052,7 +2114,7 @@ export function ProductConfigurator({
             <>
               {/* Desktop editor body */}
               <div className="hidden md:flex h-[70vh] min-h-[560px]">
-                <ToolRail availableTools={availableTools} activeTool={activeTool} onSelectTool={(t) => (t === "layers" ? setActiveTool("layers") : selectElem(t as ElemKey))} />
+                <ToolRail availableTools={availableTools} activeTool={activeTool} onSelectTool={(t) => (t === "layers" || t === "technique" ? setActiveTool(t) : selectElem(t as ElemKey))} />
                 <div className="w-[320px] shrink-0 border-r border-line overflow-y-auto p-5">
                   {renderToolPanelContent()}
                 </div>
@@ -2125,7 +2187,7 @@ export function ProductConfigurator({
                 {activeTool && (
                   <div className="border-t border-line max-h-[45vh] overflow-y-auto p-5">{renderToolPanelContent()}</div>
                 )}
-                <ToolRail orientation="horizontal" availableTools={availableTools} activeTool={activeTool} onSelectTool={(t) => (t === "layers" ? setActiveTool("layers") : selectElem(t as ElemKey))} />
+                <ToolRail orientation="horizontal" availableTools={availableTools} activeTool={activeTool} onSelectTool={(t) => (t === "layers" || t === "technique" ? setActiveTool(t) : selectElem(t as ElemKey))} />
               </div>
 
               <div className="p-4 border-t border-line flex justify-end">
@@ -2156,50 +2218,6 @@ export function ProductConfigurator({
                   variantId={variantId}
                   onChangeVariant={setVariantId}
                   markupPct={product.markupPct}
-                  techniques={product.techniques}
-                  techniqueId={techniqueId}
-                  onChangeTechnique={setTechniqueId}
-                  inkColorSlot={
-                    technique?.singleColorInk ? (
-                      <div>
-                        <label htmlFor="ink-color-input" className="text-xs uppercase tracking-wide text-muted block mb-2">
-                          Ink color
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <label className="h-11 w-11 shrink-0 rounded-lg border border-line p-1 flex" aria-label="Ink color swatch">
-                            <input
-                              type="color"
-                              value={design.inkColor}
-                              onChange={(e) => setDesign((prev) => ({ ...prev, inkColor: e.target.value }))}
-                              className="w-full h-full border-none p-0 bg-transparent cursor-pointer"
-                            />
-                          </label>
-                          <div className="flex-1 h-11 rounded-lg border border-line flex items-center px-3 gap-1.5">
-                            <input
-                              id="ink-color-input"
-                              type="text"
-                              value={design.colorTextInput}
-                              placeholder="#1A1A1A or PMS 355 C"
-                              onChange={(e) => setDesign((prev) => ({ ...prev, colorTextInput: e.target.value }))}
-                              onBlur={applyColorTextInput}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  applyColorTextInput();
-                                }
-                              }}
-                              className="w-full bg-transparent text-sm"
-                              aria-label="Hex or Pantone code"
-                            />
-                          </div>
-                        </div>
-                        {pantoneMatch && (
-                          <p className="text-xs text-muted mt-2">Closest PANTONE match (approximate): {pantoneMatch.code}</p>
-                        )}
-                        <p className="text-xs text-muted mt-1">This single ink color is used for every element in this design.</p>
-                      </div>
-                    ) : null
-                  }
                   quantity={quantity}
                   quantityInput={quantityInput}
                   onChangeQuantityInput={setQuantityInput}
@@ -2320,6 +2338,16 @@ export function ProductConfigurator({
   // the design/setDesign/product state above without threading two dozen
   // props through.
   function renderToolPanelContent() {
+    if (activeTool === "technique") {
+      return (
+        <TechniqueToolPanel
+          techniques={product.techniques}
+          techniqueId={techniqueId}
+          onChangeTechnique={setTechniqueId}
+          inkColorSlot={inkColorSlot}
+        />
+      );
+    }
     if (activeTool === "layers") {
       return (
         <LayersPanel

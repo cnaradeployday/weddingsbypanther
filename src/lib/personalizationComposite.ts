@@ -26,8 +26,24 @@ const STOREFRONT_ASPECT = 4 / 5;
 export async function cropToStorefrontAspect(base: ImagePayload): Promise<ImagePayload> {
   try {
     const buffer = Buffer.from(base.data, "base64");
-    const image = sharp(buffer);
-    const { width, height } = await image.metadata();
+    // A phone-uploaded photo commonly carries an EXIF orientation tag
+    // instead of storing pixels already right-side-up — the browser (and
+    // corners_pct, captured by dragging over that browser-rotated preview
+    // in the admin print-area tool) both treat the photo as already
+    // oriented, but sharp's own metadata() reports the RAW, un-rotated
+    // pixel dimensions unless told to auto-orient first. Reading
+    // width/height before .rotate() could crop (and therefore composite
+    // the personalization) against the wrong box entirely — text ending
+    // up shifted or cut off relative to what the live canvas shows.
+    // .rotate() with no args applies that EXIF orientation and strips the
+    // tag, so everything downstream works in the same orientation the
+    // browser already displays. metadata() on a pipeline can still report
+    // the pre-rotation dimensions depending on the source format, so the
+    // orientation is materialized into a real buffer first and its actual
+    // (post-rotation) width/height read from that, rather than trusted
+    // from metadata().
+    const { data: rotatedBuffer, info } = await sharp(buffer).rotate().toBuffer({ resolveWithObject: true });
+    const { width, height } = info;
     if (!width || !height) return base;
 
     let cropW = width;
@@ -41,7 +57,7 @@ export async function cropToStorefrontAspect(base: ImagePayload): Promise<ImageP
     const left = Math.max(0, Math.round((width - cropW) / 2));
     const top = Math.max(0, Math.round((height - cropH) / 2));
 
-    const cropped = await image
+    const cropped = await sharp(rotatedBuffer)
       .extract({ left, top, width: cropW, height: cropH })
       .png()
       .toBuffer();
