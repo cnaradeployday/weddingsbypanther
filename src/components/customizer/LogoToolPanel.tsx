@@ -27,6 +27,7 @@ export function LogoToolPanel({
   isLowRes,
   sizeLabel,
   detectedColors,
+  processing,
 }: {
   preview: string | null;
   onUpload: (file: File, dataUrl: string) => void;
@@ -38,6 +39,9 @@ export function LogoToolPanel({
   isLowRes: boolean;
   sizeLabel: string | null;
   detectedColors: { hex: string; pct: number }[];
+  // True while a background-removal mode change is being computed (EDIT-11)
+  // — the flood-fill runs on the full-resolution logo and can take a moment.
+  processing?: boolean;
 }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,19 +138,22 @@ export function LogoToolPanel({
           )}
 
           <div className="flex flex-col gap-2">
-            <span className="text-xs uppercase tracking-wide text-muted">Remove white</span>
+            <span className="text-xs uppercase tracking-wide text-muted">
+              Remove white{processing ? " · Processing…" : ""}
+            </span>
             <div className="flex flex-col gap-1.5">
               {REMOVE_WHITE_OPTIONS.map((opt) => (
                 <label
                   key={opt.id}
-                  className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer ${
-                    removeWhiteMode === opt.id ? "border-dark bg-cream" : "border-line"
-                  }`}
+                  className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 ${
+                    processing ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                  } ${removeWhiteMode === opt.id ? "border-dark bg-cream" : "border-line"}`}
                 >
                   <input
                     type="radio"
                     name="remove-white-mode"
                     checked={removeWhiteMode === opt.id}
+                    disabled={processing}
                     onChange={() => onChangeRemoveWhiteMode(opt.id)}
                     className="mt-0.5"
                   />

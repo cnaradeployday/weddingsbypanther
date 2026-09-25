@@ -33,9 +33,7 @@ export function TextToolPanel({
   font,
   onChangeFont,
   sizeCm,
-  onChangeSize,
-  minSizeCm,
-  maxSizeCm,
+  onStepSize,
   style,
   onChangeStyle,
   allowedColors,
@@ -48,10 +46,12 @@ export function TextToolPanel({
   textEditable: boolean;
   font: string;
   onChangeFont: (id: string) => void;
-  sizeCm: number;
-  onChangeSize: (cm: number) => void;
-  minSizeCm: number;
-  maxSizeCm: number;
+  // Read-only display (matches the pre-existing pattern this replaces: a
+  // computed "8.6 cm" label next to +/- steppers, not a typed value) — the
+  // real size is elemScale, which the steppers adjust in fixed increments;
+  // this is only what it currently renders to, in cm.
+  sizeCm: number | null;
+  onStepSize: (dir: 1 | -1) => void;
   style: TextStyle;
   onChangeStyle: (style: TextStyle) => void;
   allowedColors?: string[];
@@ -131,21 +131,11 @@ export function TextToolPanel({
         <div className="flex-1 flex flex-col gap-1.5">
           <span className="text-xs uppercase tracking-wide text-muted">Size</span>
           <div className="flex items-center border border-line rounded-lg h-11">
-            <button
-              type="button"
-              aria-label="Decrease size"
-              onClick={() => onChangeSize(Math.max(minSizeCm, +(sizeCm - 0.2).toFixed(1)))}
-              className="w-11 h-full text-lg text-dark"
-            >
+            <button type="button" aria-label="Decrease size" onClick={() => onStepSize(-1)} className="w-11 h-full text-lg text-dark">
               −
             </button>
-            <span className="flex-1 text-center text-sm">{sizeCm.toFixed(1)} cm</span>
-            <button
-              type="button"
-              aria-label="Increase size"
-              onClick={() => onChangeSize(Math.min(maxSizeCm, +(sizeCm + 0.2).toFixed(1)))}
-              className="w-11 h-full text-lg text-dark"
-            >
+            <span className="flex-1 text-center text-sm">{sizeCm != null ? `${sizeCm.toFixed(1)} cm` : "—"}</span>
+            <button type="button" aria-label="Increase size" onClick={() => onStepSize(1)} className="w-11 h-full text-lg text-dark">
               +
             </button>
           </div>

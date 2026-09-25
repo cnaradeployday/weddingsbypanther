@@ -15,24 +15,43 @@
 
 export type SavedElemPos = { x: number; y: number };
 
-// Mirrors ProductConfigurator's own ZoneDesign shape. Kept as a separately
-// defined (structurally identical) type rather than importing it from the
-// component, so this module has no dependency on the component it's used
-// by — the component depends on this module, not the other way around.
+export type SavedTextStyle = {
+  color: string;
+  letterSpacing: number;
+  lineSpacing: number;
+  curve: number;
+  align: "left" | "center" | "right";
+};
+
+// Mirrors the editor's own Design shape (src/components/customizer/types.ts).
+// Kept as a separately defined (structurally identical) type rather than
+// importing it from there, so this module has no dependency on the
+// component tree it's used by — the editor depends on this module, not the
+// other way around.
 export type SavedZoneDesign = {
   names: string;
-  date: string;
-  monogram: string;
-  frame: string;
+  namesStyle: SavedTextStyle;
   textFont: string;
+  date: string;
+  dateStyle: SavedTextStyle;
+  monogram: string;
+  monogramColor: string;
+  frame: string;
+  frameColor: string;
   logoFile: File | null;
   logoPreview: string | null;
+  logoOriginalPreview: string | null;
+  logoRemoveWhiteMode: "never" | "background" | "all";
   inkColor: string;
   colorTextInput: string;
+  qrUrl: string;
+  qrColor: string;
   positions: Record<string, SavedElemPos>;
   elemScale: Record<string, number>;
   elemRotationOffset: Record<string, number>;
   elemOrder: string[];
+  locked: Record<string, boolean | undefined>;
+  hidden: Record<string, boolean | undefined>;
 };
 
 export type SavedDesign = {

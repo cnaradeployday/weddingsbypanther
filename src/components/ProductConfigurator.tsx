@@ -3,14 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { formatUSD } from "@/lib/format";
-import { applyMarkup } from "@/lib/format";
+import { formatUSD, applyMarkup } from "@/lib/format";
 import { useCart, type AreaPersonalization } from "@/lib/cart";
 import { createClient } from "@/lib/supabase/client";
 import { techniqueInkColor } from "@/lib/printTechniqueColors";
 import { MONOGRAM_OPTIONS, monogramSvgInner } from "@/lib/monograms";
 import { FRAME_TEMPLATES, frameSvgInner } from "@/lib/frameTemplates";
-import { TEXT_FONTS, DEFAULT_TEXT_FONT, textFontStyle } from "@/lib/textFonts";
+import { DEFAULT_TEXT_FONT, textFontStyle } from "@/lib/textFonts";
 import { fitTextFontSize, estimateTextWidth, textLineCount } from "@/lib/textFit";
 import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
 import { isNamesValid, NAMES_REQUIRED_MESSAGE } from "@/lib/personalizationValidation";
@@ -19,13 +18,18 @@ import { designStorage, LATEST_VERSION_ID } from "@/lib/designStorage";
 import { formatPrintDate } from "@/lib/printDate";
 import { parseQuantityInput, isQuantityBelowMinimum } from "@/lib/quantityValidation";
 import { dataUrlToBlob } from "@/lib/dataUrl";
-import { recolorLogoToSolid, removeLogoBackground } from "@/lib/logoRecolor";
+import { recolorLogoToSolid, removeLogoBackgroundByMode } from "@/lib/logoRecolor";
 import { detectLogoColors, type DetectedColor } from "@/lib/logoColors";
 import { estimatePrintDpi, MIN_PRINT_DPI } from "@/lib/logoPrintQuality";
 import { nearestPantone, resolveColorInput } from "@/lib/pantoneMatch";
 import { leadTimeRange } from "@/lib/leadTime";
+import { letterSpacingEm, lineHeightMultiplier, curveTextPath } from "@/lib/textStyle";
+import { computeSnap, boxSnapTargets } from "@/lib/snapping";
+import { alignHorizontal, alignVertical } from "@/lib/alignment";
+import { useQrSvg } from "@/lib/useQrSvg";
 import type { BusinessType } from "@/lib/businessType";
 import {
+  boundingBox,
   availableAlongAxis,
   clampOrientedBoxToQuad,
   maxOrientedBoxScale,
@@ -36,15 +40,32 @@ import type { RelatedProduct } from "@/lib/queries";
 import { AiRenderPanel } from "./AiRenderPanel";
 import { RelatedProductsRail } from "./RelatedProductsRail";
 import { QuoteRequestForm } from "./QuoteRequestForm";
+import { useDesignReducer } from "./customizer/useDesignReducer";
+import {
+  DEFAULT_SCALES,
+  DEFAULT_ROTATIONS,
+  DEFAULT_TEXT_STYLE,
+  isElemPresent,
+  type Design,
+  type ElemKey,
+  type ElemPos,
+} from "./customizer/types";
+import { ToolRail, type ToolId } from "./customizer/ToolRail";
+import { CanvasControls } from "./customizer/CanvasControls";
+import { ContextualToolbar } from "./customizer/ContextualToolbar";
+import { LayersPanel } from "./customizer/LayersPanel";
+import { TextToolPanel } from "./customizer/TextToolPanel";
+import { IconElementPanel } from "./customizer/IconElementPanel";
+import { LogoToolPanel } from "./customizer/LogoToolPanel";
+import { LogoCropModal } from "./customizer/LogoCropModal";
+import { QrToolPanel } from "./customizer/QrToolPanel";
+import { useKeyboardShortcuts } from "./customizer/useKeyboardShortcuts";
+import { KeyboardShortcutsHelp } from "./customizer/KeyboardShortcutsHelp";
 
 // Approximates how each print technique looks on the manual (non-AI) live
 // preview — a plain color swap for printed techniques, plus a debossed
 // highlight/shadow pairing for engrave so it reads as cut into the material
 // rather than printed on top of it.
-// Flat ink color per technique, no drop-shadow/bevel tricks — those read as
-// a stray white smudge/halo behind the text more often than they read as
-// "engraved," so the manual preview keeps it simple and lets color alone
-// carry the technique's look.
 function techniqueTextStyle(techniqueName?: string, colorOverride?: string): React.CSSProperties {
   const color = colorOverride ?? techniqueInkColor(techniqueName);
   const fontWeight = techniqueName === "Laser engrave" || techniqueName === "Foil stamp" ? 500 : techniqueName === "Embroidery" ? 600 : undefined;
@@ -81,228 +102,7 @@ type Zone = {
   extra_price: number;
 };
 
-// The live CSS preview shows the bounding box of the (possibly angled/
-// trapezoidal) print area rather than attempting a true perspective warp —
-// the AI render is what shows the accurate, perspective-correct result.
-function boundingBox(corners: { x: number; y: number }[]) {
-  const xs = corners.map((c) => c.x);
-  const ys = corners.map((c) => c.y);
-  const left = Math.min(...xs);
-  const top = Math.min(...ys);
-  return { left, top, width: Math.max(...xs) - left, height: Math.max(...ys) - top };
-}
-
-type ElemKey = "logo" | "monogram" | "names" | "date";
-type ElemPos = { x: number; y: number };
-
-// Everything about a print area's personalization that's specific to that
-// one area — a shopper who adds a secondary/tertiary area gets a fresh,
-// independent design for it rather than reusing whatever's on the primary
-// area, since the two areas usually differ in size/shape and often call for
-// a different logo entirely. Kept out of the DB row shape (Zone) itself:
-// this is only ever in-memory, on-page state, snapshotted per zone id while
-// the shopper switches between areas.
-type ZoneDesign = {
-  names: string;
-  date: string;
-  monogram: string;
-  frame: string;
-  textFont: string;
-  logoFile: File | null;
-  logoPreview: string | null;
-  inkColor: string;
-  colorTextInput: string;
-  positions: Record<ElemKey, ElemPos>;
-  elemScale: Record<ElemKey, number>;
-  elemRotationOffset: Record<ElemKey, number>;
-  elemOrder: ElemKey[];
-};
-
-// Direct-manipulation resize/rotate handles shared by all four
-// personalization elements: drag the corner icon to scale (uniformly,
-// never distorting), drag the icon above to rotate, both in place on the
-// element itself. Only rendered while that element is the selected one
-// (tapped on), so the photo stays clean otherwise.
-function ResizeIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 13 L13 3" />
-      <path d="M8.5 3 H13 V7.5" />
-      <path d="M7.5 13 H3 V8.5" />
-    </svg>
-  );
-}
-
-function RotateIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M13 8a5 5 0 1 1-1.7-3.75" />
-      <path d="M13 2.2v3.6H9.4" />
-    </svg>
-  );
-}
-
-function ChevronIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      width="10"
-      height="10"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={`transition-transform ${open ? "rotate-180" : ""}`}
-    >
-      <path d="M3 5.5 L8 10.5 L13 5.5" />
-    </svg>
-  );
-}
-
-// Each personalization option (logo, frame, names, date, monogram) starts
-// collapsed to just its title so the page doesn't load with every option's
-// full controls open at once — a big source of scroll length on the product
-// page. Tap the title to expand and edit, tap again to collapse.
-function CollapsibleSection({
-  title,
-  optional,
-  trailing,
-  defaultOpen = false,
-  children,
-}: {
-  title: string;
-  optional?: boolean;
-  trailing?: React.ReactNode;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between gap-2 mb-2"
-      >
-        <span className="text-xs uppercase tracking-wide text-muted">
-          {title} {optional && <span className="normal-case text-muted/70">(optional)</span>}
-        </span>
-        <span className="flex items-center gap-2 text-muted shrink-0">
-          {trailing}
-          <ChevronIcon open={open} />
-        </span>
-      </button>
-      {open && children}
-    </div>
-  );
-}
-
-// A handle at each of the 4 corners (not just one) — resize is a uniform
-// scale from the element's own center regardless of which corner drives it,
-// so every corner behaves identically. With several personalization
-// elements able to overlap, having 4 grab points instead of 1 makes it much
-// more likely at least one is clear of whatever else is on top of it. The
-// dashed outline traces the element's own box so it's unambiguous which
-// element is currently selected once a few of them overlap.
-function AdjustHandles({
-  onResizeStart,
-  onRotateStart,
-  notice,
-  expandBy,
-}: {
-  onResizeStart: (e: React.PointerEvent) => void;
-  onRotateStart: (e: React.PointerEvent) => void;
-  // Brief feedback shown at the print-area limit — BUG-10 (resize) and
-  // BUG-03 (a rotation that had to shrink the element to fit).
-  notice?: string;
-  // BUG-04: a decorative frame draws further out than the text element it's
-  // wrapped around (a negative-inset sibling, see the "names" element
-  // below) — without this, the dashed selection outline and handles traced
-  // only the plain text's box, leaving the visible frame sticking out past
-  // them. In px, how far the frame extends beyond the element on each axis;
-  // omitted (or {x:0,y:0}) for an element with no frame.
-  expandBy?: { x: number; y: number };
-}) {
-  const expandX = expandBy?.x ?? 0;
-  const expandY = expandBy?.y ?? 0;
-  const corner =
-    "absolute h-5 w-5 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-nwse-resize touch-none pointer-events-auto";
-  // The handles' resting offset with no frame (matches the original fixed
-  // -2.5 / -top-8 Tailwind spacing), pushed further out by the frame's own
-  // extra footprint when there is one.
-  const cornerOffset = 10 + expandX;
-  const cornerOffsetY = 10 + expandY;
-  const rotateOffset = 32 + expandY;
-  return (
-    <>
-      <div
-        className="absolute rounded-sm border border-dashed border-terracotta pointer-events-none"
-        style={{ inset: `${-expandY}px ${-expandX}px` }}
-      />
-      <div
-        onPointerDown={onResizeStart}
-        className={corner}
-        style={{ left: -cornerOffset, top: -cornerOffsetY }}
-      >
-        <ResizeIcon />
-      </div>
-      <div
-        onPointerDown={onResizeStart}
-        className={corner}
-        style={{ right: -cornerOffset, top: -cornerOffsetY }}
-      >
-        <ResizeIcon />
-      </div>
-      <div
-        onPointerDown={onResizeStart}
-        className={corner}
-        style={{ left: -cornerOffset, bottom: -cornerOffsetY }}
-      >
-        <ResizeIcon />
-      </div>
-      <div
-        onPointerDown={onResizeStart}
-        className={corner}
-        style={{ right: -cornerOffset, bottom: -cornerOffsetY }}
-      >
-        <ResizeIcon />
-      </div>
-      <div
-        onPointerDown={onRotateStart}
-        className="absolute left-1/2 h-5 w-5 -translate-x-1/2 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-grab touch-none pointer-events-auto"
-        style={{ top: -rotateOffset }}
-      >
-        <RotateIcon />
-      </div>
-      {notice && (
-        <span
-          role="status"
-          className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-dark text-cream-light text-[11px] px-2.5 py-1 pointer-events-none"
-          style={{ top: -rotateOffset - 32 }}
-        >
-          {notice}
-        </span>
-      )}
-    </>
-  );
-}
-
-// Flat USD fee for a one-off sample order — covers the machine setup for
-// printing just one piece, on top of the usual unit price and shipping.
 const SAMPLE_FEE = 50;
-
-const DEFAULT_SCALES: Record<ElemKey, number> = { logo: 1, monogram: 1, names: 1, date: 1 };
-const DEFAULT_ROTATIONS: Record<ElemKey, number> = { logo: 0, monogram: 0, names: 0, date: 0 };
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
 
 // Measures the rendered zone box so text/logo sizing can be derived from the
 // product's real print-area dimensions (mm), not a guessed fixed size.
@@ -332,6 +132,34 @@ function useElementSize<T extends HTMLElement>() {
   }, []);
 
   return [ref, size] as const;
+}
+
+function makeDefaultDesign(isMerchandise: boolean, zoneForDefaults?: Zone): Design {
+  return {
+    names: isMerchandise ? "Your Company" : "Amelia & Ravi",
+    namesStyle: { ...DEFAULT_TEXT_STYLE },
+    textFont: isMerchandise ? "montserrat" : DEFAULT_TEXT_FONT,
+    date: isMerchandise ? "" : "2026-06-14",
+    dateStyle: { ...DEFAULT_TEXT_STYLE },
+    monogram: "",
+    monogramColor: "#1a1a1a",
+    frame: "",
+    frameColor: "#1a1a1a",
+    logoFile: null,
+    logoPreview: null,
+    logoOriginalPreview: null,
+    logoRemoveWhiteMode: "all",
+    inkColor: "#1a1a1a",
+    colorTextInput: "",
+    qrUrl: "",
+    qrColor: "#1a1a1a",
+    positions: computeDefaultPositions(zoneForDefaults),
+    elemScale: DEFAULT_SCALES,
+    elemRotationOffset: DEFAULT_ROTATIONS,
+    elemOrder: ["logo", "monogram", "frame", "names", "date", "qr"],
+    locked: {},
+    hidden: {},
+  };
 }
 
 export function ProductConfigurator({
@@ -370,6 +198,7 @@ export function ProductConfigurator({
   const router = useRouter();
   const { addItem } = useCart();
   const isMerchandise = product.businessType === "merchandise";
+  const primaryZone = product.zones[0];
 
   // If the customer arrived here by tapping a suggested product on another
   // product's page, pick up the names/date/monogram/logo they'd already
@@ -378,29 +207,28 @@ export function ProductConfigurator({
   // one-shot read, not a subscription. Cleared as soon as it's read, so it
   // only ever applies right after that click, not on a later unrelated visit.
   const [handoff] = useState(() => consumePersonalizationHandoff());
-  // Placeholder content only — a starting point so the live preview isn't
-  // blank, swapped out per vertical so a promotional-merchandise storefront
-  // doesn't open on a wedding couple's names.
-  const [names, setNames] = useState(handoff?.names || (isMerchandise ? "Your Company" : "Amelia & Ravi"));
-  const [date, setDate] = useState(handoff?.date || (isMerchandise ? "" : "2026-06-14"));
-  const [monogram, setMonogram] = useState(handoff?.monogram || "");
-  const [frame, setFrame] = useState(handoff?.frame || "");
-  const [textFont, setTextFont] = useState<string>(
-    handoff?.textFont || (isMerchandise ? "montserrat" : DEFAULT_TEXT_FONT)
-  );
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(handoff?.logoDataUrl ?? null);
-  // Only meaningful for a single-color-ink technique: the ink color the
-  // customer picks for their logo, the resulting flattened silhouette
-  // preview (fill-mode "silhouette"), and the logo traced into vector path
-  // data so the print-ready outline can include it as true curves.
-  const [inkColor, setInkColor] = useState("#1a1a1a");
-  const [colorTextInput, setColorTextInput] = useState("");
-  const [logoSilhouetteUrl, setLogoSilhouetteUrl] = useState<string | null>(null);
-  const [logoVector, setLogoVector] = useState<{ ds: string[]; width: number; height: number } | null>(null);
-  const [removingBackground, setRemovingBackground] = useState(false);
-  const [logoNaturalSize, setLogoNaturalSize] = useState<{ width: number; height: number } | null>(null);
-  const [detectedColors, setDetectedColors] = useState<DetectedColor[]>([]);
+
+  const [initialDesign] = useState<Design>(() => {
+    const base = makeDefaultDesign(isMerchandise, primaryZone);
+    if (!handoff) return base;
+    return {
+      ...base,
+      names: handoff.names || base.names,
+      date: handoff.date || base.date,
+      monogram: handoff.monogram || base.monogram,
+      frame: handoff.frame || base.frame,
+      textFont: handoff.textFont || base.textFont,
+      logoPreview: handoff.logoDataUrl ?? base.logoPreview,
+      positions: handoff.positions ? { ...base.positions, ...handoff.positions } : base.positions,
+      elemScale: handoff.elemScale ? { ...base.elemScale, ...handoff.elemScale } : base.elemScale,
+      elemRotationOffset: handoff.elemRotationOffset
+        ? { ...base.elemRotationOffset, ...handoff.elemRotationOffset }
+        : base.elemRotationOffset,
+    };
+  });
+
+  const { design, setDesign, setDesignCoalescing, replaceDesign, undo, redo, commitGesture, canUndo, canRedo } =
+    useDesignReducer(initialDesign);
 
   // The handoff logo is only a data URL (its File object couldn't survive
   // navigation) — reconstitute it as a real File async so it can still be
@@ -408,43 +236,50 @@ export function ProductConfigurator({
   useEffect(() => {
     if (!handoff?.logoDataUrl) return;
     dataUrlToBlob(handoff.logoDataUrl).then((blob) => {
-      setLogoFile(new File([blob], "logo.png", { type: blob.type || "image/png" }));
+      setDesign((prev) => ({ ...prev, logoFile: new File([blob], "logo.png", { type: blob.type || "image/png" }) }));
     });
+    // Mount-only: the handoff itself never changes after the initial read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handoff]);
-  // A cart-item "Edit" click carries the exact positions/rotations that
-  // were configured back through the handoff (a plain related-product
-  // suggestion click has no prior arrangement, so these are absent there
-  // and fall back to the defaults as usual).
-  const [positions, setPositions] = useState<Record<ElemKey, ElemPos>>(() => {
-    const defaults = computeDefaultPositions(product.zones[0]);
-    return handoff?.positions ? { ...defaults, ...handoff.positions } : defaults;
-  });
-  // Each element (logo, monogram, names, date) gets its own independent
-  // size and rotation, adjusted with on-canvas drag handles right on the
-  // element — not shared sliders elsewhere in the page.
-  const [elemScale, setElemScale] = useState<Record<ElemKey, number>>(
-    handoff?.elemScale ? { ...DEFAULT_SCALES, ...handoff.elemScale } : DEFAULT_SCALES
-  );
-  const [elemRotationOffset, setElemRotationOffset] = useState<Record<ElemKey, number>>(
-    handoff?.elemRotationOffset ? { ...DEFAULT_ROTATIONS, ...handoff.elemRotationOffset } : DEFAULT_ROTATIONS
-  );
-  // Resize/rotate handles only show on the element the customer tapped —
-  // otherwise the photo stays uncluttered.
+
+  const [logoSilhouetteUrl, setLogoSilhouetteUrl] = useState<string | null>(null);
+  const [logoVector, setLogoVector] = useState<{ ds: string[]; width: number; height: number } | null>(null);
+  const [removingBackground, setRemovingBackground] = useState(false);
+  const [logoNaturalSize, setLogoNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [detectedColors, setDetectedColors] = useState<DetectedColor[]>([]);
+  const [showCropModal, setShowCropModal] = useState(false);
+
+  // Which tool's panel is open (EDIT-01) and which element is selected on
+  // the canvas (EDIT-04) — kept separate from `design` since neither is
+  // part of the undoable design itself.
+  const [activeTool, setActiveTool] = useState<ToolId | null>(null);
   const [activeElem, setActiveElem] = useState<ElemKey | null>(null);
   // Brief, non-blocking feedback shown near an element's size tag while
   // resizing hits the print area's limit (BUG-10) or a rotation had to
-  // shrink the element to keep it inside the print area (BUG-03) — cleared
-  // as soon as the gesture ends.
+  // shrink the element to keep it inside the print area (BUG-03).
   const [elemNotice, setElemNotice] = useState<{ key: ElemKey; message: string } | null>(null);
-  // Whichever element was tapped most recently renders on top of the
-  // others — without this, overlapping elements always hit-test in a fixed
-  // DOM order (logo, then monogram, then names, then date), so a later
-  // element's invisible box can steal clicks meant for one drawn earlier
-  // even where the later element has no visible pixels there.
-  const [elemOrder, setElemOrder] = useState<ElemKey[]>(["logo", "monogram", "names", "date"]);
-  const bringToFront = useCallback((key: ElemKey) => {
-    setElemOrder((prev) => (prev[prev.length - 1] === key ? prev : [...prev.filter((k) => k !== key), key]));
+  const [summaryOpen, setSummaryOpen] = useState(true);
+
+  // EDIT-03 canvas view state — never part of the undoable design (zoom
+  // doesn't change what's printed).
+  const [zoomPct, setZoomPct] = useState(100);
+  const [guidesOn, setGuidesOn] = useState(true);
+  const [gridOn, setGridOn] = useState(false);
+  const [snapLines, setSnapLines] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
+
+  const selectElem = useCallback((key: ElemKey | null) => {
+    setActiveElem(key);
+    if (key) setActiveTool(key);
   }, []);
+
+  const bringToFront = useCallback((key: ElemKey) => {
+    setDesignCoalescing((prev) =>
+      prev.elemOrder[prev.elemOrder.length - 1] === key
+        ? prev
+        : { ...prev, elemOrder: [...prev.elemOrder.filter((k) => k !== key), key] }
+    );
+  }, [setDesignCoalescing]);
+
   const dragState = useRef<{
     key: ElemKey;
     startX: number;
@@ -464,18 +299,13 @@ export function ProductConfigurator({
     startScale: number;
     startRotation: number;
     maxScale: number;
-    // Only used by the rotate branch (BUG-03): the element's own true
-    // (unrotated) footprint and photo-local center, the quad it must stay
-    // inside, and the print area's own auto-tilt at gesture start — enough
-    // to re-run containment against the *new* rotation on every move event,
-    // without needing anything from component scope that could go stale
-    // mid-gesture.
     quadCornersPx: Point[] | null;
     centerPhotoPx: Point | null;
     naturalHalfW: number;
     naturalHalfH: number;
     autoRotationDeg: number;
   } | null>(null);
+
   const [techniqueId, setTechniqueId] = useState(
     product.techniques.find((t) => t.is_default)?.id ?? product.techniques[0]?.id ?? ""
   );
@@ -483,12 +313,6 @@ export function ProductConfigurator({
   const [quantity, setQuantity] = useState(
     product.popularQty && product.popularQty >= product.minOrder ? product.popularQty : product.minOrder
   );
-  // The quantity field is directly editable (not just +/-/preset chips) so
-  // a customer can type an exact amount — kept as its own string state so
-  // typing isn't clobbered by clamping mid-keystroke; every other way of
-  // changing quantity (the +/- buttons, the preset chips) updates this
-  // alongside `quantity` via updateQuantity below, rather than syncing it
-  // from an effect.
   const [quantityInput, setQuantityInput] = useState(String(quantity));
   const updateQuantity = (next: number) => {
     setQuantity(next);
@@ -496,9 +320,7 @@ export function ProductConfigurator({
   };
   // BUG-09: typing a value below the minimum (or an invalid one) no longer
   // silently snaps to the minimum on blur — it stays exactly as typed, with
-  // an inline message and the cart buttons disabled, until corrected. The
-  // committed `quantity` (used for the total and Add to Cart) only advances
-  // once the typed value is actually valid.
+  // an inline message and the cart buttons disabled, until corrected.
   const parsedQuantityInput = parseQuantityInput(quantityInput);
   const quantityBelowMinimum = isQuantityBelowMinimum(quantityInput, product.minOrder);
   const commitQuantityInput = () => {
@@ -516,94 +338,39 @@ export function ProductConfigurator({
     zoneId: string;
   } | null>(null);
 
-  const primaryZone = product.zones[0];
   // Which print area the shopper is currently viewing/personalizing. The
   // primary area is always included in the order; secondary/tertiary ones
   // (selectedExtraZoneIds) are additive add-ons the shopper opts into, each
-  // with its own surcharge and its own independent design (see ZoneDesign
-  // above) — switching areas doesn't discard what was configured elsewhere.
+  // with its own surcharge and its own independent design — switching areas
+  // doesn't discard what was configured elsewhere. Not part of the undoable
+  // design: switching zones loads a different design (history's "replace"),
+  // it isn't itself a design edit.
   const [activeZoneId, setActiveZoneId] = useState(primaryZone?.id ?? "");
   const [selectedExtraZoneIds, setSelectedExtraZoneIds] = useState<Set<string>>(new Set());
-  const zoneDesignsRef = useRef<Record<string, ZoneDesign>>({});
+  const zoneDesignsRef = useRef<Record<string, Design>>({});
   const zone = product.zones.find((z) => z.id === activeZoneId) ?? primaryZone;
   const zoneImageIndex = zone?.image_id ? product.images.findIndex((i) => i.id === zone.image_id) : -1;
   const [activeImage, setActiveImage] = useState(zoneImageIndex >= 0 ? zoneImageIndex : 0);
-
-  // Fresh, unconfigured design for a print area the shopper hasn't visited
-  // yet — same placeholder/default values the component itself starts with,
-  // minus the cross-page handoff (that only ever applies to the area the
-  // shopper actually landed on).
-  const makeDefaultDesign = useCallback(
-    (zoneForDefaults?: Zone): ZoneDesign => ({
-      names: isMerchandise ? "Your Company" : "Amelia & Ravi",
-      date: isMerchandise ? "" : "2026-06-14",
-      monogram: "",
-      frame: "",
-      textFont: isMerchandise ? "montserrat" : DEFAULT_TEXT_FONT,
-      logoFile: null,
-      logoPreview: null,
-      inkColor: "#1a1a1a",
-      colorTextInput: "",
-      positions: computeDefaultPositions(zoneForDefaults),
-      elemScale: DEFAULT_SCALES,
-      elemRotationOffset: DEFAULT_ROTATIONS,
-      elemOrder: ["logo", "monogram", "names", "date"],
-    }),
-    [isMerchandise]
-  );
 
   // Switches which print area is active: snapshots the outgoing area's
   // current on-screen design so it isn't lost, then loads the incoming
   // area's own saved design (or a fresh one if this is the first visit to
   // it) and jumps the displayed photo to that area's own reference image.
-  const switchActiveZone = (newZoneId: string) => {
-    if (newZoneId === activeZoneId) return;
-    zoneDesignsRef.current[activeZoneId] = {
-      names,
-      date,
-      monogram,
-      frame,
-      textFont,
-      logoFile,
-      logoPreview,
-      inkColor,
-      colorTextInput,
-      positions,
-      elemScale,
-      elemRotationOffset,
-      elemOrder,
-    };
-    const newZone = product.zones.find((z) => z.id === newZoneId);
-    const next = zoneDesignsRef.current[newZoneId] ?? makeDefaultDesign(newZone);
-    setNames(next.names);
-    setDate(next.date);
-    setMonogram(next.monogram);
-    setFrame(next.frame);
-    setTextFont(next.textFont);
-    setLogoFile(next.logoFile);
-    setLogoPreview(next.logoPreview);
-    setInkColor(next.inkColor);
-    setColorTextInput(next.colorTextInput);
-    setPositions(next.positions);
-    setElemScale(next.elemScale);
-    setElemRotationOffset(next.elemRotationOffset);
-    setElemOrder(next.elemOrder);
-    setActiveElem(null);
-    setActiveZoneId(newZoneId);
+  const switchActiveZone = useCallback(
+    (newZoneId: string) => {
+      if (newZoneId === activeZoneId) return;
+      zoneDesignsRef.current[activeZoneId] = design;
+      const newZone = product.zones.find((z) => z.id === newZoneId);
+      const next = zoneDesignsRef.current[newZoneId] ?? makeDefaultDesign(isMerchandise, newZone);
+      replaceDesign(next);
+      selectElem(null);
+      setActiveZoneId(newZoneId);
+      const newImageIndex = newZone?.image_id ? product.images.findIndex((img) => img.id === newZone.image_id) : -1;
+      setActiveImage(newImageIndex >= 0 ? newImageIndex : 0);
+    },
+    [activeZoneId, design, isMerchandise, product.images, product.zones, replaceDesign, selectElem]
+  );
 
-    // Always jump to this area's own photo — even one with no explicit
-    // reference image_id set still needs to reset to the default (first)
-    // photo, or switching away from an area that does have one and back
-    // would leave the previous area's photo on screen.
-    const newImageIndex = newZone?.image_id
-      ? product.images.findIndex((img) => img.id === newZone.image_id)
-      : -1;
-    setActiveImage(newImageIndex >= 0 ? newImageIndex : 0);
-  };
-
-  // Toggles a secondary/tertiary area's inclusion in this order — adding
-  // one also switches to it so the shopper can personalize it immediately;
-  // removing one falls back to viewing the primary area.
   const toggleExtraZone = (zoneId: string) => {
     const wasSelected = selectedExtraZoneIds.has(zoneId);
     setSelectedExtraZoneIds((prev) => {
@@ -621,12 +388,10 @@ export function ProductConfigurator({
 
   // BUG-01: restores the last design saved for this product, so reloading
   // or re-entering the URL picks up where the shopper left off instead of
-  // the sample design. A handoff from another product's page (`handoff`
-  // above) is a more recent, explicit signal than an old saved draft, so it
-  // still takes priority, unchanged from today's behavior — this only
-  // restores when there's no handoff. Guards every restored id (zone,
-  // technique, variant) against still existing on the product, in case its
-  // configuration changed since the design was saved.
+  // the sample design. A handoff from another product's page is a more
+  // recent, explicit signal than an old saved draft, so it still takes
+  // priority, unchanged from today's behavior — this only restores when
+  // there's no handoff.
   const hasRestoredRef = useRef(false);
   useEffect(() => {
     if (!product.personalizable || handoff) {
@@ -641,23 +406,9 @@ export function ProductConfigurator({
           saved.activeZoneId && product.zones.some((z) => z.id === saved.activeZoneId)
             ? saved.activeZoneId
             : primaryZone?.id ?? "";
-        zoneDesignsRef.current = saved.zones as Record<string, ZoneDesign>;
-        const activeDesign = saved.zones[resolvedActiveZoneId];
-        if (activeDesign) {
-          setNames(activeDesign.names);
-          setDate(activeDesign.date);
-          setMonogram(activeDesign.monogram);
-          setFrame(activeDesign.frame);
-          setTextFont(activeDesign.textFont);
-          setLogoFile(activeDesign.logoFile);
-          setLogoPreview(activeDesign.logoPreview);
-          setInkColor(activeDesign.inkColor);
-          setColorTextInput(activeDesign.colorTextInput);
-          setPositions(activeDesign.positions as Record<ElemKey, ElemPos>);
-          setElemScale(activeDesign.elemScale as Record<ElemKey, number>);
-          setElemRotationOffset(activeDesign.elemRotationOffset as Record<ElemKey, number>);
-          setElemOrder(activeDesign.elemOrder as ElemKey[]);
-        }
+        zoneDesignsRef.current = saved.zones as unknown as Record<string, Design>;
+        const activeDesign = saved.zones[resolvedActiveZoneId] as unknown as Design | undefined;
+        if (activeDesign) replaceDesign(activeDesign);
         setActiveZoneId(resolvedActiveZoneId);
         setSelectedExtraZoneIds(
           new Set(saved.selectedExtraZoneIds.filter((id) => product.zones.some((z) => z.id === id)))
@@ -665,8 +416,9 @@ export function ProductConfigurator({
         if (product.techniques.some((t) => t.id === saved.techniqueId)) setTechniqueId(saved.techniqueId);
         if (product.variants.some((v) => v.id === saved.variantId)) setVariantId(saved.variantId);
         if (Number.isFinite(saved.quantity) && saved.quantity > 0) updateQuantity(saved.quantity);
-        const newImageIndex = product.zones.find((z) => z.id === resolvedActiveZoneId)?.image_id
-          ? product.images.findIndex((img) => img.id === product.zones.find((z) => z.id === resolvedActiveZoneId)?.image_id)
+        const resolvedZone = product.zones.find((z) => z.id === resolvedActiveZoneId);
+        const newImageIndex = resolvedZone?.image_id
+          ? product.images.findIndex((img) => img.id === resolvedZone.image_id)
           : -1;
         setActiveImage(newImageIndex >= 0 ? newImageIndex : 0);
       }
@@ -675,34 +427,15 @@ export function ProductConfigurator({
     return () => {
       cancelled = true;
     };
-    // Deliberately mount-only: restoring reacts to nothing after the page
-    // has loaded (a later prop change can't happen — `product` is this
-    // page's own fixed server-fetched data).
+    // Deliberately mount-only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // BUG-01: saves the current design shortly after each change, debounced
   // so a burst of edits (typing, dragging) writes once, not per keystroke.
-  // Waits for the restore above to finish first — saving before that would
-  // overwrite a just-loaded draft with the page's blank initial state.
   useEffect(() => {
     if (!product.personalizable || !hasRestoredRef.current) return;
     const timeout = setTimeout(() => {
-      const liveDesign: ZoneDesign = {
-        names,
-        date,
-        monogram,
-        frame,
-        textFont,
-        logoFile,
-        logoPreview,
-        inkColor,
-        colorTextInput,
-        positions,
-        elemScale,
-        elemRotationOffset,
-        elemOrder,
-      };
       designStorage.save({
         productId: product.id,
         versionId: LATEST_VERSION_ID,
@@ -712,60 +445,18 @@ export function ProductConfigurator({
         techniqueId,
         variantId,
         quantity,
-        zones: { ...zoneDesignsRef.current, [activeZoneId]: liveDesign },
+        zones: { ...zoneDesignsRef.current, [activeZoneId]: design } as never,
       });
     }, 600);
     return () => clearTimeout(timeout);
-  }, [
-    product.personalizable,
-    product.id,
-    names,
-    date,
-    monogram,
-    frame,
-    textFont,
-    logoFile,
-    logoPreview,
-    inkColor,
-    colorTextInput,
-    positions,
-    elemScale,
-    elemRotationOffset,
-    elemOrder,
-    activeZoneId,
-    selectedExtraZoneIds,
-    techniqueId,
-    variantId,
-    quantity,
-  ]);
+  }, [product.personalizable, product.id, design, activeZoneId, selectedExtraZoneIds, techniqueId, variantId, quantity]);
 
   const [zoneRef, zoneSize] = useElementSize<HTMLDivElement>();
-  // Measures the full photo container (not just the zone sub-box) so the
-  // print area's true corners_pct — a possibly angled/trapezoidal quad, not
-  // just zoneBox's axis-aligned bounding rectangle — can be converted to
-  // real on-screen pixels for clamping drags and resizes against the
-  // actual boundary a customer drew in the admin print-area tool.
   const [photoRef, photoSize] = useElementSize<HTMLDivElement>();
 
   const zoneBox = useMemo(() => (zone ? boundingBox(zone.corners_pct) : null), [zone]);
+  const zonePoints = useMemo(() => (zone ? zone.corners_pct.map((c) => `${c.x},${c.y}`).join(" ") : ""), [zone]);
 
-  // The draggable elements are positioned within zoneBox (its bounding box) —
-  // that's the same coordinate space the AI render and snapshot compositors
-  // use. But for angled/perspective products the actual print area is a
-  // trapezoid, not that bounding rectangle, so the visible outline traces
-  // the true quad (matching the admin print-area tool exactly) even though
-  // it draws in the full-photo 0-100 space rather than zoneBox's.
-  const zonePoints = useMemo(
-    () => (zone ? zone.corners_pct.map((c) => `${c.x},${c.y}`).join(" ") : ""),
-    [zone]
-  );
-
-  // Tilts the logo/text to match the print area's own incline (its top
-  // edge, TL→TR) so personalization reads as embedded in an angled surface
-  // instead of pasted on upright. Uses zoneBox's rendered pixel size to
-  // convert the full-image percentage corners into real on-screen angles —
-  // the container isn't square (aspect-[4/5]), so raw percentage deltas
-  // alone would give a skewed angle.
   const autoRotationDeg = useMemo(() => {
     if (!zone || zone.corners_pct.length !== 4 || !zoneBox || !zoneBox.width || !zoneBox.height) return 0;
     if (!zoneSize.width || !zoneSize.height) return 0;
@@ -776,31 +467,24 @@ export function ProductConfigurator({
     const dy = (tr.y - tl.y) * pxPerPctY;
     return (Math.atan2(dy, dx) * 180) / Math.PI;
   }, [zone, zoneBox, zoneSize.width, zoneSize.height]);
-  // Customers can nudge rotation further on top of the auto-matched angle
-  // (e.g. the quad only approximates the surface, or they simply prefer it
-  // off-axis) — each element gets its own independent offset via its own
-  // on-canvas rotate handle.
+
   const elemRotationDeg: Record<ElemKey, number> = useMemo(
     () => ({
-      logo: autoRotationDeg + elemRotationOffset.logo,
-      monogram: autoRotationDeg + elemRotationOffset.monogram,
-      names: autoRotationDeg + elemRotationOffset.names,
-      date: autoRotationDeg + elemRotationOffset.date,
+      logo: autoRotationDeg + design.elemRotationOffset.logo,
+      monogram: autoRotationDeg + design.elemRotationOffset.monogram,
+      frame: autoRotationDeg + design.elemRotationOffset.frame,
+      names: autoRotationDeg + design.elemRotationOffset.names,
+      date: autoRotationDeg + design.elemRotationOffset.date,
+      qr: autoRotationDeg + design.elemRotationOffset.qr,
     }),
-    [autoRotationDeg, elemRotationOffset]
+    [autoRotationDeg, design.elemRotationOffset]
   );
 
-  // The print area's true corners in the SAME local pixel space as
-  // photoSize (origin at the photo's own top-left) — a pure function of
-  // already-tracked state, safe to compute during render, unlike a live
-  // getBoundingClientRect() call.
   const quadCornersPx = useMemo<Point[] | null>(() => {
     if (!zone || zone.corners_pct.length !== 4 || !photoSize.width || !photoSize.height) return null;
     return zone.corners_pct.map((c) => ({ x: (c.x / 100) * photoSize.width, y: (c.y / 100) * photoSize.height }));
   }, [zone, photoSize.width, photoSize.height]);
 
-  // Converts a position (0-100 within zoneBox, the coordinate space
-  // `positions` are stored in) to that same photo-local pixel space.
   const posToPhotoPx = useCallback(
     (pos: ElemPos): Point | null => {
       if (!zoneBox || !photoSize.width || !photoSize.height) return null;
@@ -811,10 +495,6 @@ export function ProductConfigurator({
     [zoneBox, photoSize.width, photoSize.height]
   );
 
-  // The inverse of posToPhotoPx — used after a rotation gesture resolves an
-  // element's center back inside the print area (BUG-03), to convert that
-  // photo-local pixel point back into the zoneBox-relative % `positions` are
-  // stored in.
   const photoPxToPos = useCallback(
     (pt: Point): ElemPos | null => {
       if (!zoneBox || !photoSize.width || !photoSize.height) return null;
@@ -828,17 +508,41 @@ export function ProductConfigurator({
     [zoneBox, photoSize.width, photoSize.height]
   );
 
-  // Lets the customer drag the logo, monogram, names, and date independently
-  // within the print area. Listeners stay attached for the component's
-  // lifetime and no-op unless a drag is in progress.
+  // EDIT-03 snapping: the print area's own center/edge lines, plus every
+  // OTHER visible element's center/edge — computed fresh each drag from
+  // current on-screen boxes, in the same photo-local px space as dragging.
+  const computeSnapTargets = useCallback(
+    (excludeKey: ElemKey) => {
+      const targetsX: number[] = [];
+      const targetsY: number[] = [];
+      if (quadCornersPx && quadCornersPx.length === 4) {
+        const xs = quadCornersPx.map((c) => c.x);
+        const ys = quadCornersPx.map((c) => c.y);
+        targetsX.push(...boxSnapTargets(Math.min(...xs), Math.max(...xs)));
+        targetsY.push(...boxSnapTargets(Math.min(...ys), Math.max(...ys)));
+      }
+      for (const key of design.elemOrder) {
+        if (key === excludeKey || design.hidden[key] || !isElemPresent(design, key)) continue;
+        const box = elemBoxRefs.current[key];
+        const center = posToPhotoPx(design.positions[key]);
+        if (!box || !center) continue;
+        const halfW = box.offsetWidth / 2;
+        const halfH = box.offsetHeight / 2;
+        targetsX.push(...boxSnapTargets(center.x - halfW, center.x + halfW));
+        targetsY.push(...boxSnapTargets(center.y - halfH, center.y + halfH));
+      }
+      return { targetsX, targetsY };
+    },
+    [design, posToPhotoPx, quadCornersPx]
+  );
+
+  // Lets the customer drag the logo, monogram, frame, names, date, and QR
+  // independently within the print area. Listeners stay attached for the
+  // component's lifetime and no-op unless a drag is in progress.
   useEffect(() => {
     const handleMove = (e: PointerEvent) => {
       const state = dragState.current;
       if (!state) return;
-      // Pointer-movement deltas are already in real screen pixels, and so
-      // is photo-local space (1 photo-local unit == 1 rendered pixel) — so
-      // the delta can be added directly to the drag's starting photo-local
-      // position without any further conversion.
       const candidate: Point = {
         x: state.originPx.x + (e.clientX - state.startX),
         y: state.originPx.y + (e.clientY - state.startY),
@@ -848,18 +552,23 @@ export function ProductConfigurator({
           ? clampOrientedBoxToQuad(candidate, quadCornersPx, state.halfW, state.halfH, state.rotationRad)
           : candidate;
       if (!zoneBox || !photoSize.width || !photoSize.height) return;
-      const fullPctX = (clamped.x / photoSize.width) * 100;
-      const fullPctY = (clamped.y / photoSize.height) * 100;
-      setPositions((prev) => ({
-        ...prev,
-        [state.key]: {
-          x: ((fullPctX - zoneBox.left) / zoneBox.width) * 100,
-          y: ((fullPctY - zoneBox.top) / zoneBox.height) * 100,
-        },
-      }));
+      // EDIT-03: snap the element's center to nearby center/edge lines
+      // before converting to a stored position.
+      const { targetsX, targetsY } = computeSnapTargets(state.key);
+      const snapped = computeSnap(clamped, targetsX, targetsY, 6);
+      setSnapLines({ x: snapped.snappedToX, y: snapped.snappedToY });
+      const fullPctX = (snapped.x / photoSize.width) * 100;
+      const fullPctY = (snapped.y / photoSize.height) * 100;
+      const nextPos: ElemPos = {
+        x: ((fullPctX - zoneBox.left) / zoneBox.width) * 100,
+        y: ((fullPctY - zoneBox.top) / zoneBox.height) * 100,
+      };
+      setDesignCoalescing((prev) => ({ ...prev, positions: { ...prev.positions, [state.key]: nextPos } }));
     };
     const handleUp = () => {
+      if (dragState.current) commitGesture();
       dragState.current = null;
+      setSnapLines({ x: null, y: null });
     };
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
@@ -867,36 +576,26 @@ export function ProductConfigurator({
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
     };
-  }, [quadCornersPx, zoneBox, photoSize.width, photoSize.height]);
+  }, [quadCornersPx, zoneBox, photoSize.width, photoSize.height, computeSnapTargets, setDesignCoalescing, commitGesture]);
 
   const startDrag = useCallback(
     (key: ElemKey) => (e: React.PointerEvent) => {
+      if (design.locked[key]) return;
       e.preventDefault();
       e.stopPropagation();
-      setActiveElem(key);
+      selectElem(key);
       bringToFront(key);
       const box = elemBoxRefs.current[key];
-      const originPx = posToPhotoPx(positions[key]);
+      const originPx = posToPhotoPx(design.positions[key]);
       if (!originPx) return;
-      // Half-width/half-height from the element's own untransformed layout
-      // size (not the rotated getBoundingClientRect, which would inflate
-      // these) combined with its current on-screen rotation — so the quad
-      // clamp below sees the element's true rotated footprint instead of a
-      // single circular margin that either clamps too early along its short
-      // axis or lets it cross the boundary along its long axis.
       const halfW = box ? box.offsetWidth / 2 : 0;
       const halfH = box ? box.offsetHeight / 2 : 0;
       const rotationRad = (elemRotationDeg[key] * Math.PI) / 180;
       dragState.current = { key, startX: e.clientX, startY: e.clientY, originPx, halfW, halfH, rotationRad };
     },
-    [positions, posToPhotoPx, bringToFront, elemRotationDeg]
+    [design.locked, design.positions, posToPhotoPx, bringToFront, elemRotationDeg, selectElem]
   );
 
-  // Direct-manipulation resize/rotate for each element, mirroring the
-  // drag-to-move interaction: a handle at the element's corner scales it,
-  // a handle above it rotates it, both tracked from the element's own
-  // on-screen center (its own bounding rect, so it works regardless of
-  // current rotation). One ref map covers all four elements.
   const elemBoxRefs = useRef<Partial<Record<ElemKey, HTMLDivElement>>>({});
   const setElemBoxRef = useCallback(
     (key: ElemKey) => (el: HTMLDivElement | null) => {
@@ -915,22 +614,12 @@ export function ProductConfigurator({
         const ratio = state.startDist > 0 ? dist / state.startDist : 1;
         const uncapped = state.startScale * ratio;
         const next = Math.max(0.3, Math.min(state.maxScale, uncapped));
-        // BUG-10: dragging past the print area's own limit doesn't just
-        // silently stop growing — it says so, for as long as the drag keeps
-        // pushing past it.
-        setElemNotice(
-          uncapped > state.maxScale ? { key: state.key, message: "Max size for this print area" } : null
-        );
-        setElemScale((prev) => ({ ...prev, [state.key]: next }));
+        setElemNotice(uncapped > state.maxScale ? { key: state.key, message: "Max size for this print area" } : null);
+        setDesignCoalescing((prev) => ({ ...prev, elemScale: { ...prev.elemScale, [state.key]: next } }));
       } else {
         const angle = (Math.atan2(e.clientY - state.centerY, e.clientX - state.centerX) * 180) / Math.PI;
         const delta = angle - state.startAngle;
         const next = Math.max(-45, Math.min(45, state.startRotation + delta));
-        // BUG-03: a rotation that would otherwise leave part of the element
-        // outside the print area is resolved immediately, every move event
-        // — first by nudging the element back inside at its current size,
-        // and only if that alone isn't enough, by also shrinking it to the
-        // largest size that fits (with a brief notice either way).
         if (state.quadCornersPx && state.centerPhotoPx && state.naturalHalfW > 0 && state.naturalHalfH > 0) {
           const rotationRad = ((state.autoRotationDeg + next) * Math.PI) / 180;
           const resolved = resolveRotatedContainment(
@@ -941,20 +630,20 @@ export function ProductConfigurator({
             rotationRad
           );
           const resolvedPos = photoPxToPos(resolved.center);
-          if (resolvedPos) {
-            setPositions((prev) => ({ ...prev, [state.key]: resolvedPos }));
-          }
-          // Recomputed fresh from the gesture's original (unshrunk) size on
-          // every move event, not accumulated from a previous event's
-          // result — so rotating back to a safe angle restores the element
-          // to its starting size instead of leaving it shrunk.
-          setElemScale((prev) => ({ ...prev, [state.key]: state.startScale * resolved.scale }));
+          setDesignCoalescing((prev) => ({
+            ...prev,
+            positions: resolvedPos ? { ...prev.positions, [state.key]: resolvedPos } : prev.positions,
+            elemScale: { ...prev.elemScale, [state.key]: state.startScale * resolved.scale },
+            elemRotationOffset: { ...prev.elemRotationOffset, [state.key]: next },
+          }));
           setElemNotice(resolved.resized ? { key: state.key, message: "Resized to fit the print area" } : null);
+        } else {
+          setDesignCoalescing((prev) => ({ ...prev, elemRotationOffset: { ...prev.elemRotationOffset, [state.key]: next } }));
         }
-        setElemRotationOffset((prev) => ({ ...prev, [state.key]: next }));
       }
     };
     const handleUp = () => {
+      if (elemAdjustState.current) commitGesture();
       elemAdjustState.current = null;
       setElemNotice(null);
     };
@@ -964,83 +653,57 @@ export function ProductConfigurator({
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
     };
-  }, [photoPxToPos]);
+  }, [photoPxToPos, setDesignCoalescing, commitGesture]);
 
-  // Real px-per-mm for the currently rendered zone box, so text/logo sizing
-  // reflects the product's actual printable area instead of a fixed guess.
   const mmPerPx = useMemo(() => {
     if (!zone?.width_mm || !zoneSize.width) return null;
     return zone.width_mm / zoneSize.width;
   }, [zone, zoneSize.width]);
   const pxPerMm = mmPerPx ? 1 / mmPerPx : null;
-  // Available width for auto-fitting names/date text, measured along the
-  // element's own (possibly rotated) axis from its actual current position
-  // out to the print area's TRUE quad boundary — not a flat percentage of
-  // zoneSize.width, which either overshoots a trapezoidal print area or
-  // falls needlessly short of a rectangular one depending on where the
-  // element sits and how it's rotated. Just one small margin (matching the
-  // resize handle's own 0.98 cap below) rather than two independently
-  // tuned margins stacking into a much bigger gap than either alone
-  // intended — which used to leave roughly a centimeter of unusable space
-  // before the real edge.
+
   const textAvailableWidth = useCallback(
     (key: "names" | "date") => {
       const fallback = zoneSize.width * 0.97;
-      const origin = posToPhotoPx(positions[key]);
+      const origin = posToPhotoPx(design.positions[key]);
       if (!origin || !quadCornersPx) return fallback;
       const theta = (elemRotationDeg[key] * Math.PI) / 180;
       const dir: Point = { x: Math.cos(theta), y: Math.sin(theta) };
       const avail = 2 * availableAlongAxis(origin, dir, quadCornersPx) * 0.98;
       return Number.isFinite(avail) && avail > 0 ? avail : fallback;
     },
-    [zoneSize.width, posToPhotoPx, positions, quadCornersPx, elemRotationDeg]
+    [zoneSize.width, posToPhotoPx, design.positions, quadCornersPx, elemRotationDeg]
   );
   const nameFontPx = fitTextFontSize(
-    names,
-    (pxPerMm ? Math.max(10, Math.min(28, pxPerMm * 5)) : 18) * elemScale.names,
+    design.names,
+    (pxPerMm ? Math.max(10, Math.min(28, pxPerMm * 5)) : 18) * design.elemScale.names,
     textAvailableWidth("names")
   );
-  const monogramFontPx = (pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20) * elemScale.monogram;
-  // formattedDate isn't declared yet at this point in the component, but
-  // it's always exactly 10 characters ("DD·MM·YYYY"), so that's used
-  // directly rather than reordering declarations.
+  const monogramFontPx = (pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20) * design.elemScale.monogram;
+  const frameFontPx = (pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20) * design.elemScale.frame;
+  const formattedDate = useMemo(() => formatPrintDate(design.date), [design.date]);
   const dateFontPx = fitTextFontSize(
     "0000000000",
-    (pxPerMm ? Math.max(8, Math.min(14, pxPerMm * 2.4)) : 11) * elemScale.date,
+    (pxPerMm ? Math.max(8, Math.min(14, pxPerMm * 2.4)) : 11) * design.elemScale.date,
     textAvailableWidth("date")
   );
+  const qrSizePx = (pxPerMm ? Math.max(20, Math.min(80, pxPerMm * 15)) : 40) * design.elemScale.qr;
 
-  // Default logo footprint: 45% of the print area's smaller physical
-  // dimension (width_mm/height_mm, entered when the product was set up) —
-  // not a flat percentage of the box — so it's proportionate whether the
-  // zone is small or large, wide or tall. Mirrors defaultLogoBoxSize() in
-  // the server-side compositor. elemScale.logo is the customer's own
-  // on-top multiplier from the resize handle.
   const logoWidthPct = useMemo(() => {
-    const fallbackPct = 45 * elemScale.logo;
+    const fallbackPct = 45 * design.elemScale.logo;
     if (!zone?.width_mm || !zone?.height_mm || !zoneSize.width || !zoneSize.height) return fallbackPct;
     const pxPerMmX = zoneSize.width / zone.width_mm;
     const pxPerMmY = zoneSize.height / zone.height_mm;
     const scale = Math.min(pxPerMmX, pxPerMmY);
     const smallerMm = Math.min(zone.width_mm, zone.height_mm);
-    const logoBoxPx = scale * smallerMm * 0.45 * elemScale.logo;
-    // No hardcoded ceiling here — the resize handle already computes, per
-    // drag, how far this can grow before exceeding the print area itself
-    // (both width and height), so it's the sole limit on how big the logo
-    // can get.
+    const logoBoxPx = scale * smallerMm * 0.45 * design.elemScale.logo;
     return (logoBoxPx / zoneSize.width) * 100;
-  }, [zone, zoneSize.width, zoneSize.height, elemScale.logo]);
+  }, [zone, zoneSize.width, zoneSize.height, design.elemScale.logo]);
 
-  // The logo's real-world footprint width in mm, on the actual product —
-  // same 45%-of-the-smaller-dimension math as logoWidthPct above, just
-  // expressed in mm instead of a % of the rendered box, so it can be
-  // compared against the uploaded file's real pixel count for a print-DPI
-  // estimate below.
   const logoWidthMm = useMemo(() => {
     if (!zone?.width_mm || !zone?.height_mm) return null;
     const smallerMm = Math.min(zone.width_mm, zone.height_mm);
-    return smallerMm * 0.45 * elemScale.logo;
-  }, [zone, elemScale.logo]);
+    return smallerMm * 0.45 * design.elemScale.logo;
+  }, [zone, design.elemScale.logo]);
 
   const logoPrintDpi = useMemo(() => {
     if (!logoNaturalSize || !logoWidthMm) return null;
@@ -1050,6 +713,7 @@ export function ProductConfigurator({
 
   const startElemAdjust = useCallback(
     (key: ElemKey, mode: "resize" | "rotate") => (e: React.PointerEvent) => {
+      if (design.locked[key]) return;
       e.preventDefault();
       e.stopPropagation();
       const box = elemBoxRefs.current[key];
@@ -1057,53 +721,19 @@ export function ProductConfigurator({
       const rect = box.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
-      // Cap growth at the print area's own true boundary (with a little
-      // breathing room) rather than an arbitrary fixed multiplier — so an
-      // element can be enlarged right up to filling the print area, and no
-      // further. Measured against offsetWidth/Height (the element's own
-      // untransformed layout size) rather than the rotated
-      // getBoundingClientRect — once an element is tilted to match an
-      // angled print area, its rotated AABB is larger than its true
-      // footprint, which was silently collapsing this ceiling down to the
-      // current size (no further growth allowed at all).
-      const currentScale = elemScale[key] || 1;
-      // For "names", box.offsetWidth/Height only cover the text itself — a
-      // decorative frame draws further out around it (padding proportional
-      // to the current font size, see the frame's `inset`/`calc()` styling
-      // below), so the cap has to account for that extra footprint too, or
-      // the frame could balloon past the print area even while the text
-      // "natural" size still measured as comfortably within it.
-      const framePadX = key === "names" && frame ? nameFontPx * 1.4 : 0;
-      const framePadY = key === "names" && frame ? nameFontPx * 0.9 : 0;
+      const currentScale = design.elemScale[key] || 1;
+      const framePadX = key === "names" && design.frame ? nameFontPx * 1.4 : 0;
+      const framePadY = key === "names" && design.frame ? nameFontPx * 0.9 : 0;
       const naturalW = box.offsetWidth + framePadX;
       const naturalH = box.offsetHeight + framePadY;
-      // The available room is measured against the element's own true
-      // rotated footprint (its actual on-screen orientation, matching the
-      // print area's incline) rather than a single conservative
-      // nearestEdgeDistance radius — that circular bound always assumed the
-      // element could need equal room in every direction, which under-caps
-      // an element that's tilted to align with the print area (it should be
-      // able to grow right up along the incline's long axis, not just to
-      // whatever the shortest nearby edge allows).
-      const centerPhotoPx = posToPhotoPx(positions[key]);
+      const centerPhotoPx = posToPhotoPx(design.positions[key]);
       const rotationRad = (elemRotationDeg[key] * Math.PI) / 180;
       const growthRatio =
         quadCornersPx && centerPhotoPx && naturalW > 0 && naturalH > 0
           ? maxOrientedBoxScale(centerPhotoPx, quadCornersPx, naturalW / 2, naturalH / 2, rotationRad)
           : null;
-      // A hard ceiling on the *absolute* elemScale value, not a multiplier
-      // off whatever the current scale happens to be — currentScale cancels
-      // out of growthRatio (naturalW/H already reflect it), so
-      // currentScale * growthRatio is the one true scale at which the
-      // element/frame's rotated footprint would exactly reach the quad's
-      // boundary from its current position. No flooring at currentScale: if
-      // something already exceeds that (e.g. a stale/looser cap from before
-      // this fix), the next resize gesture must be allowed to shrink it back
-      // down, not just refuse to grow it further.
       const maxScale =
-        growthRatio != null && Number.isFinite(growthRatio)
-          ? Math.max(0.3, currentScale * growthRatio * 0.98)
-          : 4;
+        growthRatio != null && Number.isFinite(growthRatio) ? Math.max(0.3, currentScale * growthRatio * 0.98) : 4;
       elemAdjustState.current = {
         key,
         mode,
@@ -1112,7 +742,7 @@ export function ProductConfigurator({
         startDist: Math.hypot(e.clientX - centerX, e.clientY - centerY),
         startAngle: (Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180) / Math.PI,
         startScale: currentScale,
-        startRotation: elemRotationOffset[key],
+        startRotation: design.elemRotationOffset[key],
         maxScale,
         quadCornersPx,
         centerPhotoPx,
@@ -1121,17 +751,7 @@ export function ProductConfigurator({
         autoRotationDeg,
       };
     },
-    [
-      elemScale,
-      elemRotationOffset,
-      elemRotationDeg,
-      frame,
-      nameFontPx,
-      posToPhotoPx,
-      positions,
-      quadCornersPx,
-      autoRotationDeg,
-    ]
+    [design.locked, design.elemScale, design.frame, design.positions, design.elemRotationOffset, elemRotationDeg, nameFontPx, posToPhotoPx, quadCornersPx, autoRotationDeg]
   );
 
   const technique = product.techniques.find((t) => t.id === techniqueId);
@@ -1139,34 +759,31 @@ export function ProductConfigurator({
 
   const singleColorFillMode = technique?.singleColorInk ? technique.singleColorFillMode ?? "silhouette" : null;
   const pantoneMatch = useMemo(
-    () => (technique?.singleColorInk ? nearestPantone(inkColor) : null),
-    [technique?.singleColorInk, inkColor]
+    () => (technique?.singleColorInk ? nearestPantone(design.inkColor) : null),
+    [technique?.singleColorInk, design.inkColor]
   );
-  // The customer's chosen ink color is the whole point of a single-color-ink
-  // technique — one ink prints/etches everything, so it has to apply to
-  // every personalization element (monogram, frame, names, date), not just
-  // the logo silhouette. Non-single-color techniques keep their fixed
-  // per-technique preview color as before.
-  const effectiveInkColor = technique?.singleColorInk ? inkColor : techniqueInkColor(technique?.technique);
+  // Under a single-color-ink technique, one ink prints/etches everything —
+  // every element shares the same customer-chosen color, offered as the
+  // sole allowed color rather than letting each element diverge.
+  const singleAllowedColor = technique?.singleColorInk ? [design.inkColor] : undefined;
+  const effectiveNamesColor = technique?.singleColorInk ? design.inkColor : design.namesStyle.color;
+  const effectiveDateColor = technique?.singleColorInk ? design.inkColor : design.dateStyle.color;
+  const effectiveMonogramColor = technique?.singleColorInk ? design.inkColor : design.monogramColor;
+  const effectiveFrameColor = technique?.singleColorInk ? design.inkColor : design.frameColor;
+  const effectiveQrColor = technique?.singleColorInk ? design.inkColor : design.qrColor;
   const applyColorTextInput = useCallback(() => {
-    const resolved = resolveColorInput(colorTextInput);
-    if (resolved) setInkColor(resolved.hex);
-  }, [colorTextInput]);
+    const resolved = resolveColorInput(design.colorTextInput);
+    if (resolved) setDesign((prev) => ({ ...prev, inkColor: resolved.hex }));
+  }, [design.colorTextInput, setDesign]);
 
-  // Flattens the uploaded logo into a solid silhouette in the customer's
-  // chosen ink color — only for a single-color-ink technique in
-  // "silhouette" fill mode. Recomputed whenever the logo or chosen color
-  // changes; the technique's own fill-mode choice doesn't affect the
-  // *shape*, only whether this recolored version is what actually gets
-  // shown/submitted.
   useEffect(() => {
-    if (!logoPreview || singleColorFillMode !== "silhouette") {
+    if (!design.logoPreview || singleColorFillMode !== "silhouette") {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLogoSilhouetteUrl(null);
       return;
     }
     let cancelled = false;
-    recolorLogoToSolid(logoPreview, inkColor)
+    recolorLogoToSolid(design.logoPreview, design.inkColor)
       .then((url) => {
         if (!cancelled) setLogoSilhouetteUrl(url);
       })
@@ -1176,24 +793,13 @@ export function ProductConfigurator({
     return () => {
       cancelled = true;
     };
-  }, [logoPreview, inkColor, singleColorFillMode]);
+  }, [design.logoPreview, design.inkColor, singleColorFillMode]);
 
-  // The logo image actually shown/submitted: the ink-colored silhouette
-  // when that fill mode is active, otherwise the logo exactly as uploaded.
   const effectiveLogoDataUrl =
-    singleColorFillMode === "silhouette" && logoSilhouetteUrl ? logoSilhouetteUrl : logoPreview;
+    singleColorFillMode === "silhouette" && logoSilhouetteUrl ? logoSilhouetteUrl : design.logoPreview;
 
-  // Traces the uploaded logo into vector path data as soon as it's picked —
-  // any personalizable product's print-ready outline file needs the logo as
-  // true curves, not just single-color-ink ones (that flag only decides
-  // which color fills it and whether the live preview shows a recolored
-  // silhouette; every technique still needs *some* vector representation of
-  // the logo in its outline export, filled with that technique's own ink
-  // color as a fallback). Keyed off the logo itself, not the chosen color:
-  // the traced shape doesn't change when the ink color changes, only its
-  // fill at render/export time.
   useEffect(() => {
-    if (!logoPreview) {
+    if (!design.logoPreview) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLogoVector(null);
       return;
@@ -1202,7 +808,7 @@ export function ProductConfigurator({
     fetch("/api/vectorize-logo", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ logoDataUrl: logoPreview }),
+      body: JSON.stringify({ logoDataUrl: design.logoPreview }),
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => {
@@ -1214,14 +820,10 @@ export function ProductConfigurator({
     return () => {
       cancelled = true;
     };
-  }, [logoPreview]);
+  }, [design.logoPreview]);
 
-  // Measures the uploaded logo's real pixel dimensions (for the print-quality
-  // check below) and samples its color palette, so the customer/back office
-  // can see both without any extra action — recomputed whenever a new logo
-  // (or a background-removed version of the same logo) is set.
   useEffect(() => {
-    if (!logoPreview) {
+    if (!design.logoPreview) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLogoNaturalSize(null);
       setDetectedColors([]);
@@ -1232,12 +834,8 @@ export function ProductConfigurator({
     img.onload = () => {
       if (!cancelled) setLogoNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
     };
-    img.src = logoPreview;
-    // Key out a flat white background first (without touching the visible
-    // logoPreview) so a flattened upload with no real alpha doesn't count
-    // its own background as a detected "color" — removeLogoBackground
-    // already no-ops when there's nothing to key or real alpha exists.
-    removeLogoBackground(logoPreview)
+    img.src = design.logoPreview;
+    removeLogoBackgroundByMode(design.logoPreview, "background")
       .then((keyed) => detectLogoColors(keyed))
       .then((colors) => {
         if (!cancelled) setDetectedColors(colors);
@@ -1248,18 +846,22 @@ export function ProductConfigurator({
     return () => {
       cancelled = true;
     };
-  }, [logoPreview]);
+  }, [design.logoPreview]);
 
-  const handleRemoveBackground = async () => {
-    if (!logoPreview) return;
+  const handleRemoveWhiteModeChange = async (mode: Design["logoRemoveWhiteMode"]) => {
+    const source = design.logoOriginalPreview ?? design.logoPreview;
+    if (!source) return;
     setRemovingBackground(true);
     try {
-      const result = await removeLogoBackground(logoPreview);
-      setLogoPreview(result);
+      const result = await removeLogoBackgroundByMode(source, mode);
       const blob = await dataUrlToBlob(result);
-      setLogoFile(new File([blob], logoFile?.name ?? "logo.png", { type: blob.type || "image/png" }));
-    } catch {
-      // Best-effort — leave the logo as-is if the canvas step fails.
+      setDesign((prev) => ({
+        ...prev,
+        logoRemoveWhiteMode: mode,
+        logoOriginalPreview: prev.logoOriginalPreview ?? source,
+        logoPreview: result,
+        logoFile: new File([blob], prev.logoFile?.name ?? "logo.png", { type: blob.type || "image/png" }),
+      }));
     } finally {
       setRemovingBackground(false);
     }
@@ -1276,28 +878,13 @@ export function ProductConfigurator({
   const displayImage = variant?.image_url ?? product.images[activeImage]?.url ?? product.images[0]?.url;
   const showOverlayHere = !zone?.image_id || product.images[activeImage]?.id === zone.image_id;
 
-  // Real-world size readouts (cm) shown next to each field below, computed
-  // from the same px-per-mm conversion the on-canvas sizing uses — only
-  // available once the product's print-area mm dimensions and rendered box
-  // are both known. Shown as width x height (not just a single font-size
-  // number) so it reads as the element's actual footprint on the product.
   const sizeLabelWH = (widthPx: number, heightPx: number) =>
     mmPerPx ? `≈ ${((widthPx * mmPerPx) / 10).toFixed(1)}×${((heightPx * mmPerPx) / 10).toFixed(1)} cm` : null;
   const logoWidthPx = zoneSize.width ? (logoWidthPct / 100) * zoneSize.width : 0;
-  const logoSizeLabel = sizeLabelWH(logoWidthPx, logoWidthPx);
-  const monogramSizeLabel = sizeLabelWH(monogramFontPx, monogramFontPx);
-  const nameLineCount = textLineCount(names);
-  const nameSizeLabel = sizeLabelWH(estimateTextWidth(names, nameFontPx), nameFontPx * 1.25 * nameLineCount);
-  const dateSizeLabel = sizeLabelWH(estimateTextWidth("0000000000", dateFontPx), dateFontPx);
-
-  const formattedDate = useMemo(() => formatPrintDate(date), [date]);
-
-  // "Your names or event text" is the only required personalization field
-  // (BUG-02) — products without a customizer at all have nothing to
-  // validate here.
-  const namesValid = !product.personalizable || isNamesValid(names);
-  const namesErrorId = "names-required-error";
-  const quantityErrorId = "quantity-minimum-error";
+  const nameLineCount = textLineCount(design.names);
+  const nameHeightPx = nameFontPx * lineHeightMultiplier(design.namesStyle.lineSpacing) * nameLineCount;
+  const nameSizeCm = mmPerPx ? (nameFontPx * mmPerPx) / 10 : null;
+  const dateSizeCm = mmPerPx ? (dateFontPx * mmPerPx) / 10 : null;
 
   const baseQuickQuantities = [product.minOrder, product.minOrder * 2, product.minOrder * 4, product.minOrder * 8];
   const popularQty = product.popularQty && product.popularQty >= product.minOrder ? product.popularQty : null;
@@ -1306,40 +893,33 @@ export function ProductConfigurator({
       ? [...baseQuickQuantities, popularQty].sort((a, b) => a - b)
       : baseQuickQuantities;
 
-  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setLogoFile(file);
-    setLogoPreview(await fileToDataUrl(file));
+  const handleLogoUpload = async (file: File, dataUrl: string) => {
+    setDesign((prev) => ({ ...prev, logoFile: file, logoPreview: dataUrl, logoOriginalPreview: dataUrl }));
+    selectElem("logo");
+  };
+  const handleLogoReplace = async (file: File, dataUrl: string) => {
+    setDesign((prev) => ({ ...prev, logoFile: file, logoPreview: dataUrl, logoOriginalPreview: dataUrl }));
+  };
+  const clearLogo = () => {
+    setDesign((prev) => ({ ...prev, logoFile: null, logoPreview: null, logoOriginalPreview: null }));
   };
 
-  const clearLogo = () => {
-    setLogoFile(null);
-    setLogoPreview(null);
-  };
+  const namesValid = !product.personalizable || isNamesValid(design.names);
+  const namesErrorId = "names-required-error";
+  const quantityErrorId = "quantity-minimum-error";
 
   const handleAddToCart = () => submitToCart(false);
   const handleAddSample = () => submitToCart(true);
 
-  // Shared by the normal Add to Cart button and "Buy 1 sample" — same
-  // render/snapshot capture either way, since a sample is exactly the
-  // customer's current configuration, just forced to a single piece with
-  // its own flat setup fee instead of the product's usual quantity rules.
-  // Builds one print area's render/snapshot fields — shared by the primary
-  // area and every additional one the shopper added, since each needs the
-  // same capture against its own design and its own reference photo.
   const buildAreaResult = async (
     client: ReturnType<typeof createClient>,
     uploadBase: string,
     zoneId: string,
-    design: ZoneDesign,
+    areaDesign: Design,
     precomputedLogoVector?: { ds: string[]; width: number; height: number } | null
   ) => {
     let renderUrl: string | undefined;
     let renderContextUrl: string | undefined;
-    // Only whichever area the AI render was actually generated for gets it
-    // — the AI preview is an explicit, rate-limited action the shopper
-    // triggers per area, never auto-run for every area on Add to Cart.
     if (latestRender && latestRender.zoneId === zoneId) {
       try {
         const productBlob = await dataUrlToBlob(latestRender.imageDataUrl);
@@ -1347,9 +927,8 @@ export function ProductConfigurator({
           .from("personalization-renders")
           .upload(`${uploadBase}-${zoneId}-product.png`, productBlob, { contentType: "image/png" });
         if (!uploadError) {
-          renderUrl = client.storage
-            .from("personalization-renders")
-            .getPublicUrl(`${uploadBase}-${zoneId}-product.png`).data.publicUrl;
+          renderUrl = client.storage.from("personalization-renders").getPublicUrl(`${uploadBase}-${zoneId}-product.png`)
+            .data.publicUrl;
         }
         if (latestRender.contextImageDataUrl) {
           const contextBlob = await dataUrlToBlob(latestRender.contextImageDataUrl);
@@ -1357,9 +936,9 @@ export function ProductConfigurator({
             .from("personalization-renders")
             .upload(`${uploadBase}-${zoneId}-context.png`, contextBlob, { contentType: "image/png" });
           if (!contextError) {
-            renderContextUrl = client.storage
-              .from("personalization-renders")
-              .getPublicUrl(`${uploadBase}-${zoneId}-context.png`).data.publicUrl;
+            renderContextUrl = client.storage.from("personalization-renders").getPublicUrl(
+              `${uploadBase}-${zoneId}-context.png`
+            ).data.publicUrl;
           }
         }
       } catch {
@@ -1367,20 +946,21 @@ export function ProductConfigurator({
       }
     }
 
-    // Always capture a plain (non-AI) snapshot of exactly what the customer
-    // configured for this area — photo, text, positions, technique — so the
-    // supplier and admin have a visual record even when the customer
-    // skipped the optional AI preview. Reuse the AI render if one was
-    // already made for this area (it's the same configuration, already
-    // uploaded).
     let snapshotUrl: string | undefined = renderUrl;
-    const hasContent = !!(design.names.trim() || design.date.trim() || design.monogram.trim() || design.logoFile);
+    const hasContent = !!(
+      areaDesign.names.trim() ||
+      areaDesign.date.trim() ||
+      areaDesign.monogram.trim() ||
+      areaDesign.frame.trim() ||
+      areaDesign.qrUrl.trim() ||
+      areaDesign.logoFile
+    );
     if (!snapshotUrl && product.personalizable && hasContent) {
       try {
         const logoDataUrl =
-          design.logoPreview && singleColorFillMode === "silhouette"
-            ? await recolorLogoToSolid(design.logoPreview, design.inkColor).catch(() => design.logoPreview!)
-            : design.logoPreview ?? undefined;
+          areaDesign.logoPreview && singleColorFillMode === "silhouette"
+            ? await recolorLogoToSolid(areaDesign.logoPreview, areaDesign.inkColor).catch(() => areaDesign.logoPreview!)
+            : areaDesign.logoPreview ?? undefined;
         const zoneRow = product.zones.find((z) => z.id === zoneId);
         const res = await fetch("/api/personalization-snapshot", {
           method: "POST",
@@ -1389,15 +969,15 @@ export function ProductConfigurator({
             productId: product.id,
             zoneId,
             imageId: zoneRow?.image_id ?? undefined,
-            names: design.names,
-            date: design.date,
-            monogram: design.monogram,
-            frame: design.frame,
-            textFont: design.textFont,
+            names: areaDesign.names,
+            date: areaDesign.date,
+            monogram: areaDesign.monogram,
+            frame: areaDesign.frame,
+            textFont: areaDesign.textFont,
             logoDataUrl,
-            positions: design.positions,
-            elemScale: design.elemScale,
-            elemRotationOffsetDeg: design.elemRotationOffset,
+            positions: areaDesign.positions,
+            elemScale: areaDesign.elemScale,
+            elemRotationOffsetDeg: areaDesign.elemRotationOffset,
           }),
         });
         if (res.ok) {
@@ -1416,27 +996,22 @@ export function ProductConfigurator({
       }
     }
 
-    // The logo's traced outline — needed for the print-ready export
-    // regardless of technique, same as the live logoVector effect above.
-    // Reuse the currently-active area's already-fetched vector (it started
-    // tracing as soon as that logo was picked, see the effect above) rather
-    // than re-requesting it; any other area fetches fresh here.
-    let logoVector = precomputedLogoVector ?? null;
-    if (precomputedLogoVector === undefined && design.logoPreview) {
+    let logoVectorResult = precomputedLogoVector ?? null;
+    if (precomputedLogoVector === undefined && areaDesign.logoPreview) {
       try {
         const res = await fetch("/api/vectorize-logo", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ logoDataUrl: design.logoPreview }),
+          body: JSON.stringify({ logoDataUrl: areaDesign.logoPreview }),
         });
         const json = res.ok ? await res.json() : null;
-        logoVector = json && json.ds ? json : null;
+        logoVectorResult = json && json.ds ? json : null;
       } catch {
-        logoVector = null;
+        logoVectorResult = null;
       }
     }
 
-    return { renderUrl, renderContextUrl, snapshotUrl, logoVector };
+    return { renderUrl, renderContextUrl, snapshotUrl, logoVector: logoVectorResult };
   };
 
   const submitToCart = async (sample: boolean) => {
@@ -1446,80 +1021,45 @@ export function ProductConfigurator({
     const client = createClient();
     const uploadBase = `${product.plannerSlug}/${product.id}/${crypto.randomUUID()}`;
 
-    // Every zone's design, including whatever's live on screen right now
-    // for the currently active one — zoneDesignsRef only has the *other*
-    // zones' saved snapshots, since the active one lives in plain state.
-    const liveDesign: ZoneDesign = {
-      names,
-      date,
-      monogram,
-      frame,
-      textFont,
-      logoFile,
-      logoPreview,
-      inkColor,
-      colorTextInput,
-      positions,
-      elemScale,
-      elemRotationOffset,
-      elemOrder,
-    };
-    const allDesigns: Record<string, ZoneDesign> = { ...zoneDesignsRef.current, [activeZoneId]: liveDesign };
+    const allDesigns: Record<string, Design> = { ...zoneDesignsRef.current, [activeZoneId]: design };
 
-    const primaryDesign = (primaryZone && allDesigns[primaryZone.id]) ?? liveDesign;
+    const primaryDesign = (primaryZone && allDesigns[primaryZone.id]) ?? design;
     const primaryResult = primaryZone
-      ? await buildAreaResult(
-          client,
-          uploadBase,
-          primaryZone.id,
-          primaryDesign,
-          primaryZone.id === activeZoneId ? logoVector : undefined
-        )
+      ? await buildAreaResult(client, uploadBase, primaryZone.id, primaryDesign, primaryZone.id === activeZoneId ? logoVector : undefined)
       : { renderUrl: undefined, renderContextUrl: undefined, snapshotUrl: undefined, logoVector: null };
 
     const additionalAreas: AreaPersonalization[] = [];
     for (const z of extraAreas) {
-      const design = allDesigns[z.id] ?? makeDefaultDesign(z);
-      const result = await buildAreaResult(
-        client,
-        uploadBase,
-        z.id,
-        design,
-        z.id === activeZoneId ? logoVector : undefined
-      );
+      const areaDesign = allDesigns[z.id] ?? makeDefaultDesign(isMerchandise, z);
+      const result = await buildAreaResult(client, uploadBase, z.id, areaDesign, z.id === activeZoneId ? logoVector : undefined);
       additionalAreas.push({
         zoneId: z.id,
         label: z.label,
         extraPrice: z.extra_price,
-        names: design.names,
-        date: design.date,
-        monogram: design.monogram,
-        frame: design.frame,
-        textFont: design.textFont,
-        positions: design.positions,
-        elemScale: design.elemScale,
-        elemRotationOffset: design.elemRotationOffset,
-        hasLogo: !!design.logoFile,
+        names: areaDesign.names,
+        date: areaDesign.date,
+        monogram: areaDesign.monogram,
+        frame: areaDesign.frame,
+        textFont: areaDesign.textFont,
+        positions: areaDesign.positions,
+        elemScale: areaDesign.elemScale,
+        elemRotationOffset: areaDesign.elemRotationOffset,
+        hasLogo: !!areaDesign.logoFile,
         renderUrl: result.renderUrl,
         snapshotUrl: result.snapshotUrl,
-        inkColorHex: technique?.singleColorInk ? design.inkColor : undefined,
-        inkPantoneCode: technique?.singleColorInk ? nearestPantone(design.inkColor)?.code : undefined,
+        inkColorHex: technique?.singleColorInk ? areaDesign.inkColor : undefined,
+        inkPantoneCode: technique?.singleColorInk ? nearestPantone(areaDesign.inkColor)?.code : undefined,
         logoVector: result.logoVector,
       });
     }
 
-    // Primary area's own reference photo — kept stable for the cart line's
-    // thumbnail regardless of which area happened to be on screen when the
-    // customer clicked Add to Cart.
-    const primaryImageIndex = primaryZone?.image_id
-      ? product.images.findIndex((i) => i.id === primaryZone.image_id)
-      : -1;
+    const primaryImageIndex = primaryZone?.image_id ? product.images.findIndex((i) => i.id === primaryZone.image_id) : -1;
     const primaryDisplayImage =
       variant?.image_url ?? product.images[primaryImageIndex >= 0 ? primaryImageIndex : 0]?.url ?? product.images[0]?.url;
 
     const extraKeyPart = extraAreas
       .map((z) => {
-        const d = allDesigns[z.id] ?? makeDefaultDesign(z);
+        const d = allDesigns[z.id] ?? makeDefaultDesign(isMerchandise, z);
         return `${z.id}:${d.names}:${d.date}:${d.monogram}:${d.frame}`;
       })
       .sort()
@@ -1576,270 +1116,510 @@ export function ProductConfigurator({
     }
   };
 
-  return (
-    <div className="mx-auto max-w-7xl px-6 py-10">
-    <div className="grid md:grid-cols-2 gap-12">
-      <div>
+  // EDIT-06 keyboard shortcuts.
+  useKeyboardShortcuts({
+    activeElem,
+    locked: activeElem ? !!design.locked[activeElem] : false,
+    onNudge: (dx, dy) => {
+      if (!activeElem) return;
+      setDesignCoalescing((prev) => ({
+        ...prev,
+        positions: {
+          ...prev.positions,
+          [activeElem]: { x: prev.positions[activeElem].x + dx, y: prev.positions[activeElem].y + dy },
+        },
+      }));
+    },
+    onDelete: () => {
+      if (!activeElem) return;
+      removeElement(activeElem);
+    },
+    onDeselect: () => selectElem(null),
+    onUndo: undo,
+    onRedo: redo,
+  });
+
+  const removeElement = (key: ElemKey) => {
+    setDesign((prev) => {
+      switch (key) {
+        case "logo":
+          return { ...prev, logoFile: null, logoPreview: null, logoOriginalPreview: null };
+        case "monogram":
+          return { ...prev, monogram: "" };
+        case "frame":
+          return { ...prev, frame: "" };
+        case "qr":
+          return { ...prev, qrUrl: "" };
+        case "date":
+          return { ...prev, date: "" };
+        case "names":
+          return prev; // required, BUG-02 — not removable
+      }
+    });
+    if (key !== "names") selectElem(null);
+  };
+
+  const toggleLock = (key: ElemKey) => {
+    setDesign((prev) => ({ ...prev, locked: { ...prev.locked, [key]: !prev.locked[key] } }));
+  };
+  const toggleHide = (key: ElemKey) => {
+    setDesign((prev) => ({ ...prev, hidden: { ...prev.hidden, [key]: !prev.hidden[key] } }));
+  };
+
+  const availableTools: ToolId[] = product.personalizable
+    ? (["names", "logo", "frame", "monogram", "date", "qr", "layers"] as ToolId[])
+    : [];
+
+  const qrSvg = useQrSvg(design.qrUrl, effectiveQrColor);
+
+  // Renders the whole editor canvas (photo + guides + grid + elements +
+  // contextual toolbar + canvas controls) — used by both the desktop and
+  // mobile layout shells below, which only differ in the chrome around it.
+  const renderCanvas = () => (
+    <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-[#F1ECE3] relative overflow-hidden">
+      <div className="flex-1 overflow-auto">
         <div
-          ref={photoRef}
-          className="relative aspect-[4/5] rounded-2xl overflow-hidden bg-cream mb-4"
-          onPointerDown={() => setActiveElem(null)}
+          className="mx-auto"
+          style={{
+            width: `${zoomPct}%`,
+            maxWidth: zoomPct <= 100 ? "100%" : undefined,
+            transition: "width 120ms ease",
+          }}
         >
-          {displayImage && <Image src={displayImage} alt={product.name} fill className="object-cover" priority />}
-          {product.personalizable && zone && showOverlayHere && (
-            <svg
-              viewBox="0 0 100 100"
-              preserveAspectRatio="none"
-              className="absolute inset-0 w-full h-full pointer-events-none"
-            >
-              <polygon
-                points={zonePoints}
-                fill="none"
-                stroke="rgba(250,247,240,0.85)"
-                strokeWidth={0.6}
-                strokeDasharray="2.4,1.5"
-                vectorEffect="non-scaling-stroke"
+          <div
+            ref={photoRef}
+            className="relative aspect-[4/5] w-full overflow-hidden"
+            onPointerDown={() => selectElem(null)}
+          >
+            {displayImage && <Image src={displayImage} alt={product.name} fill className="object-cover" priority />}
+            {gridOn && (
+              <div
+                className="absolute inset-0 pointer-events-none opacity-30"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(to right, #6B6259 1px, transparent 1px), linear-gradient(to bottom, #6B6259 1px, transparent 1px)",
+                  backgroundSize: "5% 5%",
+                }}
+                aria-hidden="true"
               />
-            </svg>
-          )}
-          {product.personalizable && zone && zoneBox && showOverlayHere && (
-            <div
-              ref={zoneRef}
-              className="absolute pointer-events-none text-dark text-center overflow-visible"
-              style={{
-                left: `${zoneBox.left}%`,
-                top: `${zoneBox.top}%`,
-                width: `${zoneBox.width}%`,
-                height: `${zoneBox.height}%`,
-              }}
-            >
-              {logoPreview && (
-                <div
-                  ref={setElemBoxRef("logo")}
-                  onPointerDown={startDrag("logo")}
-                  className="absolute pointer-events-auto cursor-move touch-none"
-                  style={{
-                    left: `${positions.logo.x}%`,
-                    top: `${positions.logo.y}%`,
-                    width: `${logoWidthPct}%`,
-                    aspectRatio: "1",
-                    zIndex: elemOrder.indexOf("logo"),
-                    transform: `translate(-50%, -50%) rotate(${elemRotationDeg.logo}deg)`,
-                  }}
-                >
-                  <div className="relative w-full h-full pointer-events-none">
-                    <Image
-                      src={effectiveLogoDataUrl ?? logoPreview}
-                      alt=""
-                      fill
-                      className="object-contain"
-                      style={
-                        technique?.stripSourceColor && !technique?.singleColorInk
-                          ? { filter: "grayscale(1)" }
-                          : undefined
-                      }
-                      unoptimized
-                    />
-                  </div>
-                  {activeElem === "logo" && (
-                    <AdjustHandles
-                      onResizeStart={startElemAdjust("logo", "resize")}
-                      onRotateStart={startElemAdjust("logo", "rotate")}
-                      notice={elemNotice?.key === "logo" ? elemNotice.message : undefined}
-                    />
-                  )}
-                </div>
-              )}
-              {monogram && (
-                <div
-                  ref={setElemBoxRef("monogram")}
-                  onPointerDown={startDrag("monogram")}
-                  className="absolute pointer-events-auto cursor-move touch-none select-none"
-                  style={{
-                    left: `${positions.monogram.x}%`,
-                    top: `${positions.monogram.y}%`,
-                    width: monogramFontPx,
-                    height: monogramFontPx,
-                    zIndex: elemOrder.indexOf("monogram"),
-                    transform: `translate(-50%, -50%) rotate(${elemRotationDeg.monogram}deg)`,
-                  }}
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    width={monogramFontPx}
-                    height={monogramFontPx}
-                    className="pointer-events-none"
-                    dangerouslySetInnerHTML={{
-                      __html: monogramSvgInner(monogram, effectiveInkColor),
+            )}
+            {product.personalizable && zone && showOverlayHere && guidesOn && (
+              <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
+                <polygon
+                  points={zonePoints}
+                  fill="none"
+                  stroke="rgba(91,46,224,0.7)"
+                  strokeWidth={0.5}
+                  strokeDasharray="2.4,1.5"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </svg>
+            )}
+            {snapLines.x != null && photoSize.width > 0 && (
+              <div
+                className="absolute top-0 bottom-0 w-px bg-terracotta pointer-events-none"
+                style={{ left: `${(snapLines.x / photoSize.width) * 100}%` }}
+                aria-hidden="true"
+              />
+            )}
+            {snapLines.y != null && photoSize.height > 0 && (
+              <div
+                className="absolute left-0 right-0 h-px bg-terracotta pointer-events-none"
+                style={{ top: `${(snapLines.y / photoSize.height) * 100}%` }}
+                aria-hidden="true"
+              />
+            )}
+            {product.personalizable && zone && zoneBox && showOverlayHere && (
+              <div
+                ref={zoneRef}
+                className="absolute pointer-events-none text-dark text-center overflow-visible"
+                style={{
+                  left: `${zoneBox.left}%`,
+                  top: `${zoneBox.top}%`,
+                  width: `${zoneBox.width}%`,
+                  height: `${zoneBox.height}%`,
+                }}
+              >
+                {design.logoPreview && !design.hidden.logo && (
+                  <div
+                    ref={setElemBoxRef("logo")}
+                    onPointerDown={startDrag("logo")}
+                    className={`absolute pointer-events-auto touch-none ${design.locked.logo ? "cursor-default" : "cursor-move"}`}
+                    style={{
+                      left: `${design.positions.logo.x}%`,
+                      top: `${design.positions.logo.y}%`,
+                      width: `${logoWidthPct}%`,
+                      aspectRatio: "1",
+                      zIndex: design.elemOrder.indexOf("logo"),
+                      transform: `translate(-50%, -50%) rotate(${elemRotationDeg.logo}deg)`,
                     }}
-                  />
-                  {activeElem === "monogram" && (
-                    <AdjustHandles
-                      onResizeStart={startElemAdjust("monogram", "resize")}
-                      onRotateStart={startElemAdjust("monogram", "rotate")}
-                      notice={elemNotice?.key === "monogram" ? elemNotice.message : undefined}
-                    />
-                  )}
-                </div>
-              )}
-              {names && (
-                <div
-                  ref={setElemBoxRef("names")}
-                  onPointerDown={startDrag("names")}
-                  className="absolute pointer-events-auto cursor-move touch-none select-none font-serif flex flex-col items-center leading-tight"
-                  style={{
-                    left: `${positions.names.x}%`,
-                    top: `${positions.names.y}%`,
-                    zIndex: elemOrder.indexOf("names"),
-                    transform: `translate(-50%, -50%) rotate(${elemRotationDeg.names}deg)`,
-                    fontSize: nameFontPx,
-                    ...textFontStyle(textFont),
-                    ...techniqueTextStyle(technique?.technique, effectiveInkColor),
-                  }}
-                >
-                  {frame && (
+                  >
+                    <div className="relative w-full h-full pointer-events-none">
+                      <Image
+                        src={effectiveLogoDataUrl ?? design.logoPreview}
+                        alt=""
+                        fill
+                        className="object-contain"
+                        style={technique?.stripSourceColor && !technique?.singleColorInk ? { filter: "grayscale(1)" } : undefined}
+                        unoptimized
+                      />
+                    </div>
+                    {activeElem === "logo" && !design.locked.logo && (
+                      <AdjustHandles onResizeStart={startElemAdjust("logo", "resize")} onRotateStart={startElemAdjust("logo", "rotate")} notice={elemNotice?.key === "logo" ? elemNotice.message : undefined} />
+                    )}
+                  </div>
+                )}
+                {design.frame && !design.hidden.frame && (
+                  <div
+                    ref={setElemBoxRef("frame")}
+                    onPointerDown={startDrag("frame")}
+                    className={`absolute pointer-events-auto touch-none select-none ${design.locked.frame ? "cursor-default" : "cursor-move"}`}
+                    style={{
+                      left: `${design.positions.frame.x}%`,
+                      top: `${design.positions.frame.y}%`,
+                      width: frameFontPx * 5,
+                      height: frameFontPx * 2.2,
+                      zIndex: design.elemOrder.indexOf("frame"),
+                      transform: `translate(-50%, -50%) rotate(${elemRotationDeg.frame}deg)`,
+                    }}
+                  >
                     <svg
                       viewBox="0 0 200 90"
                       preserveAspectRatio="none"
-                      className="absolute pointer-events-none"
-                      style={{
-                        inset: `${-nameFontPx * 0.45}px ${-nameFontPx * 0.7}px`,
-                        width: `calc(100% + ${nameFontPx * 1.4}px)`,
-                        height: `calc(100% + ${nameFontPx * 0.9}px)`,
-                      }}
-                      dangerouslySetInnerHTML={{
-                        __html: frameSvgInner(frame, effectiveInkColor),
-                      }}
+                      width="100%"
+                      height="100%"
+                      className="pointer-events-none"
+                      dangerouslySetInnerHTML={{ __html: frameSvgInner(design.frame, effectiveFrameColor) }}
                     />
-                  )}
-                  {names.split("\n").map((line, i) => (
-                    <span key={i} className="relative whitespace-nowrap">
-                      {line}
-                    </span>
-                  ))}
-                  {activeElem === "names" && (
-                    <AdjustHandles
-                      onResizeStart={startElemAdjust("names", "resize")}
-                      onRotateStart={startElemAdjust("names", "rotate")}
-                      notice={elemNotice?.key === "names" ? elemNotice.message : undefined}
-                      expandBy={frame ? { x: nameFontPx * 0.7, y: nameFontPx * 0.45 } : undefined}
-                    />
-                  )}
-                </div>
-              )}
-              {date && (
-                <div
-                  ref={setElemBoxRef("date")}
-                  onPointerDown={startDrag("date")}
-                  className="absolute pointer-events-auto cursor-move touch-none select-none tracking-wide whitespace-nowrap"
-                  style={{
-                    left: `${positions.date.x}%`,
-                    top: `${positions.date.y}%`,
-                    zIndex: elemOrder.indexOf("date"),
-                    transform: `translate(-50%, -50%) rotate(${elemRotationDeg.date}deg)`,
-                    fontSize: dateFontPx,
-                    ...textFontStyle(textFont),
-                    ...techniqueTextStyle(technique?.technique, effectiveInkColor),
-                  }}
-                >
-                  {formattedDate}
-                  {activeElem === "date" && (
-                    <AdjustHandles
-                      onResizeStart={startElemAdjust("date", "resize")}
-                      onRotateStart={startElemAdjust("date", "rotate")}
-                      notice={elemNotice?.key === "date" ? elemNotice.message : undefined}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-          <span className="absolute bottom-3 left-3 text-[11px] bg-cream-light/90 px-3 py-1 rounded-full flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-sage" /> Live preview
-          </span>
-        </div>
-        {product.images.length > 1 && (
-          <div className="flex gap-3">
-            {product.images.map((img, i) => (
-              <button
-                key={img.id}
-                onClick={() => setActiveImage(i)}
-                className={`relative h-16 w-16 rounded-lg overflow-hidden border ${
-                  i === activeImage ? "border-dark" : "border-line"
-                }`}
-              >
-                <Image src={img.url} alt="" fill className="object-cover" />
-                {zone?.image_id === img.id && (
-                  <span className="absolute bottom-0.5 right-0.5 h-2 w-2 rounded-full bg-terracotta" />
+                    {activeElem === "frame" && !design.locked.frame && (
+                      <AdjustHandles onResizeStart={startElemAdjust("frame", "resize")} onRotateStart={startElemAdjust("frame", "rotate")} notice={elemNotice?.key === "frame" ? elemNotice.message : undefined} />
+                    )}
+                  </div>
                 )}
-              </button>
-            ))}
+                {design.monogram && !design.hidden.monogram && (
+                  <div
+                    ref={setElemBoxRef("monogram")}
+                    onPointerDown={startDrag("monogram")}
+                    className={`absolute pointer-events-auto touch-none select-none ${design.locked.monogram ? "cursor-default" : "cursor-move"}`}
+                    style={{
+                      left: `${design.positions.monogram.x}%`,
+                      top: `${design.positions.monogram.y}%`,
+                      width: monogramFontPx,
+                      height: monogramFontPx,
+                      zIndex: design.elemOrder.indexOf("monogram"),
+                      transform: `translate(-50%, -50%) rotate(${elemRotationDeg.monogram}deg)`,
+                    }}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      width={monogramFontPx}
+                      height={monogramFontPx}
+                      className="pointer-events-none"
+                      dangerouslySetInnerHTML={{ __html: monogramSvgInner(design.monogram, effectiveMonogramColor) }}
+                    />
+                    {activeElem === "monogram" && !design.locked.monogram && (
+                      <AdjustHandles onResizeStart={startElemAdjust("monogram", "resize")} onRotateStart={startElemAdjust("monogram", "rotate")} notice={elemNotice?.key === "monogram" ? elemNotice.message : undefined} />
+                    )}
+                  </div>
+                )}
+                {design.names && !design.hidden.names && (
+                  <div
+                    ref={setElemBoxRef("names")}
+                    onPointerDown={startDrag("names")}
+                    className={`absolute pointer-events-auto touch-none select-none font-serif flex flex-col items-center leading-tight ${design.locked.names ? "cursor-default" : "cursor-move"}`}
+                    style={{
+                      left: `${design.positions.names.x}%`,
+                      top: `${design.positions.names.y}%`,
+                      zIndex: design.elemOrder.indexOf("names"),
+                      transform: `translate(-50%, -50%) rotate(${elemRotationDeg.names}deg)`,
+                      fontSize: nameFontPx,
+                      letterSpacing: `${letterSpacingEm(design.namesStyle.letterSpacing)}em`,
+                      lineHeight: lineHeightMultiplier(design.namesStyle.lineSpacing),
+                      textAlign: design.namesStyle.align,
+                      ...textFontStyle(design.textFont),
+                      ...techniqueTextStyle(technique?.technique, effectiveNamesColor),
+                    }}
+                  >
+                    <TextLines
+                      text={design.names}
+                      fontPx={nameFontPx}
+                      curve={design.namesStyle.curve}
+                      lineHeight={lineHeightMultiplier(design.namesStyle.lineSpacing)}
+                    />
+                    {activeElem === "names" && !design.locked.names && (
+                      <AdjustHandles
+                        onResizeStart={startElemAdjust("names", "resize")}
+                        onRotateStart={startElemAdjust("names", "rotate")}
+                        notice={elemNotice?.key === "names" ? elemNotice.message : undefined}
+                        expandBy={design.frame ? { x: nameFontPx * 0.7, y: nameFontPx * 0.45 } : undefined}
+                      />
+                    )}
+                  </div>
+                )}
+                {design.date && !design.hidden.date && (
+                  <div
+                    ref={setElemBoxRef("date")}
+                    onPointerDown={startDrag("date")}
+                    className={`absolute pointer-events-auto touch-none select-none tracking-wide whitespace-nowrap ${design.locked.date ? "cursor-default" : "cursor-move"}`}
+                    style={{
+                      left: `${design.positions.date.x}%`,
+                      top: `${design.positions.date.y}%`,
+                      zIndex: design.elemOrder.indexOf("date"),
+                      transform: `translate(-50%, -50%) rotate(${elemRotationDeg.date}deg)`,
+                      fontSize: dateFontPx,
+                      letterSpacing: `${letterSpacingEm(design.dateStyle.letterSpacing)}em`,
+                      ...textFontStyle(design.textFont),
+                      ...techniqueTextStyle(technique?.technique, effectiveDateColor),
+                    }}
+                  >
+                    <TextLines text={formattedDate} fontPx={dateFontPx} curve={design.dateStyle.curve} lineHeight={1.2} />
+                    {activeElem === "date" && !design.locked.date && (
+                      <AdjustHandles onResizeStart={startElemAdjust("date", "resize")} onRotateStart={startElemAdjust("date", "rotate")} notice={elemNotice?.key === "date" ? elemNotice.message : undefined} />
+                    )}
+                  </div>
+                )}
+                {design.qrUrl && qrSvg && !design.hidden.qr && (
+                  <div
+                    ref={setElemBoxRef("qr")}
+                    onPointerDown={startDrag("qr")}
+                    className={`absolute pointer-events-auto touch-none select-none ${design.locked.qr ? "cursor-default" : "cursor-move"}`}
+                    style={{
+                      left: `${design.positions.qr.x}%`,
+                      top: `${design.positions.qr.y}%`,
+                      width: qrSizePx,
+                      height: qrSizePx,
+                      zIndex: design.elemOrder.indexOf("qr"),
+                      transform: `translate(-50%, -50%) rotate(${elemRotationDeg.qr}deg)`,
+                      background: "#fff",
+                    }}
+                    dangerouslySetInnerHTML={{ __html: qrSvg }}
+                  >
+                    {activeElem === "qr" && !design.locked.qr && (
+                      <AdjustHandles onResizeStart={startElemAdjust("qr", "resize")} onRotateStart={startElemAdjust("qr", "rotate")} notice={elemNotice?.key === "qr" ? elemNotice.message : undefined} />
+                    )}
+                  </div>
+                )}
+                {activeElem &&
+                  (() => {
+                    const toolbar = renderContextualToolbarFor(activeElem);
+                    if (!toolbar) return null;
+                    return (
+                      <div
+                        className="absolute z-20 pointer-events-auto"
+                        style={{
+                          left: `${design.positions[activeElem].x}%`,
+                          top: `${design.positions[activeElem].y}%`,
+                          transform: "translate(-50%, calc(-100% - 28px))",
+                        }}
+                      >
+                        {toolbar}
+                      </div>
+                    );
+                  })()}
+              </div>
+            )}
+            <span className="absolute bottom-3 left-3 text-[11px] bg-cream-light/90 px-3 py-1 rounded-full flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-sage" /> Live preview
+            </span>
           </div>
-        )}
-
-        <RelatedProductsRail
-          products={relatedProducts}
-          base={`/store/${product.plannerSlug}`}
-          names={names}
-          date={date}
-          monogram={monogram}
-          logoDataUrl={logoPreview}
-          frame={frame}
-          textFont={textFont}
-          elemScale={elemScale}
-          positions={positions}
-          elemRotationOffset={elemRotationOffset}
-          quantity={quantity}
-        />
+        </div>
       </div>
+      {activeElem && mmPerPx && (
+        <div className="absolute top-3 right-3 text-[11px] bg-dark text-cream-light px-2.5 py-1 rounded-full pointer-events-none">
+          {activeElem === "names" && sizeLabelWH(estimateTextWidth(design.names, nameFontPx), nameHeightPx)}
+          {activeElem === "date" && sizeLabelWH(estimateTextWidth("0000000000", dateFontPx), dateFontPx)}
+          {activeElem === "monogram" && sizeLabelWH(monogramFontPx, monogramFontPx)}
+          {activeElem === "frame" && sizeLabelWH(frameFontPx * 5, frameFontPx * 2.2)}
+          {activeElem === "logo" && sizeLabelWH(logoWidthPx, logoWidthPx)}
+          {activeElem === "qr" && sizeLabelWH(qrSizePx, qrSizePx)}
+        </div>
+      )}
+      <div className="p-3 flex items-center justify-between gap-3 flex-wrap bg-white border-t border-line">
+        <CanvasControls
+          zoomPct={zoomPct}
+          onZoomChange={setZoomPct}
+          onFit={() => setZoomPct(100)}
+          guidesOn={guidesOn}
+          onToggleGuides={() => setGuidesOn((g) => !g)}
+          gridOn={gridOn}
+          onToggleGrid={() => setGridOn((g) => !g)}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            setDesign((prev) => ({
+              ...prev,
+              positions: computeDefaultPositions(zone),
+              elemScale: DEFAULT_SCALES,
+              elemRotationOffset: DEFAULT_ROTATIONS,
+            }));
+          }}
+          className="text-xs text-terracotta-dark font-medium"
+        >
+          Reset positions
+        </button>
+      </div>
+    </div>
+  );
 
-      <div>
-        <p className="text-xs uppercase tracking-[0.15em] text-terracotta mb-2">
-          {product.categoryName} · {product.supplierName}
-        </p>
-        <h1 className="font-serif text-4xl mb-3">{product.name}</h1>
-        <p className="text-2xl mb-1">
-          {formatUSD(unitPriceWithTechnique)}{" "}
-          <span className="text-sm text-muted font-normal">
-            per piece · min {product.minOrder}
-          </span>
-        </p>
-        {productionTime && <p className="text-sm text-muted mb-3">Production time: {productionTime}</p>}
-        <p className="text-muted mb-8">{product.description}</p>
+  const renderContextualToolbarFor = (key: ElemKey) => {
+    if (!isElemPresent(design, key) || design.locked[key]) return null;
+    const colorFor: Record<ElemKey, string> = {
+      names: effectiveNamesColor,
+      date: effectiveDateColor,
+      monogram: effectiveMonogramColor,
+      frame: effectiveFrameColor,
+      logo: "#000000",
+      qr: effectiveQrColor,
+    };
+    const setColorFor = (hex: string) => {
+      switch (key) {
+        case "names":
+          setDesign((prev) => ({ ...prev, namesStyle: { ...prev.namesStyle, color: hex } }));
+          break;
+        case "date":
+          setDesign((prev) => ({ ...prev, dateStyle: { ...prev.dateStyle, color: hex } }));
+          break;
+        case "monogram":
+          setDesign((prev) => ({ ...prev, monogramColor: hex }));
+          break;
+        case "frame":
+          setDesign((prev) => ({ ...prev, frameColor: hex }));
+          break;
+        case "qr":
+          setDesign((prev) => ({ ...prev, qrColor: hex }));
+          break;
+        case "logo":
+          break;
+      }
+    };
+    return (
+      <ContextualToolbar
+        elemType={key}
+        rotationDeg={design.elemRotationOffset[key]}
+        color={colorFor[key]}
+        colorEditable={key !== "logo"}
+        onChangeColor={setColorFor}
+        onChangeRotation={(deg) => {
+          setDesign((prev) => ({ ...prev, elemRotationOffset: { ...prev.elemRotationOffset, [key]: deg } }));
+        }}
+        onAlignCenter={() => {
+          const box = elemBoxRefs.current[key];
+          const halfWPct = box && zoneSize.width ? (box.offsetWidth / 2 / zoneSize.width) * 100 : 5;
+          const halfHPct = box && zoneSize.height ? (box.offsetHeight / 2 / zoneSize.height) * 100 : 5;
+          setDesign((prev) => ({
+            ...prev,
+            positions: {
+              ...prev.positions,
+              [key]: { x: alignHorizontal("center", halfWPct), y: alignVertical("middle", halfHPct) },
+            },
+          }));
+        }}
+        deletable={key !== "names"}
+        onDelete={() => removeElement(key)}
+      />
+    );
+  };
 
-        {product.variants.length > 0 && (
-          <div className="mb-8">
-            <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-              {product.variants[0]?.sku ? "Option" : "Variant"}
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {product.variants.map((v) => (
+  return (
+    <div className="mx-auto max-w-[1600px] px-3 md:px-6 py-4 md:py-6">
+      {showCropModal && design.logoPreview && (
+        <LogoCropModal
+          preview={design.logoPreview}
+          onCancel={() => setShowCropModal(false)}
+          onConfirm={async (cropped) => {
+            const blob = await dataUrlToBlob(cropped);
+            setDesign((prev) => ({
+              ...prev,
+              logoPreview: cropped,
+              logoFile: new File([blob], prev.logoFile?.name ?? "logo.png", { type: blob.type || "image/png" }),
+            }));
+            setShowCropModal(false);
+          }}
+        />
+      )}
+
+      {product.personalizable ? (
+        <div className="flex flex-col border border-line rounded-2xl overflow-hidden bg-white">
+          {/* Top bar (EDIT-01) */}
+          <header className="h-16 shrink-0 flex items-center justify-between gap-3 px-4 border-b border-line bg-white">
+            <div className="flex flex-col min-w-0">
+              <span className="font-serif text-lg leading-tight truncate">{product.name}</span>
+              <span className="text-xs text-muted truncate">
+                {product.categoryName} · {product.supplierName}
+              </span>
+            </div>
+            <div className="hidden md:flex items-center gap-2 text-xs text-[#2E6B47]">
+              <span className="h-2 w-2 rounded-full bg-[#2E7D4F]" />
+              Saved
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={undo}
+                disabled={!canUndo}
+                aria-label="Undo"
+                className="h-10 w-10 rounded-lg border border-line flex items-center justify-center disabled:opacity-40"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M9 14L4 9l5-5" />
+                  <path d="M4 9h10a6 6 0 0 1 0 12h-3" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={redo}
+                disabled={!canRedo}
+                aria-label="Redo"
+                className="h-10 w-10 rounded-lg border border-line flex items-center justify-center disabled:opacity-40"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M15 14l5-5-5-5" />
+                  <path d="M20 9H10a6 6 0 0 0 0 12h3" />
+                </svg>
+              </button>
+              <KeyboardShortcutsHelp />
+              <button
+                type="button"
+                onClick={() => {
+                  setSummaryOpen(true);
+                  document.getElementById("summary-panel")?.scrollIntoView({ behavior: "smooth" });
+                }}
+                className="hidden md:inline-flex h-10 px-4 rounded-lg bg-terracotta text-cream-light text-sm font-medium items-center"
+              >
+                Review &amp; buy
+              </button>
+            </div>
+          </header>
+
+          {/* Desktop editor body */}
+          <div className="hidden md:flex h-[70vh] min-h-[560px]">
+            <ToolRail availableTools={availableTools} activeTool={activeTool} onSelectTool={(t) => (t === "layers" ? setActiveTool("layers") : selectElem(t as ElemKey))} />
+            <div className="w-[320px] shrink-0 border-r border-line overflow-y-auto p-5">
+              {renderToolPanelContent()}
+            </div>
+            <div className="flex-1 min-w-0 relative flex">
+              {renderCanvas()}
+            </div>
+            <aside aria-label="Views" className="w-[128px] shrink-0 border-l border-line p-3 flex flex-col gap-3 overflow-y-auto">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted">Views</span>
+              {product.images.map((img, i) => (
                 <button
-                  key={v.id}
-                  onClick={() => setVariantId(v.id)}
-                  className={`px-4 py-2 rounded-lg text-sm border text-left ${
-                    variantId === v.id ? "border-dark bg-cream" : "border-line"
+                  key={img.id}
+                  onClick={() => setActiveImage(i)}
+                  className={`p-2 rounded-lg border flex flex-col items-center gap-1.5 text-xs ${
+                    i === activeImage ? "border-terracotta bg-cream" : "border-dashed border-line"
                   }`}
                 >
-                  <span className="block font-medium">{v.label}</span>
-                  {v.price_delta !== 0 && (
-                    <span className="text-xs text-muted">
-                      {v.price_delta > 0 ? "+" : ""}
-                      {formatUSD(applyMarkup(v.price_delta, product.markupPct))}
-                    </span>
-                  )}
+                  <span className="relative h-[70px] w-full block">
+                    <Image src={img.url} alt="" fill className="object-contain" />
+                  </span>
+                  {i === 0 ? "Front" : `View ${i + 1}`}
                 </button>
               ))}
-            </div>
-          </div>
-        )}
-
-        {product.personalizable && (
-          <div className="space-y-6 mb-8">
-            {product.zones.length > 1 && (
-              <div>
-                <p className="text-xs uppercase tracking-wide text-muted mb-2">Print area</p>
-                <div className="flex flex-wrap gap-2">
+              {product.zones.length > 1 && (
+                <div className="pt-2 border-t border-line flex flex-col gap-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">Print area</span>
                   {product.zones.map((z, i) => {
                     const isPrimary = i === 0;
                     const isActive = z.id === activeZoneId;
@@ -1849,436 +1629,543 @@ export function ProductConfigurator({
                         key={z.id}
                         type="button"
                         onClick={() => (isPrimary ? switchActiveZone(z.id) : toggleExtraZone(z.id))}
-                        className={`px-3 py-2 rounded-lg text-sm border ${
+                        className={`px-2 py-1.5 rounded-lg text-[11px] border text-left ${
                           isActive ? "border-dark bg-cream" : isIncluded ? "border-dark/60" : "border-line"
                         }`}
                       >
                         {z.label}
                         {!isPrimary && (
-                          <span className="text-xs text-muted ml-1">
-                            {isIncluded
-                              ? "✓"
-                              : z.extra_price > 0
-                              ? `+${formatUSD(z.extra_price)}`
-                              : "+ add"}
-                          </span>
+                          <span className="text-muted ml-1">{isIncluded ? "✓" : z.extra_price > 0 ? `+${formatUSD(z.extra_price)}` : "+"}</span>
                         )}
                       </button>
                     );
                   })}
                 </div>
-              </div>
-            )}
-            <CollapsibleSection title="Your logo" optional>
-              <div className="flex items-center gap-3">
-                <label className="relative h-16 w-16 rounded-lg overflow-hidden border border-line cursor-pointer bg-white shrink-0">
-                  {effectiveLogoDataUrl ? (
-                    <Image src={effectiveLogoDataUrl} alt="" fill className="object-contain" unoptimized />
-                  ) : (
-                    <span className="absolute inset-0 flex items-center justify-center text-[10px] text-muted text-center px-1">
-                      Upload
-                    </span>
-                  )}
-                  <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
-                </label>
-                {logoPreview && (
-                  <div className="flex flex-col items-start gap-1.5">
-                    <button
-                      type="button"
-                      onClick={handleRemoveBackground}
-                      disabled={removingBackground}
-                      className="text-xs text-dark font-medium underline underline-offset-2 disabled:opacity-50"
-                    >
-                      {removingBackground ? "Removing background…" : "Remove background"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={clearLogo}
-                      className="text-xs text-terracotta-dark font-medium"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                )}
-              </div>
-              {logoPreview && logoSizeLabel && <p className="text-xs text-muted mt-1">{logoSizeLabel}</p>}
-              {logoPreview && logoIsLowRes && (
-                <p className="text-xs text-red-600 mt-2">
-                  ⚠️ This logo is low resolution for the size it&apos;s being printed at — it may look
-                  blurry or pixelated on the finished product.
-                </p>
               )}
-              {logoPreview && detectedColors.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-line">
-                  <p className="text-xs text-muted mb-1.5">Colors detected in this logo</p>
+            </aside>
+          </div>
+
+          {/* Mobile editor body (EDIT-02) */}
+          <div className="flex md:hidden flex-col">
+            <div style={{ height: "50vh" }} className="flex flex-col">
+              {renderCanvas()}
+            </div>
+            {activeTool && (
+              <div className="border-t border-line max-h-[45vh] overflow-y-auto p-5">{renderToolPanelContent()}</div>
+            )}
+            <ToolRail orientation="horizontal" availableTools={availableTools} activeTool={activeTool} onSelectTool={(t) => (t === "layers" ? setActiveTool("layers") : selectElem(t as ElemKey))} />
+          </div>
+        </div>
+      ) : (
+        <div className="relative aspect-[4/5] max-w-xl mx-auto rounded-2xl overflow-hidden bg-cream mb-4">
+          {displayImage && <Image src={displayImage} alt={product.name} fill className="object-cover" priority />}
+        </div>
+      )}
+
+      {product.images.length > 1 && !product.personalizable && (
+        <div className="flex gap-3 mt-4 justify-center">
+          {product.images.map((img, i) => (
+            <button key={img.id} onClick={() => setActiveImage(i)} className={`relative h-16 w-16 rounded-lg overflow-hidden border ${i === activeImage ? "border-dark" : "border-line"}`}>
+              <Image src={img.url} alt="" fill className="object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      <RelatedProductsRail
+        products={relatedProducts}
+        base={`/store/${product.plannerSlug}`}
+        names={design.names}
+        date={design.date}
+        monogram={design.monogram}
+        logoDataUrl={design.logoPreview}
+        frame={design.frame}
+        textFont={design.textFont}
+        elemScale={design.elemScale}
+        positions={design.positions}
+        elemRotationOffset={design.elemRotationOffset}
+        quantity={quantity}
+      />
+
+      {/* Summary panel — technique, AI render, quantity and cart actions
+          stay reachable from the editor until 03-purchase-flow.md's Options/
+          Review steps exist (that document's own explicit instruction). */}
+      <div id="summary-panel" className="mt-8 border border-line rounded-2xl overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setSummaryOpen((o) => !o)}
+          className="w-full flex items-center justify-between px-6 py-4 bg-cream"
+        >
+          <span className="font-serif text-2xl">Technique, quantity &amp; cart</span>
+          <span className="text-2xl font-serif">{formatUSD(total)}</span>
+        </button>
+        {summaryOpen && (
+          <div className="p-6 grid md:grid-cols-2 gap-8">
+            <div>
+              <h1 className="font-serif text-3xl mb-2">{product.name}</h1>
+              <p className="text-xl mb-1">
+                {formatUSD(unitPriceWithTechnique)} <span className="text-sm text-muted font-normal">per piece · min {product.minOrder}</span>
+              </p>
+              {productionTime && <p className="text-sm text-muted mb-3">Production time: {productionTime}</p>}
+              <p className="text-muted mb-6">{product.description}</p>
+
+              {product.variants.length > 0 && (
+                <div className="mb-6">
+                  <label className="text-xs uppercase tracking-wide text-muted block mb-2">
+                    {product.variants[0]?.sku ? "Option" : "Variant"}
+                  </label>
                   <div className="flex flex-wrap gap-2">
-                    {detectedColors.map((c) => (
-                      <span
-                        key={c.hex}
-                        className="inline-flex items-center gap-1.5 text-[11px] rounded-full border border-line px-2 py-1"
+                    {product.variants.map((v) => (
+                      <button
+                        key={v.id}
+                        onClick={() => setVariantId(v.id)}
+                        className={`px-4 py-2 rounded-lg text-sm border text-left ${variantId === v.id ? "border-dark bg-cream" : "border-line"}`}
                       >
-                        <span
-                          className="h-3 w-3 rounded-full border border-line shrink-0"
-                          style={{ backgroundColor: c.hex }}
-                        />
-                        {c.hex.toUpperCase()} · {c.pct}%
-                      </span>
+                        <span className="block font-medium">{v.label}</span>
+                        {v.price_delta !== 0 && (
+                          <span className="text-xs text-muted">
+                            {v.price_delta > 0 ? "+" : ""}
+                            {formatUSD(applyMarkup(v.price_delta, product.markupPct))}
+                          </span>
+                        )}
+                      </button>
                     ))}
                   </div>
                 </div>
               )}
-              {logoPreview && technique?.singleColorInk && (
-                <div className="flex items-center gap-3 mt-3 pt-3 border-t border-line">
-                  <input
-                    type="color"
-                    value={inkColor}
-                    onChange={(e) => setInkColor(e.target.value)}
-                    className="h-9 w-9 rounded border border-line cursor-pointer p-0 bg-transparent shrink-0"
-                    aria-label="Ink color"
-                  />
-                  <input
-                    type="text"
-                    value={colorTextInput}
-                    onChange={(e) => setColorTextInput(e.target.value)}
-                    onBlur={applyColorTextInput}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        applyColorTextInput();
-                      }
-                    }}
-                    placeholder="Pantone or hex"
-                    className="h-9 w-32 rounded border border-line px-2 text-xs shrink-0"
-                    aria-label="Pantone code or hex color"
-                  />
-                  <div className="text-xs">
-                    <p className="text-muted">
-                      Ink color for this technique — {inkColor.toUpperCase()}
-                    </p>
-                    {pantoneMatch && (
-                      <p className="text-muted/80">
-                        Closest match: {pantoneMatch.code} (approximate, not an official Pantone
-                        conversion)
-                      </p>
-                    )}
+
+              {product.techniques.length > 0 && (
+                <div className="mb-6">
+                  <label className="text-xs uppercase tracking-wide text-muted block mb-2">Print technique</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {product.techniques.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setTechniqueId(t.id)}
+                        className={`rounded-lg border px-3 py-3 text-sm text-left ${techniqueId === t.id ? "border-dark bg-cream" : "border-line"}`}
+                      >
+                        <span className="block font-medium">{t.technique}</span>
+                        <span className="text-xs text-muted">{t.extra_price > 0 ? `+${formatUSD(t.extra_price)}` : "Included"}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
-            </CollapsibleSection>
-            <CollapsibleSection title="Template frame" optional>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFrame("")}
-                  className={`h-14 w-16 rounded-lg border flex items-center justify-center text-[9px] font-medium shrink-0 ${
-                    frame === "" ? "border-dark bg-dark text-cream-light" : "border-line text-muted"
-                  }`}
-                >
-                  None
-                </button>
-                {FRAME_TEMPLATES.map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    title={opt.label}
-                    onClick={() => setFrame(opt.id)}
-                    className={`h-14 w-16 rounded-lg border flex items-center justify-center shrink-0 ${
-                      frame === opt.id ? "border-dark bg-cream" : "border-line"
-                    }`}
-                  >
-                    <svg
-                      viewBox="0 0 200 90"
-                      width={52}
-                      height={23}
-                      dangerouslySetInnerHTML={{ __html: frameSvgInner(opt.id, "currentColor") }}
-                    />
-                  </button>
-                ))}
-              </div>
-            </CollapsibleSection>
-            <CollapsibleSection
-              title="Your names or event text"
-              trailing={nameSizeLabel && <span className="text-xs">{nameSizeLabel}</span>}
-            >
-              <textarea
-                value={names}
-                rows={zone?.max_lines ?? 2}
-                onChange={(e) => {
-                  const maxChars = zone?.max_chars_per_line ?? 24;
-                  const maxLines = zone?.max_lines ?? 2;
-                  const capped = e.target.value
-                    .split("\n")
-                    .slice(0, maxLines)
-                    .map((line) => line.slice(0, maxChars))
-                    .join("\n");
-                  setNames(capped);
-                }}
-                aria-required="true"
-                aria-invalid={!namesValid}
-                aria-describedby={!namesValid ? namesErrorId : undefined}
-                className={`w-full rounded-lg border px-4 py-3 focus:outline-none focus:border-dark mb-1.5 resize-none ${
-                  namesValid ? "border-line" : "border-red-500"
-                }`}
-              />
-              <p id={namesErrorId} className="text-xs text-red-600 mb-3 min-h-[1em]">
-                {!namesValid && NAMES_REQUIRED_MESSAGE}
-              </p>
-              <label className="text-xs uppercase tracking-wide text-muted block mb-2">Text font</label>
-              <div className="grid grid-cols-2 gap-2">
-                {TEXT_FONTS.map((f) => (
-                  <button
-                    key={f.id}
-                    type="button"
-                    onClick={() => setTextFont(f.id)}
-                    className={`rounded-lg border px-3 py-2 text-left overflow-hidden ${
-                      textFont === f.id ? "border-dark bg-cream" : "border-line"
-                    }`}
-                  >
-                    <span className="block text-[9px] uppercase tracking-wide text-muted">{f.label}</span>
-                    <span className="block truncate text-lg leading-tight" style={textFontStyle(f.id)}>
-                      {names || (isMerchandise ? "Your Company" : "Amelia & Ravi")}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </CollapsibleSection>
-            <CollapsibleSection
-              title="Date"
-              trailing={dateSizeLabel && <span className="text-xs">{dateSizeLabel}</span>}
-            >
-              <div className="relative">
-                {/* The native picker stays fully functional (tap to open the
-                    calendar, works with a screen reader off its own value),
-                    but its own locale-formatted text is hidden — the visible
-                    text is always the fixed MM·DD·YYYY format that's what
-                    actually gets printed (BUG-08), so what the customer
-                    reads here matches the product regardless of browser
-                    locale. */}
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  aria-label={formattedDate ? `Date: ${formattedDate}` : "Date"}
-                  className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark text-transparent caret-transparent [color-scheme:light]"
+
+              {technique?.singleColorInk && (
+                <div className="mb-6">
+                  <label htmlFor="ink-color-input" className="text-xs uppercase tracking-wide text-muted block mb-2">
+                    Ink color
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="h-11 w-11 shrink-0 rounded-lg border border-line p-1 flex" aria-label="Ink color swatch">
+                      <input
+                        type="color"
+                        value={design.inkColor}
+                        onChange={(e) => setDesign((prev) => ({ ...prev, inkColor: e.target.value }))}
+                        className="w-full h-full border-none p-0 bg-transparent cursor-pointer"
+                      />
+                    </label>
+                    <div className="flex-1 h-11 rounded-lg border border-line flex items-center px-3 gap-1.5">
+                      <input
+                        id="ink-color-input"
+                        type="text"
+                        value={design.colorTextInput}
+                        placeholder="#1A1A1A or PMS 355 C"
+                        onChange={(e) => setDesign((prev) => ({ ...prev, colorTextInput: e.target.value }))}
+                        onBlur={applyColorTextInput}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            applyColorTextInput();
+                          }
+                        }}
+                        className="w-full bg-transparent text-sm"
+                        aria-label="Hex or Pantone code"
+                      />
+                    </div>
+                  </div>
+                  {pantoneMatch && (
+                    <p className="text-xs text-muted mt-2">Closest PANTONE match (approximate): {pantoneMatch.code}</p>
+                  )}
+                  <p className="text-xs text-muted mt-1">This single ink color is used for every element in this design.</p>
+                </div>
+              )}
+
+              {product.aiRenderEnabled && (
+                <AiRenderPanel
+                  key={activeZoneId}
+                  productId={product.id}
+                  zoneId={zone?.id}
+                  names={design.names}
+                  date={design.date}
+                  monogram={design.monogram}
+                  frame={design.frame}
+                  textFont={design.textFont}
+                  logoFile={design.logoFile}
+                  positions={design.positions}
+                  elemScale={design.elemScale}
+                  elemRotationOffset={design.elemRotationOffset}
+                  images={product.images}
+                  defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
+                  unlimited={unlimitedRenders}
+                  onGenerated={(result) => setLatestRender({ ...result, zoneId: activeZoneId })}
                 />
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-dark"
-                >
-                  {formattedDate}
-                </span>
-              </div>
-            </CollapsibleSection>
-            <CollapsibleSection
-              title="Monogram"
-              optional
-              trailing={monogram && monogramSizeLabel && <span className="text-xs">{monogramSizeLabel}</span>}
-            >
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={() => setMonogram("")}
-                  className={`h-11 px-3 rounded-lg border flex items-center justify-center text-xs font-medium ${
-                    monogram === "" ? "border-dark bg-dark text-cream-light" : "border-line"
-                  }`}
-                >
-                  None
-                </button>
-                {MONOGRAM_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.id}
-                    onClick={() => setMonogram(opt.id)}
-                    title={opt.label}
-                    className={`h-11 w-11 rounded-lg border flex items-center justify-center ${
-                      monogram === opt.id ? "border-dark bg-dark text-cream-light" : "border-line text-dark"
-                    }`}
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      width={18}
-                      height={18}
-                      dangerouslySetInnerHTML={{ __html: monogramSvgInner(opt.id, "currentColor") }}
+              )}
+            </div>
+
+            <div>
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs uppercase tracking-wide text-muted">Quantity</label>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => updateQuantity(Math.max(product.minOrder, quantity - product.minOrder))} className="h-8 w-8 rounded-full border border-line flex items-center justify-center">
+                      −
+                    </button>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={quantityInput}
+                      onChange={(e) => setQuantityInput(e.target.value)}
+                      onBlur={commitQuantityInput}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                      }}
+                      aria-invalid={quantityBelowMinimum}
+                      aria-describedby={quantityBelowMinimum ? quantityErrorId : undefined}
+                      className={`w-16 text-center font-medium rounded-lg border py-1 focus:outline-none focus:border-dark ${quantityBelowMinimum ? "border-red-500" : "border-line"}`}
                     />
-                  </button>
-                ))}
-              </div>
-            </CollapsibleSection>
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted">
-                Drag any element on the photo to move it. Grab its corner dot to resize, the dot above it to rotate —
-                each tilts to match the print area automatically, and can be fine-tuned from there.
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setPositions(computeDefaultPositions(zone));
-                  setElemScale(DEFAULT_SCALES);
-                  setElemRotationOffset(DEFAULT_ROTATIONS);
-                }}
-                className="text-xs text-terracotta-dark font-medium shrink-0 ml-3"
-              >
-                Reset positions
-              </button>
-            </div>
-          </div>
-        )}
-
-        {product.techniques.length > 0 && (
-          <div className="mb-8">
-            <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-              Print technique
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {product.techniques.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setTechniqueId(t.id)}
-                  className={`rounded-lg border px-3 py-3 text-sm text-left ${
-                    techniqueId === t.id ? "border-dark bg-cream" : "border-line"
-                  }`}
-                >
-                  <span className="block font-medium">{t.technique}</span>
-                  <span className="text-xs text-muted">
-                    {t.extra_price > 0 ? `+${formatUSD(t.extra_price)}` : "Included"}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {product.personalizable && product.aiRenderEnabled && (
-          <AiRenderPanel
-            key={activeZoneId}
-            productId={product.id}
-            zoneId={zone?.id}
-            names={names}
-            date={date}
-            monogram={monogram}
-            frame={frame}
-            textFont={textFont}
-            logoFile={logoFile}
-            positions={positions}
-            elemScale={elemScale}
-            elemRotationOffset={elemRotationOffset}
-            images={product.images}
-            defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
-            unlimited={unlimitedRenders}
-            onGenerated={(result) => setLatestRender({ ...result, zoneId: activeZoneId })}
-          />
-        )}
-
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs uppercase tracking-wide text-muted">Quantity</label>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => updateQuantity(Math.max(product.minOrder, quantity - product.minOrder))}
-                className="h-8 w-8 rounded-full border border-line flex items-center justify-center"
-              >
-                −
-              </button>
-              <input
-                type="number"
-                inputMode="numeric"
-                value={quantityInput}
-                onChange={(e) => setQuantityInput(e.target.value)}
-                onBlur={commitQuantityInput}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") e.currentTarget.blur();
-                }}
-                aria-invalid={quantityBelowMinimum}
-                aria-describedby={quantityBelowMinimum ? quantityErrorId : undefined}
-                className={`w-16 text-center font-medium rounded-lg border py-1 focus:outline-none focus:border-dark ${
-                  quantityBelowMinimum ? "border-red-500" : "border-line"
-                }`}
-              />
-              <button
-                onClick={() => updateQuantity(quantity + product.minOrder)}
-                className="h-8 w-8 rounded-full border border-line flex items-center justify-center"
-              >
-                +
-              </button>
-            </div>
-          </div>
-          {quantityBelowMinimum && (
-            <p id={quantityErrorId} className="text-xs text-red-600 mb-2">
-              The minimum order is {product.minOrder} units.
-            </p>
-          )}
-          <div className="flex gap-2 flex-wrap">
-            {quickQuantities.map((q) => (
-              <button
-                key={q}
-                onClick={() => updateQuantity(q)}
-                className={`px-4 py-2 rounded-full text-sm border flex items-center gap-1.5 ${
-                  quantity === q ? "bg-dark text-cream-light border-dark" : "border-line"
-                }`}
-              >
-                {q}
-                {q === popularQty && (
-                  <span
-                    className={`text-[10px] uppercase tracking-wide ${
-                      quantity === q ? "text-cream-light/70" : "text-terracotta"
-                    }`}
-                  >
-                    Popular
-                  </span>
+                    <button onClick={() => updateQuantity(quantity + product.minOrder)} className="h-8 w-8 rounded-full border border-line flex items-center justify-center">
+                      +
+                    </button>
+                  </div>
+                </div>
+                {quantityBelowMinimum && (
+                  <p id={quantityErrorId} className="text-xs text-red-600 mb-2">
+                    The minimum order is {product.minOrder} units.
+                  </p>
                 )}
-              </button>
-            ))}
-          </div>
-        </div>
+                <div className="flex gap-2 flex-wrap">
+                  {quickQuantities.map((q) => (
+                    <button
+                      key={q}
+                      onClick={() => updateQuantity(q)}
+                      className={`px-4 py-2 rounded-full text-sm border flex items-center gap-1.5 ${quantity === q ? "bg-dark text-cream-light border-dark" : "border-line"}`}
+                    >
+                      {q}
+                      {q === popularQty && (
+                        <span className={`text-[10px] uppercase tracking-wide ${quantity === q ? "text-cream-light/70" : "text-terracotta"}`}>Popular</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-        <div className="rounded-xl bg-cream p-6 flex items-center justify-between gap-4">
-          <div>
-            <p className="font-serif text-3xl">{formatUSD(total)}</p>
-            <p className="text-xs text-muted">
-              {quantity} × {formatUSD(unitPriceWithTechnique)} · proof in 48h
-            </p>
+              {!namesValid && (
+                <p id={namesErrorId} className="text-xs text-red-600 mb-3">
+                  {NAMES_REQUIRED_MESSAGE}
+                </p>
+              )}
+
+              <div className="rounded-xl bg-cream p-6 flex items-center justify-between gap-4">
+                <div>
+                  <p className="font-serif text-3xl">{formatUSD(total)}</p>
+                  <p className="text-xs text-muted">
+                    {quantity} × {formatUSD(unitPriceWithTechnique)} · proof in 48h
+                  </p>
+                </div>
+                <button
+                  onClick={handleAddToCart}
+                  disabled={addingToCart || !namesValid || quantityBelowMinimum}
+                  aria-describedby={!namesValid ? namesErrorId : quantityBelowMinimum ? quantityErrorId : undefined}
+                  className="px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors shrink-0 disabled:opacity-50"
+                >
+                  {addingToCart ? "Adding…" : justAdded ? "Added ✓" : "Add to Cart"}
+                </button>
+              </div>
+              {product.allowSample && (
+                <button
+                  onClick={handleAddSample}
+                  disabled={addingSample || !namesValid}
+                  aria-describedby={!namesValid ? namesErrorId : undefined}
+                  className="w-full mt-3 px-6 py-3 rounded-full border border-line text-sm font-medium hover:border-terracotta hover:text-terracotta transition-colors disabled:opacity-50"
+                >
+                  {addingSample ? "Adding…" : sampleAdded ? "Sample added ✓" : `Buy 1 sample — +${formatUSD(SAMPLE_FEE)}`}
+                </button>
+              )}
+              {isMerchandise && (
+                <div className="mt-3">
+                  <QuoteRequestForm productId={product.id} productName={product.name} plannerId={product.plannerId} defaultQuantity={quantity} />
+                </div>
+              )}
+              <button onClick={() => router.push(`/store/${product.plannerSlug}/cart`)} className="text-sm text-muted mt-4 hover:text-terracotta">
+                View cart →
+              </button>
+            </div>
           </div>
-          <button
-            onClick={handleAddToCart}
-            disabled={addingToCart || !namesValid || quantityBelowMinimum}
-            aria-describedby={
-              !namesValid ? namesErrorId : quantityBelowMinimum ? quantityErrorId : undefined
-            }
-            className="px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors shrink-0 disabled:opacity-50"
-          >
-            {addingToCart ? "Adding…" : justAdded ? "Added ✓" : "Add to Cart"}
-          </button>
-        </div>
-        {product.allowSample && (
-          <button
-            onClick={handleAddSample}
-            disabled={addingSample || !namesValid}
-            aria-describedby={!namesValid ? namesErrorId : undefined}
-            className="w-full mt-3 px-6 py-3 rounded-full border border-line text-sm font-medium hover:border-terracotta hover:text-terracotta transition-colors disabled:opacity-50"
-          >
-            {addingSample
-              ? "Adding…"
-              : sampleAdded
-                ? "Sample added ✓"
-                : `Buy 1 sample — +${formatUSD(SAMPLE_FEE)}`}
-          </button>
         )}
-        {isMerchandise && (
-          <div className="mt-3">
-            <QuoteRequestForm
-              productId={product.id}
-              productName={product.name}
-              plannerId={product.plannerId}
-              defaultQuantity={quantity}
-            />
-          </div>
-        )}
-        <button
-          onClick={() => router.push(`/store/${product.plannerSlug}/cart`)}
-          className="text-sm text-muted mt-4 hover:text-terracotta"
-        >
-          View cart →
-        </button>
       </div>
     </div>
-    </div>
+  );
+
+  // Renders whichever tool panel is currently active — a plain function
+  // (not extracted to a separate component) so it can freely close over all
+  // the design/setDesign/product state above without threading two dozen
+  // props through.
+  function renderToolPanelContent() {
+    if (activeTool === "layers") {
+      return (
+        <LayersPanel
+          design={design}
+          activeElem={activeElem}
+          onSelect={(k) => selectElem(k)}
+          onReorder={(order) => setDesign((prev) => ({ ...prev, elemOrder: order }))}
+          onToggleLock={toggleLock}
+          onToggleHide={toggleHide}
+        />
+      );
+    }
+    if (activeTool === "names") {
+      return (
+        <TextToolPanel
+          title="Text"
+          text={design.names}
+          onChangeText={(v) => setDesign((prev) => ({ ...prev, names: v }))}
+          textEditable
+          font={design.textFont}
+          onChangeFont={(id) => setDesign((prev) => ({ ...prev, textFont: id }))}
+          sizeCm={nameSizeCm}
+          onStepSize={(dir) => setDesign((prev) => ({ ...prev, elemScale: { ...prev.elemScale, names: Math.max(0.3, Math.min(4, prev.elemScale.names + dir * 0.05)) } }))}
+          style={design.namesStyle}
+          onChangeStyle={(style) => setDesign((prev) => ({ ...prev, namesStyle: style }))}
+          allowedColors={singleAllowedColor}
+          maxChars={zone?.max_chars_per_line ?? 24}
+          maxLines={zone?.max_lines ?? 2}
+        />
+      );
+    }
+    if (activeTool === "date") {
+      return (
+        <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="date-tool-input" className="text-xs uppercase tracking-wide text-muted">
+              Date
+            </label>
+            <input
+              id="date-tool-input"
+              type="date"
+              value={design.date}
+              onChange={(e) => setDesign((prev) => ({ ...prev, date: e.target.value }))}
+              className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+            />
+            <p className="text-xs text-muted">Always printed as {formattedDate || "MM·DD·YYYY"}, regardless of how it&apos;s entered.</p>
+          </div>
+          {design.date && (
+            <TextToolPanel
+              title="Date style"
+              text={formattedDate}
+              textEditable={false}
+              font={design.textFont}
+              onChangeFont={(id) => setDesign((prev) => ({ ...prev, textFont: id }))}
+              sizeCm={dateSizeCm}
+              onStepSize={(dir) => setDesign((prev) => ({ ...prev, elemScale: { ...prev.elemScale, date: Math.max(0.3, Math.min(4, prev.elemScale.date + dir * 0.05)) } }))}
+              style={design.dateStyle}
+              onChangeStyle={(style) => setDesign((prev) => ({ ...prev, dateStyle: style }))}
+              allowedColors={singleAllowedColor}
+            />
+          )}
+        </div>
+      );
+    }
+    if (activeTool === "monogram") {
+      return (
+        <IconElementPanel
+          title="Monogram"
+          options={MONOGRAM_OPTIONS}
+          selectedId={design.monogram}
+          onSelect={(id) => {
+            setDesign((prev) => ({ ...prev, monogram: id }));
+            if (id) selectElem("monogram");
+          }}
+          renderIcon={(id, color) => <svg viewBox="0 0 24 24" width={18} height={18} dangerouslySetInnerHTML={{ __html: monogramSvgInner(id, color) }} />}
+          color={design.monogramColor}
+          onChangeColor={(hex) => setDesign((prev) => ({ ...prev, monogramColor: hex }))}
+          allowedColors={singleAllowedColor}
+        />
+      );
+    }
+    if (activeTool === "frame") {
+      return (
+        <IconElementPanel
+          title="Frame"
+          options={FRAME_TEMPLATES}
+          selectedId={design.frame}
+          onSelect={(id) => {
+            setDesign((prev) => ({ ...prev, frame: id }));
+            if (id) selectElem("frame");
+          }}
+          renderIcon={(id, color) => <svg viewBox="0 0 200 90" width={52} height={23} dangerouslySetInnerHTML={{ __html: frameSvgInner(id, color) }} />}
+          color={design.frameColor}
+          onChangeColor={(hex) => setDesign((prev) => ({ ...prev, frameColor: hex }))}
+          allowedColors={singleAllowedColor}
+        />
+      );
+    }
+    if (activeTool === "logo") {
+      return (
+        <LogoToolPanel
+          preview={design.logoPreview}
+          onUpload={handleLogoUpload}
+          onReplace={handleLogoReplace}
+          onRemove={clearLogo}
+          onCrop={() => setShowCropModal(true)}
+          removeWhiteMode={design.logoRemoveWhiteMode}
+          onChangeRemoveWhiteMode={handleRemoveWhiteModeChange}
+          isLowRes={logoIsLowRes}
+          sizeLabel={sizeLabelWH(logoWidthPx, logoWidthPx)}
+          detectedColors={detectedColors}
+          processing={removingBackground}
+        />
+      );
+    }
+    if (activeTool === "qr") {
+      return (
+        <QrToolPanel
+          url={design.qrUrl}
+          onChangeUrl={(url) => {
+            setDesign((prev) => ({ ...prev, qrUrl: url }));
+            if (url) selectElem("qr");
+          }}
+          color={effectiveQrColor}
+          onChangeColor={(hex) => setDesign((prev) => ({ ...prev, qrColor: hex }))}
+        />
+      );
+    }
+    return <p className="text-sm text-muted">Pick a tool from the rail to start editing.</p>;
+  }
+}
+
+// Renders text as either plain stacked lines (curve 0 — the original,
+// simplest case) or, for a non-zero curve slider, one small SVG per line
+// with the text following a quadratic-bezier arc (EDIT-07's curve slider).
+function TextLines({
+  text,
+  fontPx,
+  curve,
+  lineHeight,
+}: {
+  text: string;
+  fontPx: number;
+  curve: number;
+  lineHeight: number;
+}) {
+  const lines = text.split("\n");
+  if (curve === 0) {
+    return (
+      <>
+        {lines.map((line, i) => (
+          <span key={i} className="relative whitespace-nowrap">
+            {line}
+          </span>
+        ))}
+      </>
+    );
+  }
+  const lineHeightPx = fontPx * lineHeight;
+  return (
+    <>
+      {lines.map((line, i) => {
+        const width = estimateTextWidth(line, fontPx) * 1.15;
+        const height = lineHeightPx * 1.6;
+        const pathId = `curve-path-${i}-${fontPx.toFixed(0)}`;
+        return (
+          <svg key={i} width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
+            <path id={pathId} d={curveTextPath(curve, width, height)} fill="none" stroke="none" />
+            <text fontSize={fontPx} fill="currentColor" style={{ fontFamily: "inherit", fontWeight: "inherit" }}>
+              <textPath href={`#${pathId}`} startOffset="50%" textAnchor="middle">
+                {line}
+              </textPath>
+            </text>
+          </svg>
+        );
+      })}
+    </>
+  );
+}
+
+// Direct-manipulation resize/rotate handles shared by every element type: a
+// handle at each corner scales uniformly from the center, the handle above
+// rotates, both tracked from the element's own on-screen center so they
+// work regardless of current rotation. Only rendered while that element is
+// selected, so the photo stays clean otherwise.
+function AdjustHandles({
+  onResizeStart,
+  onRotateStart,
+  notice,
+  expandBy,
+}: {
+  onResizeStart: (e: React.PointerEvent) => void;
+  onRotateStart: (e: React.PointerEvent) => void;
+  notice?: string;
+  // BUG-04: a decorative frame draws further out than the text element it's
+  // wrapped around — without this, the dashed selection outline and handles
+  // would trace only the plain text's box.
+  expandBy?: { x: number; y: number };
+}) {
+  const expandX = expandBy?.x ?? 0;
+  const expandY = expandBy?.y ?? 0;
+  const corner =
+    "absolute h-5 w-5 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-nwse-resize touch-none pointer-events-auto";
+  const cornerOffset = 10 + expandX;
+  const cornerOffsetY = 10 + expandY;
+  const rotateOffset = 32 + expandY;
+  return (
+    <>
+      <div className="absolute rounded-sm border border-dashed border-terracotta pointer-events-none" style={{ inset: `${-expandY}px ${-expandX}px` }} />
+      <div onPointerDown={onResizeStart} className={corner} style={{ left: -cornerOffset, top: -cornerOffsetY }} aria-label="Resize">
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 13 L13 3" />
+          <path d="M8.5 3 H13 V7.5" />
+          <path d="M7.5 13 H3 V8.5" />
+        </svg>
+      </div>
+      <div onPointerDown={onResizeStart} className={corner} style={{ right: -cornerOffset, top: -cornerOffsetY }} aria-label="Resize">
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 13 L13 3" />
+          <path d="M8.5 3 H13 V7.5" />
+          <path d="M7.5 13 H3 V8.5" />
+        </svg>
+      </div>
+      <div onPointerDown={onResizeStart} className={corner} style={{ left: -cornerOffset, bottom: -cornerOffsetY }} aria-label="Resize">
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 13 L13 3" />
+          <path d="M8.5 3 H13 V7.5" />
+          <path d="M7.5 13 H3 V8.5" />
+        </svg>
+      </div>
+      <div onPointerDown={onResizeStart} className={corner} style={{ right: -cornerOffset, bottom: -cornerOffsetY }} aria-label="Resize">
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 13 L13 3" />
+          <path d="M8.5 3 H13 V7.5" />
+          <path d="M7.5 13 H3 V8.5" />
+        </svg>
+      </div>
+      <div
+        onPointerDown={onRotateStart}
+        aria-label="Rotate"
+        className="absolute left-1/2 h-5 w-5 -translate-x-1/2 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-grab touch-none pointer-events-auto"
+        style={{ top: -rotateOffset }}
+      >
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M13 8a5 5 0 1 1-1.7-3.75" />
+          <path d="M13 2.2v3.6H9.4" />
+        </svg>
+      </div>
+      {notice && (
+        <span role="status" className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-dark text-cream-light text-[11px] px-2.5 py-1 pointer-events-none" style={{ top: -rotateOffset - 32 }}>
+          {notice}
+        </span>
+      )}
+    </>
   );
 }

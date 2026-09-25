@@ -1,19 +1,24 @@
-// Default (and "Reset positions") layout for the 4 personalization
-// elements — BUG-06. Kept independent of ProductConfigurator so it's a pure,
+// Default (and "Reset positions") layout for the customizer's elements —
+// BUG-06. Kept independent of the editor component so it's a pure,
 // testable function of the product's own print-area configuration, per the
 // package's rule that product constraints are the source of truth.
 
-export type ElemKey = "logo" | "monogram" | "names" | "date";
+export type ElemKey = "logo" | "monogram" | "frame" | "names" | "date" | "qr";
 export type ElemPos = { x: number; y: number };
 
 // The generous, tall-print-area layout every product used unconditionally
 // before this fix — still correct for most zones (Tote Example, Sidney Bag,
-// Silken Candel, Coaster Bamboo all have enough vertical mm for it).
+// Silken Candel, Coaster Bamboo all have enough vertical mm for it). The
+// frame defaults to the same spot as names (EDIT-10: "by default it is
+// placed around the names, like today"); qr sits in the otherwise-unused
+// space between the monogram/logo cluster and the names/date cluster.
 export const GENEROUS_DEFAULT_POSITIONS: Record<ElemKey, ElemPos> = {
   monogram: { x: 50, y: 15 },
   logo: { x: 50, y: 35 },
+  frame: { x: 50, y: 65 },
   names: { x: 50, y: 65 },
   date: { x: 50, y: 82 },
+  qr: { x: 50, y: 50 },
 };
 
 // Below this real-world height, a vertical stack of monogram/logo above
@@ -33,8 +38,10 @@ const SHORT_ZONE_HEIGHT_MM = 30;
 const SHORT_ZONE_DEFAULT_POSITIONS: Record<ElemKey, ElemPos> = {
   monogram: { x: 50, y: 14 },
   logo: { x: 50, y: 14 },
+  frame: { x: 32, y: 62 },
   names: { x: 32, y: 62 },
   date: { x: 72, y: 62 },
+  qr: { x: 50, y: 34 },
 };
 
 export function computeDefaultPositions(
