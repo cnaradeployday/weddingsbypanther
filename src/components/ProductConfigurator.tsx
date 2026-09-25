@@ -117,9 +117,11 @@ const SAMPLE_FEE = 50;
 // unamplified 1:1 behavior reported as needing more drag than the screen
 // has room for.
 const RESIZE_SENSITIVITY = 2.2;
-// Still reported as needing "several tries" to rotate at 1.8 — raised
-// further rather than guessing this was already enough.
-const ROTATE_SENSITIVITY = 3.2;
+// Kept coming back as still not sensitive enough (1.8, then 3.2) — for a
+// small element the corner/rotate handle sits close to center, so the raw
+// angle swept per pixel dragged is inherently small; push this further
+// rather than re-raising it a third time on the next report.
+const ROTATE_SENSITIVITY = 6;
 
 // Measures the rendered zone box so text/logo sizing can be derived from the
 // product's real print-area dimensions (mm), not a guessed fixed size.
