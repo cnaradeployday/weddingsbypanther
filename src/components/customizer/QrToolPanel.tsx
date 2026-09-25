@@ -42,7 +42,14 @@ export function QrToolPanel({
         </label>
         <input
           id="qr-url"
-          type="url"
+          // Deliberately type="text" (not "url"): some browsers treat a
+          // bare `<input type="url">` — with no enclosing <form> — as a
+          // navigable address field and, on Enter, navigate the tab
+          // straight to whatever's typed, which crashes the SPA state and
+          // loses the ?step= URL entirely. inputMode="url" alone still
+          // gives mobile keyboards the right layout (a ".com"/"go" key)
+          // without that navigation heuristic.
+          type="text"
           inputMode="url"
           placeholder="https://example.com"
           value={input}

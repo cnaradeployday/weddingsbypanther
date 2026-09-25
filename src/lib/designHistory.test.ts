@@ -91,6 +91,14 @@ describe("designHistory — EDIT-05 undo/redo", () => {
     expect(canRedo(state)).toBe(false);
   });
 
+  it("accepts a functional updater for `value`, applied against the current present", () => {
+    let state = initHistory({ count: 1 });
+    state = historyReducer(state, { type: "set", value: (prev) => ({ count: prev.count + 1 }) });
+    expect(state.present).toEqual({ count: 2 });
+    state = historyReducer(state, { type: "set", value: (prev) => ({ count: prev.count + 1 }), coalesce: true });
+    expect(state.present).toEqual({ count: 3 });
+  });
+
   it("supports at least 50 undo steps", () => {
     let state = initHistory(0);
     for (let i = 1; i <= 60; i++) {

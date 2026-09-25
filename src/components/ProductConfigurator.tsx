@@ -620,6 +620,21 @@ export function ProductConfigurator({
     [zoneBox, photoSize.width, photoSize.height]
   );
 
+  // Mirrors `design` for the drag effect below without being part of its
+  // reactive closure — see the note on `setDesignCoalescing`'s stability in
+  // useDesignReducer.ts. `computeSnapTargets` needs the *current* design
+  // (other elements' positions to snap against), but if it closed over
+  // `design` directly it would get a new identity on every dispatch during
+  // a drag — many times a second — which, as a dependency of the drag
+  // effect below, would force that effect to tear down and re-subscribe
+  // its window listeners constantly instead of once per gesture. A plain
+  // ref assignment during render keeps it in sync without that churn: it's
+  // never read during render, only later inside an event handler.
+  const designRef = useRef(design);
+  useEffect(() => {
+    designRef.current = design;
+  }, [design]);
+
   // EDIT-03 snapping: the print area's own center/edge lines, plus every
   // OTHER visible element's center/edge — computed fresh each drag from
   // current on-screen boxes, in the same photo-local px space as dragging.
@@ -633,10 +648,11 @@ export function ProductConfigurator({
         targetsX.push(...boxSnapTargets(Math.min(...xs), Math.max(...xs)));
         targetsY.push(...boxSnapTargets(Math.min(...ys), Math.max(...ys)));
       }
-      for (const key of design.elemOrder) {
-        if (key === excludeKey || design.hidden[key] || !isElemPresent(design, key)) continue;
+      const currentDesign = designRef.current;
+      for (const key of currentDesign.elemOrder) {
+        if (key === excludeKey || currentDesign.hidden[key] || !isElemPresent(currentDesign, key)) continue;
         const box = elemBoxRefs.current[key];
-        const center = posToPhotoPx(design.positions[key]);
+        const center = posToPhotoPx(currentDesign.positions[key]);
         if (!box || !center) continue;
         const halfW = box.offsetWidth / 2;
         const halfH = box.offsetHeight / 2;
@@ -645,7 +661,7 @@ export function ProductConfigurator({
       }
       return { targetsX, targetsY };
     },
-    [design, posToPhotoPx, quadCornersPx]
+    [posToPhotoPx, quadCornersPx]
   );
 
   // Lets the customer drag the logo, monogram, frame, names, date, and QR
@@ -1474,13 +1490,13 @@ export function ProductConfigurator({
                   <div
                     ref={setElemBoxRef("logo")}
                     onPointerDown={startDrag("logo")}
-                    className={`absolute pointer-events-auto touch-none ${design.locked.logo ? "cursor-default" : "cursor-move"}`}
+                    className={`absolute touch-none ${design.locked.logo ? "pointer-events-none cursor-default" : "pointer-events-auto cursor-move"}`}
                     style={{
                       left: `${design.positions.logo.x}%`,
                       top: `${design.positions.logo.y}%`,
                       width: `${logoWidthPct}%`,
                       aspectRatio: "1",
-                      zIndex: design.elemOrder.indexOf("logo"),
+                      zIndex: activeElem === "logo" ? 100 : design.elemOrder.indexOf("logo"),
                       transform: `translate(-50%, -50%) rotate(${elemRotationDeg.logo}deg)`,
                     }}
                   >
@@ -1504,13 +1520,13 @@ export function ProductConfigurator({
                   <div
                     ref={setElemBoxRef("frame")}
                     onPointerDown={startDrag("frame")}
-                    className={`absolute pointer-events-auto touch-none select-none ${design.locked.frame ? "cursor-default" : "cursor-move"}`}
+                    className={`absolute touch-none select-none ${design.locked.frame ? "pointer-events-none cursor-default" : "pointer-events-auto cursor-move"}`}
                     style={{
                       left: `${design.positions.frame.x}%`,
                       top: `${design.positions.frame.y}%`,
                       width: frameFontPx * 5,
                       height: frameFontPx * 2.2,
-                      zIndex: design.elemOrder.indexOf("frame"),
+                      zIndex: activeElem === "frame" ? 100 : design.elemOrder.indexOf("frame"),
                       transform: `translate(-50%, -50%) rotate(${elemRotationDeg.frame}deg)`,
                     }}
                   >
@@ -1532,13 +1548,13 @@ export function ProductConfigurator({
                   <div
                     ref={setElemBoxRef("monogram")}
                     onPointerDown={startDrag("monogram")}
-                    className={`absolute pointer-events-auto touch-none select-none ${design.locked.monogram ? "cursor-default" : "cursor-move"}`}
+                    className={`absolute touch-none select-none ${design.locked.monogram ? "pointer-events-none cursor-default" : "pointer-events-auto cursor-move"}`}
                     style={{
                       left: `${design.positions.monogram.x}%`,
                       top: `${design.positions.monogram.y}%`,
                       width: monogramFontPx,
                       height: monogramFontPx,
-                      zIndex: design.elemOrder.indexOf("monogram"),
+                      zIndex: activeElem === "monogram" ? 100 : design.elemOrder.indexOf("monogram"),
                       transform: `translate(-50%, -50%) rotate(${elemRotationDeg.monogram}deg)`,
                     }}
                   >
@@ -1559,11 +1575,11 @@ export function ProductConfigurator({
                   <div
                     ref={setElemBoxRef("names")}
                     onPointerDown={startDrag("names")}
-                    className={`absolute pointer-events-auto touch-none select-none font-serif flex flex-col items-center leading-tight ${design.locked.names ? "cursor-default" : "cursor-move"}`}
+                    className={`absolute touch-none select-none font-serif flex flex-col items-center leading-tight ${design.locked.names ? "pointer-events-none cursor-default" : "pointer-events-auto cursor-move"}`}
                     style={{
                       left: `${design.positions.names.x}%`,
                       top: `${design.positions.names.y}%`,
-                      zIndex: design.elemOrder.indexOf("names"),
+                      zIndex: activeElem === "names" ? 100 : design.elemOrder.indexOf("names"),
                       transform: `translate(-50%, -50%) rotate(${elemRotationDeg.names}deg)`,
                       fontSize: nameFontPx,
                       letterSpacing: `${letterSpacingEm(design.namesStyle.letterSpacing)}em`,
@@ -1594,11 +1610,11 @@ export function ProductConfigurator({
                   <div
                     ref={setElemBoxRef("date")}
                     onPointerDown={startDrag("date")}
-                    className={`absolute pointer-events-auto touch-none select-none tracking-wide whitespace-nowrap ${design.locked.date ? "cursor-default" : "cursor-move"}`}
+                    className={`absolute touch-none select-none tracking-wide whitespace-nowrap ${design.locked.date ? "pointer-events-none cursor-default" : "pointer-events-auto cursor-move"}`}
                     style={{
                       left: `${design.positions.date.x}%`,
                       top: `${design.positions.date.y}%`,
-                      zIndex: design.elemOrder.indexOf("date"),
+                      zIndex: activeElem === "date" ? 100 : design.elemOrder.indexOf("date"),
                       transform: `translate(-50%, -50%) rotate(${elemRotationDeg.date}deg)`,
                       fontSize: dateFontPx,
                       letterSpacing: `${letterSpacingEm(design.dateStyle.letterSpacing)}em`,
@@ -1617,13 +1633,13 @@ export function ProductConfigurator({
                   <div
                     ref={setElemBoxRef("qr")}
                     onPointerDown={startDrag("qr")}
-                    className={`absolute pointer-events-auto touch-none select-none ${design.locked.qr ? "cursor-default" : "cursor-move"}`}
+                    className={`absolute touch-none select-none ${design.locked.qr ? "pointer-events-none cursor-default" : "pointer-events-auto cursor-move"}`}
                     style={{
                       left: `${design.positions.qr.x}%`,
                       top: `${design.positions.qr.y}%`,
                       width: qrSizePx,
                       height: qrSizePx,
-                      zIndex: design.elemOrder.indexOf("qr"),
+                      zIndex: activeElem === "qr" ? 100 : design.elemOrder.indexOf("qr"),
                       transform: `translate(-50%, -50%) rotate(${elemRotationDeg.qr}deg)`,
                       background: "#fff",
                     }}

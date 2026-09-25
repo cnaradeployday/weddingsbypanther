@@ -14,24 +14,26 @@ export function useDesignReducer(initial: Design) {
 
   const design = history.present;
 
-  // React's useReducer dispatch doesn't accept a function updater the way
-  // useState's does, so a functional update is computed here against the
-  // current `design` before dispatching a plain "set" action.
-  const setDesign = useCallback(
-    (updater: Design | ((prev: Design) => Design)) => {
-      const value = typeof updater === "function" ? (updater as (p: Design) => Design)(design) : updater;
-      dispatch({ type: "set", value });
-    },
-    [design]
-  );
+  // Passes a functional updater straight through to the reducer (which now
+  // accepts one — see designHistory.ts) instead of computing it here against
+  // a closured `design`. That keeps these two functions' identity
+  // permanently stable across renders (empty deps — `dispatch` itself never
+  // changes), matching the guarantee `useState`'s own setter gives.
+  //
+  // This isn't just tidiness: `setDesignCoalescing` is a dependency of the
+  // drag/resize/rotate pointermove effects. A version that closed over
+  // `design` (and so got a new identity on every dispatch — i.e. many times
+  // a second during a drag) forced those effects to tear down and
+  // re-subscribe their window pointermove/pointerup listeners on every
+  // single frame of the gesture, which is what made dragging, rotating and
+  // resizing effectively not work at all.
+  const setDesign = useCallback((updater: Design | ((prev: Design) => Design)) => {
+    dispatch({ type: "set", value: updater });
+  }, []);
 
-  const setDesignCoalescing = useCallback(
-    (updater: Design | ((prev: Design) => Design)) => {
-      const value = typeof updater === "function" ? (updater as (p: Design) => Design)(design) : updater;
-      dispatch({ type: "set", value, coalesce: true });
-    },
-    [design]
-  );
+  const setDesignCoalescing = useCallback((updater: Design | ((prev: Design) => Design)) => {
+    dispatch({ type: "set", value: updater, coalesce: true });
+  }, []);
 
   const replaceDesign = useCallback((value: Design) => {
     dispatch({ type: "replace", value });

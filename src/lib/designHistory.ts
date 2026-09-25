@@ -18,7 +18,15 @@ export type HistoryState<T> = {
 };
 
 export type HistoryAction<T> =
-  | { type: "set"; value: T; coalesce?: boolean }
+  // `value` may be a plain value or a functional updater (receiving the
+  // current `present`) — the updater form lets the dispatcher stay a stable
+  // function identity across renders (no closure over `present` needed),
+  // which matters a lot for a handler subscribed inside a `useEffect`: a
+  // dispatcher that changes identity on every call — e.g. one that closes
+  // over `present` directly — forces that effect to tear down and
+  // re-subscribe its listeners on every single dispatch, which is exactly
+  // what happens many times a second during a drag/rotate gesture.
+  | { type: "set"; value: T | ((prev: T) => T); coalesce?: boolean }
   | { type: "undo" }
   | { type: "redo" }
   // Loads a different design (e.g. switching print zones) without it being
@@ -43,11 +51,13 @@ export function initHistory<T>(initial: T): HistoryState<T> {
 export function historyReducer<T>(state: HistoryState<T>, action: HistoryAction<T>): HistoryState<T> {
   switch (action.type) {
     case "set": {
+      const nextValue =
+        typeof action.value === "function" ? (action.value as (prev: T) => T)(state.present) : action.value;
       if (action.coalesce && state.coalescing) {
-        return { ...state, present: action.value, future: [] };
+        return { ...state, present: nextValue, future: [] };
       }
       const past = [...state.past, state.present].slice(-MAX_HISTORY_STEPS);
-      return { past, present: action.value, future: [], coalescing: !!action.coalesce };
+      return { past, present: nextValue, future: [], coalescing: !!action.coalesce };
     }
     case "undo": {
       if (state.past.length === 0) return state;
