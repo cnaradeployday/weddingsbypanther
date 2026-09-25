@@ -116,7 +116,9 @@ const SAMPLE_FEE = 50;
 // unamplified 1:1 behavior reported as needing more drag than the screen
 // has room for.
 const RESIZE_SENSITIVITY = 2.2;
-const ROTATE_SENSITIVITY = 1.8;
+// Still reported as needing "several tries" to rotate at 1.8 — raised
+// further rather than guessing this was already enough.
+const ROTATE_SENSITIVITY = 3.2;
 
 // Measures the rendered zone box so text/logo sizing can be derived from the
 // product's real print-area dimensions (mm), not a guessed fixed size.
@@ -1774,6 +1776,18 @@ export function ProductConfigurator({
                   (() => {
                     const toolbar = renderContextualToolbarFor(activeElem);
                     if (!toolbar) return null;
+                    // The fixed "-28px" gap here was measured from the
+                    // element's CENTER (design.positions is a center point),
+                    // not its actual top edge — for anything taller than
+                    // ~56px (a bigger logo, a scaled-up element) that isn't
+                    // enough clearance, so the toolbar rendered overlapping
+                    // the element/handles instead of floating clearly above
+                    // them. Use the element's real measured box (half its
+                    // diagonal, so it still clears at any rotation) plus the
+                    // rotate handle's own reach instead of a flat constant.
+                    const box = elemBoxRefs.current[activeElem];
+                    const halfExtentPx = box ? Math.hypot(box.offsetWidth, box.offsetHeight) / 2 : 40;
+                    const clearancePx = halfExtentPx + 56;
                     return (
                       <div
                         className="absolute z-20 pointer-events-auto"
@@ -1790,7 +1804,7 @@ export function ProductConfigurator({
                         style={{
                           left: `${design.positions[activeElem].x}%`,
                           top: `${design.positions[activeElem].y}%`,
-                          transform: "translate(-50%, calc(-100% - 28px))",
+                          transform: `translate(-50%, calc(-100% - ${clearancePx}px))`,
                         }}
                       >
                         {toolbar}

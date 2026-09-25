@@ -26,6 +26,19 @@ const V_ALIGNS: { id: VerticalAlign; label: string }[] = [
   { id: "bottom", label: "Bottom" },
 ];
 
+const QUICK_ROTATE_STEPS = [45, 90, 180];
+
+// Keeps rotation in the same +/-180 range the typed field and drag handle
+// both use — 190deg and -170deg are the same orientation, so wrapping
+// (rather than clamping) is what lets repeatedly hitting e.g. +90 cycle
+// all the way around instead of getting stuck at the boundary.
+function wrapDeg(deg: number): number {
+  let d = deg % 360;
+  if (d > 180) d -= 360;
+  if (d < -180) d += 360;
+  return d;
+}
+
 export function ContextualToolbar({
   elemType,
   rotationDeg,
@@ -54,6 +67,7 @@ export function ContextualToolbar({
   trailing?: React.ReactNode;
 }) {
   const [showAlignMenu, setShowAlignMenu] = useState(false);
+  const [showRotateMenu, setShowRotateMenu] = useState(false);
   return (
     <div
       role="toolbar"
@@ -94,6 +108,34 @@ export function ContextualToolbar({
         />
         °
       </label>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setShowRotateMenu((s) => !s)}
+          aria-label="Quick rotate"
+          aria-expanded={showRotateMenu}
+          className={`h-11 px-2 flex items-center justify-center rounded-lg text-xs font-medium text-dark hover:bg-cream ${showRotateMenu ? "bg-cream" : ""}`}
+        >
+          90°
+        </button>
+        {showRotateMenu && (
+          <div className="absolute top-full left-0 mt-1.5 z-10 bg-white border border-line rounded-xl shadow-lg p-1.5 flex gap-1 w-max">
+            {QUICK_ROTATE_STEPS.map((step) => (
+              <button
+                key={step}
+                type="button"
+                onClick={() => {
+                  onChangeRotation(wrapDeg(rotationDeg + step));
+                  setShowRotateMenu(false);
+                }}
+                className="h-11 px-3 rounded-lg text-xs text-dark hover:bg-cream whitespace-nowrap"
+              >
+                +{step}°
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <button
         type="button"
         onClick={() => setShowAlignMenu((s) => !s)}
