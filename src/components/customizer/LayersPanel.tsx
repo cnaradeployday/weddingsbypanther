@@ -88,7 +88,7 @@ export function LayersPanel({
                   onClick={() => onToggleLock(key)}
                   aria-label={locked ? `Unlock ${ELEM_LABELS[key]}` : `Lock ${ELEM_LABELS[key]}`}
                   aria-pressed={locked}
-                  className={`h-8 w-8 flex items-center justify-center rounded-lg ${locked ? "text-terracotta-dark" : "text-muted"}`}
+                  className={`h-11 w-11 shrink-0 flex items-center justify-center rounded-lg ${locked ? "text-terracotta-dark" : "text-muted"}`}
                 >
                   {locked ? (
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -107,7 +107,7 @@ export function LayersPanel({
                   onClick={() => onToggleHide(key)}
                   aria-label={hidden ? `Show ${ELEM_LABELS[key]}` : `Hide ${ELEM_LABELS[key]}`}
                   aria-pressed={hidden}
-                  className={`h-8 w-8 flex items-center justify-center rounded-lg ${hidden ? "text-terracotta-dark" : "text-muted"}`}
+                  className={`h-11 w-11 shrink-0 flex items-center justify-center rounded-lg ${hidden ? "text-terracotta-dark" : "text-muted"}`}
                 >
                   {hidden ? (
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

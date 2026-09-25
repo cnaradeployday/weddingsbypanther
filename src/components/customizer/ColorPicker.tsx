@@ -69,7 +69,7 @@ export function ColorPicker({
               onClick={() => commit(c)}
               aria-label={`Use color ${c}`}
               aria-pressed={value.toLowerCase() === c.toLowerCase()}
-              className={`h-9 w-9 rounded-full border-2 ${value.toLowerCase() === c.toLowerCase() ? "border-terracotta" : "border-white"}`}
+              className={`h-11 w-11 rounded-full border-2 ${value.toLowerCase() === c.toLowerCase() ? "border-terracotta" : "border-white"}`}
               style={{ backgroundColor: c, boxShadow: "0 0 0 1px #E6DFD3" }}
             />
           ))}
@@ -135,7 +135,7 @@ export function ColorPicker({
               type="button"
               onClick={() => commit(c)}
               aria-label={`Use recent color ${c}`}
-              className="h-7 w-7 rounded-full border-2 border-white"
+              className="h-11 w-11 rounded-full border-2 border-white"
               style={{ backgroundColor: c, boxShadow: value.toLowerCase() === c ? "0 0 0 2px #5B2EE0" : "0 0 0 1px #E6DFD3" }}
             />
           ))}

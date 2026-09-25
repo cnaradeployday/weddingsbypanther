@@ -58,13 +58,14 @@ export function ContextualToolbar({
     <div
       role="toolbar"
       aria-label={`${elemType} options`}
-      className="relative flex items-center gap-1 h-11 px-1.5 bg-white border border-line rounded-xl shadow-lg whitespace-nowrap"
+      className="relative flex items-center gap-1 py-1.5 px-1.5 bg-white border border-line rounded-xl shadow-lg whitespace-nowrap"
     >
       {trailing}
       {colorEditable && onChangeColor && (
         <>
           <span className="w-px h-5 bg-line" aria-hidden="true" />
-          <label className="h-9 w-9 flex items-center justify-center rounded-lg cursor-pointer" aria-label="Color">
+          {/* EDIT-17: ≥44px touch target */}
+          <label className="h-11 w-11 flex items-center justify-center rounded-lg cursor-pointer" aria-label="Color">
             <input
               type="color"
               value={color ?? "#1a1a1a"}
@@ -98,7 +99,7 @@ export function ContextualToolbar({
         onClick={() => setShowAlignMenu((s) => !s)}
         aria-label="Align to print area"
         aria-expanded={showAlignMenu}
-        className={`h-9 w-9 flex items-center justify-center rounded-lg text-dark hover:bg-cream ${showAlignMenu ? "bg-cream" : ""}`}
+        className={`h-11 w-11 flex items-center justify-center rounded-lg text-dark hover:bg-cream ${showAlignMenu ? "bg-cream" : ""}`}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
           <path d="M12 3v18" />
@@ -119,7 +120,7 @@ export function ContextualToolbar({
                     onAlign("horizontal", a.id);
                     setShowAlignMenu(false);
                   }}
-                  className="flex-1 h-8 text-xs text-dark hover:bg-cream"
+                  className="flex-1 h-11 text-xs text-dark hover:bg-cream"
                 >
                   {a.label}
                 </button>
@@ -137,7 +138,7 @@ export function ContextualToolbar({
                     onAlign("vertical", a.id);
                     setShowAlignMenu(false);
                   }}
-                  className="flex-1 h-8 text-xs text-dark hover:bg-cream"
+                  className="flex-1 h-11 text-xs text-dark hover:bg-cream"
                 >
                   {a.label}
                 </button>
@@ -153,7 +154,7 @@ export function ContextualToolbar({
             type="button"
             onClick={onDelete}
             aria-label="Delete"
-            className="h-9 w-9 flex items-center justify-center rounded-lg text-dark hover:bg-cream"
+            className="h-11 w-11 flex items-center justify-center rounded-lg text-dark hover:bg-cream"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
               <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />

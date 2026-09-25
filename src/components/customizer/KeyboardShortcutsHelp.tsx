@@ -20,7 +20,7 @@ export function KeyboardShortcutsHelp() {
         onClick={() => setOpen((o) => !o)}
         aria-label="Keyboard shortcuts"
         aria-expanded={open}
-        className="h-9 w-9 flex items-center justify-center rounded-lg text-muted hover:bg-cream"
+        className="h-11 w-11 flex items-center justify-center rounded-lg text-muted hover:bg-cream"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="9" />
@@ -32,7 +32,12 @@ export function KeyboardShortcutsHelp() {
         <div role="dialog" aria-label="Keyboard shortcuts" className="absolute right-0 top-11 z-20 w-72 rounded-xl border border-line bg-white shadow-lg p-4">
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-serif text-lg">Keyboard shortcuts</h3>
-            <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="text-muted">
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close"
+              className="h-11 w-11 -mr-2 flex items-center justify-center text-lg text-muted shrink-0"
+            >
               ×
             </button>
           </div>
