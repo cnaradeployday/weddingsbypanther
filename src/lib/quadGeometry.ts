@@ -200,3 +200,36 @@ export function maxOrientedBoxScale(
   }
   return best;
 }
+
+// A small safety margin so a resolved fit sits just inside the boundary
+// rather than exactly touching it — matches the existing 0.98 margin used
+// for the resize handle's own growth cap.
+const CONTAINMENT_SAFETY_MARGIN = 0.98;
+
+// Resolves an oriented box back into the quad after its rotation changed
+// (BUG-03): first tries moving it back in place at its current size: only
+// when it's too big to fit at ANY position (rotated this way) does it also
+// report a scale-down factor. `halfW`/`halfH` describe the box's own
+// unrotated footprint. Callers that don't need to shrink can ignore
+// `scale === 1`.
+export function resolveRotatedContainment(
+  center: Point,
+  corners: Point[],
+  halfW: number,
+  halfH: number,
+  rotationRad: number
+): { center: Point; scale: number; resized: boolean } {
+  if (corners.length !== 4 || halfW <= 0 || halfH <= 0) {
+    return { center, scale: 1, resized: false };
+  }
+  const movedCenter = clampOrientedBoxToQuad(center, corners, halfW, halfH, rotationRad);
+  const fitScale = maxOrientedBoxScale(movedCenter, corners, halfW, halfH, rotationRad);
+  if (!Number.isFinite(fitScale) || fitScale >= 1) {
+    return { center: movedCenter, scale: 1, resized: false };
+  }
+  // Even the best position for this rotation can't fit the box at its
+  // current size — shrink it to the largest size that does.
+  const scale = Math.max(0.1, fitScale * CONTAINMENT_SAFETY_MARGIN);
+  const shrunkCenter = clampOrientedBoxToQuad(movedCenter, corners, halfW * scale, halfH * scale, rotationRad);
+  return { center: shrunkCenter, scale, resized: true };
+}

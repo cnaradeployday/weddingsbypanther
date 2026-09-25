@@ -1,6 +1,7 @@
 "use client";
 
-import { keyOutWhiteBackground } from "./backgroundKey";
+import { keyOutWhiteBackground, keyOutWhiteBackgroundConnectedToEdge } from "./backgroundKey";
+import type { LogoRemoveWhiteMode } from "@/components/customizer/types";
 
 // Flattens an uploaded logo into a solid silhouette filled with `hex`,
 // keeping its original alpha shape — how a one-color print/engrave/
@@ -45,6 +46,16 @@ export function recolorLogoToSolid(dataUrl: string, hex: string): Promise<string
 // image has no white to key or already carries real transparency, so this
 // safely returns the original data URL unchanged in that case.
 export function removeLogoBackground(dataUrl: string): Promise<string> {
+  return removeLogoBackgroundByMode(dataUrl, "all");
+}
+
+// EDIT-11's three "Remove white" options: Never (return the upload
+// untouched), Background only (key just the region connected to the
+// image's outer edge, preserving white fully enclosed inside the
+// artwork), All white (the original, more aggressive behavior — every
+// near-white pixel anywhere).
+export function removeLogoBackgroundByMode(dataUrl: string, mode: LogoRemoveWhiteMode): Promise<string> {
+  if (mode === "never") return Promise.resolve(dataUrl);
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -58,7 +69,10 @@ export function removeLogoBackground(dataUrl: string): Promise<string> {
       }
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const changed = keyOutWhiteBackground(imageData.data);
+      const changed =
+        mode === "background"
+          ? keyOutWhiteBackgroundConnectedToEdge(imageData.data, canvas.width, canvas.height)
+          : keyOutWhiteBackground(imageData.data);
       if (!changed) {
         resolve(dataUrl);
         return;
