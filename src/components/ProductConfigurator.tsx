@@ -13,6 +13,11 @@ import { FRAME_TEMPLATES, frameSvgInner } from "@/lib/frameTemplates";
 import { TEXT_FONTS, DEFAULT_TEXT_FONT, textFontStyle } from "@/lib/textFonts";
 import { fitTextFontSize, estimateTextWidth, textLineCount } from "@/lib/textFit";
 import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
+import { isNamesValid, NAMES_REQUIRED_MESSAGE } from "@/lib/personalizationValidation";
+import { computeDefaultPositions } from "@/lib/defaultDesignLayout";
+import { designStorage, LATEST_VERSION_ID } from "@/lib/designStorage";
+import { formatPrintDate } from "@/lib/printDate";
+import { parseQuantityInput, isQuantityBelowMinimum } from "@/lib/quantityValidation";
 import { dataUrlToBlob } from "@/lib/dataUrl";
 import { recolorLogoToSolid, removeLogoBackground } from "@/lib/logoRecolor";
 import { detectLogoColors, type DetectedColor } from "@/lib/logoColors";
@@ -24,6 +29,7 @@ import {
   availableAlongAxis,
   clampOrientedBoxToQuad,
   maxOrientedBoxScale,
+  resolveRotatedContainment,
   type Point,
 } from "@/lib/quadGeometry";
 import type { RelatedProduct } from "@/lib/queries";
@@ -202,33 +208,82 @@ function CollapsibleSection({
 function AdjustHandles({
   onResizeStart,
   onRotateStart,
+  notice,
+  expandBy,
 }: {
   onResizeStart: (e: React.PointerEvent) => void;
   onRotateStart: (e: React.PointerEvent) => void;
+  // Brief feedback shown at the print-area limit — BUG-10 (resize) and
+  // BUG-03 (a rotation that had to shrink the element to fit).
+  notice?: string;
+  // BUG-04: a decorative frame draws further out than the text element it's
+  // wrapped around (a negative-inset sibling, see the "names" element
+  // below) — without this, the dashed selection outline and handles traced
+  // only the plain text's box, leaving the visible frame sticking out past
+  // them. In px, how far the frame extends beyond the element on each axis;
+  // omitted (or {x:0,y:0}) for an element with no frame.
+  expandBy?: { x: number; y: number };
 }) {
+  const expandX = expandBy?.x ?? 0;
+  const expandY = expandBy?.y ?? 0;
   const corner =
     "absolute h-5 w-5 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-nwse-resize touch-none pointer-events-auto";
+  // The handles' resting offset with no frame (matches the original fixed
+  // -2.5 / -top-8 Tailwind spacing), pushed further out by the frame's own
+  // extra footprint when there is one.
+  const cornerOffset = 10 + expandX;
+  const cornerOffsetY = 10 + expandY;
+  const rotateOffset = 32 + expandY;
   return (
     <>
-      <div className="absolute inset-0 rounded-sm border border-dashed border-terracotta pointer-events-none" />
-      <div onPointerDown={onResizeStart} className={`${corner} -left-2.5 -top-2.5`}>
+      <div
+        className="absolute rounded-sm border border-dashed border-terracotta pointer-events-none"
+        style={{ inset: `${-expandY}px ${-expandX}px` }}
+      />
+      <div
+        onPointerDown={onResizeStart}
+        className={corner}
+        style={{ left: -cornerOffset, top: -cornerOffsetY }}
+      >
         <ResizeIcon />
       </div>
-      <div onPointerDown={onResizeStart} className={`${corner} -right-2.5 -top-2.5`}>
+      <div
+        onPointerDown={onResizeStart}
+        className={corner}
+        style={{ right: -cornerOffset, top: -cornerOffsetY }}
+      >
         <ResizeIcon />
       </div>
-      <div onPointerDown={onResizeStart} className={`${corner} -left-2.5 -bottom-2.5`}>
+      <div
+        onPointerDown={onResizeStart}
+        className={corner}
+        style={{ left: -cornerOffset, bottom: -cornerOffsetY }}
+      >
         <ResizeIcon />
       </div>
-      <div onPointerDown={onResizeStart} className={`${corner} -right-2.5 -bottom-2.5`}>
+      <div
+        onPointerDown={onResizeStart}
+        className={corner}
+        style={{ right: -cornerOffset, bottom: -cornerOffsetY }}
+      >
         <ResizeIcon />
       </div>
       <div
         onPointerDown={onRotateStart}
-        className="absolute left-1/2 -top-8 h-5 w-5 -translate-x-1/2 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-grab touch-none pointer-events-auto"
+        className="absolute left-1/2 h-5 w-5 -translate-x-1/2 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-grab touch-none pointer-events-auto"
+        style={{ top: -rotateOffset }}
       >
         <RotateIcon />
       </div>
+      {notice && (
+        <span
+          role="status"
+          className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-dark text-cream-light text-[11px] px-2.5 py-1 pointer-events-none"
+          style={{ top: -rotateOffset - 32 }}
+        >
+          {notice}
+        </span>
+      )}
     </>
   );
 }
@@ -236,13 +291,6 @@ function AdjustHandles({
 // Flat USD fee for a one-off sample order — covers the machine setup for
 // printing just one piece, on top of the usual unit price and shipping.
 const SAMPLE_FEE = 50;
-
-const DEFAULT_POSITIONS: Record<ElemKey, ElemPos> = {
-  monogram: { x: 50, y: 15 },
-  logo: { x: 50, y: 35 },
-  names: { x: 50, y: 65 },
-  date: { x: 50, y: 82 },
-};
 
 const DEFAULT_SCALES: Record<ElemKey, number> = { logo: 1, monogram: 1, names: 1, date: 1 };
 const DEFAULT_ROTATIONS: Record<ElemKey, number> = { logo: 0, monogram: 0, names: 0, date: 0 };
@@ -258,18 +306,29 @@ function fileToDataUrl(file: File): Promise<string> {
 
 // Measures the rendered zone box so text/logo sizing can be derived from the
 // product's real print-area dimensions (mm), not a guessed fixed size.
+//
+// BUG-05: this used to attach the ResizeObserver once, in a mount-only
+// effect, to whatever DOM node the ref pointed at that first time. The zone
+// box unmounts and remounts every time the shopper views a photo that isn't
+// this zone's own reference image (see `showOverlayHere`) — a fresh DOM node
+// each time — so that one-time observer was left watching a detached node
+// forever after the first switch, freezing the measured size (and
+// everything derived from it: font sizes, the cm labels) at whatever it
+// happened to be right before that first unmount. A callback ref instead
+// re-attaches a fresh observer on every mount, including remounts.
 function useElementSize<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const observerRef = useRef<ResizeObserver | null>(null);
 
-  useEffect(() => {
-    const el = ref.current;
+  const ref = useCallback((el: T | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
     if (!el) return;
     const observer = new ResizeObserver(([entry]) => {
       setSize({ width: entry.contentRect.width, height: entry.contentRect.height });
     });
     observer.observe(el);
-    return () => observer.disconnect();
+    observerRef.current = observer;
   }, []);
 
   return [ref, size] as const;
@@ -356,9 +415,10 @@ export function ProductConfigurator({
   // were configured back through the handoff (a plain related-product
   // suggestion click has no prior arrangement, so these are absent there
   // and fall back to the defaults as usual).
-  const [positions, setPositions] = useState<Record<ElemKey, ElemPos>>(
-    handoff?.positions ? { ...DEFAULT_POSITIONS, ...handoff.positions } : DEFAULT_POSITIONS
-  );
+  const [positions, setPositions] = useState<Record<ElemKey, ElemPos>>(() => {
+    const defaults = computeDefaultPositions(product.zones[0]);
+    return handoff?.positions ? { ...defaults, ...handoff.positions } : defaults;
+  });
   // Each element (logo, monogram, names, date) gets its own independent
   // size and rotation, adjusted with on-canvas drag handles right on the
   // element — not shared sliders elsewhere in the page.
@@ -371,6 +431,11 @@ export function ProductConfigurator({
   // Resize/rotate handles only show on the element the customer tapped —
   // otherwise the photo stays uncluttered.
   const [activeElem, setActiveElem] = useState<ElemKey | null>(null);
+  // Brief, non-blocking feedback shown near an element's size tag while
+  // resizing hits the print area's limit (BUG-10) or a rotation had to
+  // shrink the element to keep it inside the print area (BUG-03) — cleared
+  // as soon as the gesture ends.
+  const [elemNotice, setElemNotice] = useState<{ key: ElemKey; message: string } | null>(null);
   // Whichever element was tapped most recently renders on top of the
   // others — without this, overlapping elements always hit-test in a fixed
   // DOM order (logo, then monogram, then names, then date), so a later
@@ -399,6 +464,17 @@ export function ProductConfigurator({
     startScale: number;
     startRotation: number;
     maxScale: number;
+    // Only used by the rotate branch (BUG-03): the element's own true
+    // (unrotated) footprint and photo-local center, the quad it must stay
+    // inside, and the print area's own auto-tilt at gesture start — enough
+    // to re-run containment against the *new* rotation on every move event,
+    // without needing anything from component scope that could go stale
+    // mid-gesture.
+    quadCornersPx: Point[] | null;
+    centerPhotoPx: Point | null;
+    naturalHalfW: number;
+    naturalHalfH: number;
+    autoRotationDeg: number;
   } | null>(null);
   const [techniqueId, setTechniqueId] = useState(
     product.techniques.find((t) => t.is_default)?.id ?? product.techniques[0]?.id ?? ""
@@ -418,9 +494,17 @@ export function ProductConfigurator({
     setQuantity(next);
     setQuantityInput(String(next));
   };
+  // BUG-09: typing a value below the minimum (or an invalid one) no longer
+  // silently snaps to the minimum on blur — it stays exactly as typed, with
+  // an inline message and the cart buttons disabled, until corrected. The
+  // committed `quantity` (used for the total and Add to Cart) only advances
+  // once the typed value is actually valid.
+  const parsedQuantityInput = parseQuantityInput(quantityInput);
+  const quantityBelowMinimum = isQuantityBelowMinimum(quantityInput, product.minOrder);
   const commitQuantityInput = () => {
-    const parsed = Math.round(Number(quantityInput));
-    updateQuantity(Number.isFinite(parsed) && parsed > 0 ? Math.max(product.minOrder, parsed) : product.minOrder);
+    if (parsedQuantityInput !== null && parsedQuantityInput >= product.minOrder) {
+      updateQuantity(parsedQuantityInput);
+    }
   };
   const [justAdded, setJustAdded] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
@@ -450,7 +534,7 @@ export function ProductConfigurator({
   // minus the cross-page handoff (that only ever applies to the area the
   // shopper actually landed on).
   const makeDefaultDesign = useCallback(
-    (): ZoneDesign => ({
+    (zoneForDefaults?: Zone): ZoneDesign => ({
       names: isMerchandise ? "Your Company" : "Amelia & Ravi",
       date: isMerchandise ? "" : "2026-06-14",
       monogram: "",
@@ -460,7 +544,7 @@ export function ProductConfigurator({
       logoPreview: null,
       inkColor: "#1a1a1a",
       colorTextInput: "",
-      positions: DEFAULT_POSITIONS,
+      positions: computeDefaultPositions(zoneForDefaults),
       elemScale: DEFAULT_SCALES,
       elemRotationOffset: DEFAULT_ROTATIONS,
       elemOrder: ["logo", "monogram", "names", "date"],
@@ -489,7 +573,8 @@ export function ProductConfigurator({
       elemRotationOffset,
       elemOrder,
     };
-    const next = zoneDesignsRef.current[newZoneId] ?? makeDefaultDesign();
+    const newZone = product.zones.find((z) => z.id === newZoneId);
+    const next = zoneDesignsRef.current[newZoneId] ?? makeDefaultDesign(newZone);
     setNames(next.names);
     setDate(next.date);
     setMonogram(next.monogram);
@@ -510,7 +595,6 @@ export function ProductConfigurator({
     // reference image_id set still needs to reset to the default (first)
     // photo, or switching away from an area that does have one and back
     // would leave the previous area's photo on screen.
-    const newZone = product.zones.find((z) => z.id === newZoneId);
     const newImageIndex = newZone?.image_id
       ? product.images.findIndex((img) => img.id === newZone.image_id)
       : -1;
@@ -534,6 +618,126 @@ export function ProductConfigurator({
       switchActiveZone(zoneId);
     }
   };
+
+  // BUG-01: restores the last design saved for this product, so reloading
+  // or re-entering the URL picks up where the shopper left off instead of
+  // the sample design. A handoff from another product's page (`handoff`
+  // above) is a more recent, explicit signal than an old saved draft, so it
+  // still takes priority, unchanged from today's behavior — this only
+  // restores when there's no handoff. Guards every restored id (zone,
+  // technique, variant) against still existing on the product, in case its
+  // configuration changed since the design was saved.
+  const hasRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!product.personalizable || handoff) {
+      hasRestoredRef.current = true;
+      return;
+    }
+    let cancelled = false;
+    designStorage.load(product.id, LATEST_VERSION_ID).then((saved) => {
+      if (cancelled) return;
+      if (saved) {
+        const resolvedActiveZoneId =
+          saved.activeZoneId && product.zones.some((z) => z.id === saved.activeZoneId)
+            ? saved.activeZoneId
+            : primaryZone?.id ?? "";
+        zoneDesignsRef.current = saved.zones as Record<string, ZoneDesign>;
+        const activeDesign = saved.zones[resolvedActiveZoneId];
+        if (activeDesign) {
+          setNames(activeDesign.names);
+          setDate(activeDesign.date);
+          setMonogram(activeDesign.monogram);
+          setFrame(activeDesign.frame);
+          setTextFont(activeDesign.textFont);
+          setLogoFile(activeDesign.logoFile);
+          setLogoPreview(activeDesign.logoPreview);
+          setInkColor(activeDesign.inkColor);
+          setColorTextInput(activeDesign.colorTextInput);
+          setPositions(activeDesign.positions as Record<ElemKey, ElemPos>);
+          setElemScale(activeDesign.elemScale as Record<ElemKey, number>);
+          setElemRotationOffset(activeDesign.elemRotationOffset as Record<ElemKey, number>);
+          setElemOrder(activeDesign.elemOrder as ElemKey[]);
+        }
+        setActiveZoneId(resolvedActiveZoneId);
+        setSelectedExtraZoneIds(
+          new Set(saved.selectedExtraZoneIds.filter((id) => product.zones.some((z) => z.id === id)))
+        );
+        if (product.techniques.some((t) => t.id === saved.techniqueId)) setTechniqueId(saved.techniqueId);
+        if (product.variants.some((v) => v.id === saved.variantId)) setVariantId(saved.variantId);
+        if (Number.isFinite(saved.quantity) && saved.quantity > 0) updateQuantity(saved.quantity);
+        const newImageIndex = product.zones.find((z) => z.id === resolvedActiveZoneId)?.image_id
+          ? product.images.findIndex((img) => img.id === product.zones.find((z) => z.id === resolvedActiveZoneId)?.image_id)
+          : -1;
+        setActiveImage(newImageIndex >= 0 ? newImageIndex : 0);
+      }
+      hasRestoredRef.current = true;
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Deliberately mount-only: restoring reacts to nothing after the page
+    // has loaded (a later prop change can't happen — `product` is this
+    // page's own fixed server-fetched data).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // BUG-01: saves the current design shortly after each change, debounced
+  // so a burst of edits (typing, dragging) writes once, not per keystroke.
+  // Waits for the restore above to finish first — saving before that would
+  // overwrite a just-loaded draft with the page's blank initial state.
+  useEffect(() => {
+    if (!product.personalizable || !hasRestoredRef.current) return;
+    const timeout = setTimeout(() => {
+      const liveDesign: ZoneDesign = {
+        names,
+        date,
+        monogram,
+        frame,
+        textFont,
+        logoFile,
+        logoPreview,
+        inkColor,
+        colorTextInput,
+        positions,
+        elemScale,
+        elemRotationOffset,
+        elemOrder,
+      };
+      designStorage.save({
+        productId: product.id,
+        versionId: LATEST_VERSION_ID,
+        updatedAt: Date.now(),
+        activeZoneId,
+        selectedExtraZoneIds: Array.from(selectedExtraZoneIds),
+        techniqueId,
+        variantId,
+        quantity,
+        zones: { ...zoneDesignsRef.current, [activeZoneId]: liveDesign },
+      });
+    }, 600);
+    return () => clearTimeout(timeout);
+  }, [
+    product.personalizable,
+    product.id,
+    names,
+    date,
+    monogram,
+    frame,
+    textFont,
+    logoFile,
+    logoPreview,
+    inkColor,
+    colorTextInput,
+    positions,
+    elemScale,
+    elemRotationOffset,
+    elemOrder,
+    activeZoneId,
+    selectedExtraZoneIds,
+    techniqueId,
+    variantId,
+    quantity,
+  ]);
 
   const [zoneRef, zoneSize] = useElementSize<HTMLDivElement>();
   // Measures the full photo container (not just the zone sub-box) so the
@@ -603,6 +807,23 @@ export function ProductConfigurator({
       const fullPctX = zoneBox.left + (pos.x / 100) * zoneBox.width;
       const fullPctY = zoneBox.top + (pos.y / 100) * zoneBox.height;
       return { x: (fullPctX / 100) * photoSize.width, y: (fullPctY / 100) * photoSize.height };
+    },
+    [zoneBox, photoSize.width, photoSize.height]
+  );
+
+  // The inverse of posToPhotoPx — used after a rotation gesture resolves an
+  // element's center back inside the print area (BUG-03), to convert that
+  // photo-local pixel point back into the zoneBox-relative % `positions` are
+  // stored in.
+  const photoPxToPos = useCallback(
+    (pt: Point): ElemPos | null => {
+      if (!zoneBox || !photoSize.width || !photoSize.height) return null;
+      const fullPctX = (pt.x / photoSize.width) * 100;
+      const fullPctY = (pt.y / photoSize.height) * 100;
+      return {
+        x: ((fullPctX - zoneBox.left) / zoneBox.width) * 100,
+        y: ((fullPctY - zoneBox.top) / zoneBox.height) * 100,
+      };
     },
     [zoneBox, photoSize.width, photoSize.height]
   );
@@ -692,17 +913,50 @@ export function ProductConfigurator({
       if (state.mode === "resize") {
         const dist = Math.hypot(e.clientX - state.centerX, e.clientY - state.centerY);
         const ratio = state.startDist > 0 ? dist / state.startDist : 1;
-        const next = Math.max(0.3, Math.min(state.maxScale, state.startScale * ratio));
+        const uncapped = state.startScale * ratio;
+        const next = Math.max(0.3, Math.min(state.maxScale, uncapped));
+        // BUG-10: dragging past the print area's own limit doesn't just
+        // silently stop growing — it says so, for as long as the drag keeps
+        // pushing past it.
+        setElemNotice(
+          uncapped > state.maxScale ? { key: state.key, message: "Max size for this print area" } : null
+        );
         setElemScale((prev) => ({ ...prev, [state.key]: next }));
       } else {
         const angle = (Math.atan2(e.clientY - state.centerY, e.clientX - state.centerX) * 180) / Math.PI;
         const delta = angle - state.startAngle;
         const next = Math.max(-45, Math.min(45, state.startRotation + delta));
+        // BUG-03: a rotation that would otherwise leave part of the element
+        // outside the print area is resolved immediately, every move event
+        // — first by nudging the element back inside at its current size,
+        // and only if that alone isn't enough, by also shrinking it to the
+        // largest size that fits (with a brief notice either way).
+        if (state.quadCornersPx && state.centerPhotoPx && state.naturalHalfW > 0 && state.naturalHalfH > 0) {
+          const rotationRad = ((state.autoRotationDeg + next) * Math.PI) / 180;
+          const resolved = resolveRotatedContainment(
+            state.centerPhotoPx,
+            state.quadCornersPx,
+            state.naturalHalfW,
+            state.naturalHalfH,
+            rotationRad
+          );
+          const resolvedPos = photoPxToPos(resolved.center);
+          if (resolvedPos) {
+            setPositions((prev) => ({ ...prev, [state.key]: resolvedPos }));
+          }
+          // Recomputed fresh from the gesture's original (unshrunk) size on
+          // every move event, not accumulated from a previous event's
+          // result — so rotating back to a safe angle restores the element
+          // to its starting size instead of leaving it shrunk.
+          setElemScale((prev) => ({ ...prev, [state.key]: state.startScale * resolved.scale }));
+          setElemNotice(resolved.resized ? { key: state.key, message: "Resized to fit the print area" } : null);
+        }
         setElemRotationOffset((prev) => ({ ...prev, [state.key]: next }));
       }
     };
     const handleUp = () => {
       elemAdjustState.current = null;
+      setElemNotice(null);
     };
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
@@ -710,7 +964,7 @@ export function ProductConfigurator({
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
     };
-  }, []);
+  }, [photoPxToPos]);
 
   // Real px-per-mm for the currently rendered zone box, so text/logo sizing
   // reflects the product's actual printable area instead of a fixed guess.
@@ -860,9 +1114,24 @@ export function ProductConfigurator({
         startScale: currentScale,
         startRotation: elemRotationOffset[key],
         maxScale,
+        quadCornersPx,
+        centerPhotoPx,
+        naturalHalfW: naturalW / 2,
+        naturalHalfH: naturalH / 2,
+        autoRotationDeg,
       };
     },
-    [elemScale, elemRotationOffset, elemRotationDeg, frame, nameFontPx, posToPhotoPx, positions, quadCornersPx]
+    [
+      elemScale,
+      elemRotationOffset,
+      elemRotationDeg,
+      frame,
+      nameFontPx,
+      posToPhotoPx,
+      positions,
+      quadCornersPx,
+      autoRotationDeg,
+    ]
   );
 
   const technique = product.techniques.find((t) => t.id === techniqueId);
@@ -1021,14 +1290,14 @@ export function ProductConfigurator({
   const nameSizeLabel = sizeLabelWH(estimateTextWidth(names, nameFontPx), nameFontPx * 1.25 * nameLineCount);
   const dateSizeLabel = sizeLabelWH(estimateTextWidth("0000000000", dateFontPx), dateFontPx);
 
-  const formattedDate = useMemo(() => {
-    if (!date) return "";
-    const d = new Date(date + "T00:00:00");
-    if (Number.isNaN(d.getTime())) return date;
-    return d
-      .toLocaleDateString("en-US", { day: "2-digit", month: "2-digit", year: "numeric" })
-      .replace(/\//g, "·");
-  }, [date]);
+  const formattedDate = useMemo(() => formatPrintDate(date), [date]);
+
+  // "Your names or event text" is the only required personalization field
+  // (BUG-02) — products without a customizer at all have nothing to
+  // validate here.
+  const namesValid = !product.personalizable || isNamesValid(names);
+  const namesErrorId = "names-required-error";
+  const quantityErrorId = "quantity-minimum-error";
 
   const baseQuickQuantities = [product.minOrder, product.minOrder * 2, product.minOrder * 4, product.minOrder * 8];
   const popularQty = product.popularQty && product.popularQty >= product.minOrder ? product.popularQty : null;
@@ -1210,7 +1479,7 @@ export function ProductConfigurator({
 
     const additionalAreas: AreaPersonalization[] = [];
     for (const z of extraAreas) {
-      const design = allDesigns[z.id] ?? makeDefaultDesign();
+      const design = allDesigns[z.id] ?? makeDefaultDesign(z);
       const result = await buildAreaResult(
         client,
         uploadBase,
@@ -1250,7 +1519,7 @@ export function ProductConfigurator({
 
     const extraKeyPart = extraAreas
       .map((z) => {
-        const d = allDesigns[z.id] ?? makeDefaultDesign();
+        const d = allDesigns[z.id] ?? makeDefaultDesign(z);
         return `${z.id}:${d.names}:${d.date}:${d.monogram}:${d.frame}`;
       })
       .sort()
@@ -1376,6 +1645,7 @@ export function ProductConfigurator({
                     <AdjustHandles
                       onResizeStart={startElemAdjust("logo", "resize")}
                       onRotateStart={startElemAdjust("logo", "rotate")}
+                      notice={elemNotice?.key === "logo" ? elemNotice.message : undefined}
                     />
                   )}
                 </div>
@@ -1407,6 +1677,7 @@ export function ProductConfigurator({
                     <AdjustHandles
                       onResizeStart={startElemAdjust("monogram", "resize")}
                       onRotateStart={startElemAdjust("monogram", "rotate")}
+                      notice={elemNotice?.key === "monogram" ? elemNotice.message : undefined}
                     />
                   )}
                 </div>
@@ -1450,6 +1721,8 @@ export function ProductConfigurator({
                     <AdjustHandles
                       onResizeStart={startElemAdjust("names", "resize")}
                       onRotateStart={startElemAdjust("names", "rotate")}
+                      notice={elemNotice?.key === "names" ? elemNotice.message : undefined}
+                      expandBy={frame ? { x: nameFontPx * 0.7, y: nameFontPx * 0.45 } : undefined}
                     />
                   )}
                 </div>
@@ -1474,6 +1747,7 @@ export function ProductConfigurator({
                     <AdjustHandles
                       onResizeStart={startElemAdjust("date", "resize")}
                       onRotateStart={startElemAdjust("date", "rotate")}
+                      notice={elemNotice?.key === "date" ? elemNotice.message : undefined}
                     />
                   )}
                 </div>
@@ -1739,8 +2013,16 @@ export function ProductConfigurator({
                     .join("\n");
                   setNames(capped);
                 }}
-                className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark mb-3 resize-none"
+                aria-required="true"
+                aria-invalid={!namesValid}
+                aria-describedby={!namesValid ? namesErrorId : undefined}
+                className={`w-full rounded-lg border px-4 py-3 focus:outline-none focus:border-dark mb-1.5 resize-none ${
+                  namesValid ? "border-line" : "border-red-500"
+                }`}
               />
+              <p id={namesErrorId} className="text-xs text-red-600 mb-3 min-h-[1em]">
+                {!namesValid && NAMES_REQUIRED_MESSAGE}
+              </p>
               <label className="text-xs uppercase tracking-wide text-muted block mb-2">Text font</label>
               <div className="grid grid-cols-2 gap-2">
                 {TEXT_FONTS.map((f) => (
@@ -1764,12 +2046,28 @@ export function ProductConfigurator({
               title="Date"
               trailing={dateSizeLabel && <span className="text-xs">{dateSizeLabel}</span>}
             >
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
-              />
+              <div className="relative">
+                {/* The native picker stays fully functional (tap to open the
+                    calendar, works with a screen reader off its own value),
+                    but its own locale-formatted text is hidden — the visible
+                    text is always the fixed MM·DD·YYYY format that's what
+                    actually gets printed (BUG-08), so what the customer
+                    reads here matches the product regardless of browser
+                    locale. */}
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  aria-label={formattedDate ? `Date: ${formattedDate}` : "Date"}
+                  className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark text-transparent caret-transparent [color-scheme:light]"
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-dark"
+                >
+                  {formattedDate}
+                </span>
+              </div>
             </CollapsibleSection>
             <CollapsibleSection
               title="Monogram"
@@ -1812,7 +2110,7 @@ export function ProductConfigurator({
               <button
                 type="button"
                 onClick={() => {
-                  setPositions(DEFAULT_POSITIONS);
+                  setPositions(computeDefaultPositions(zone));
                   setElemScale(DEFAULT_SCALES);
                   setElemRotationOffset(DEFAULT_ROTATIONS);
                 }}
@@ -1888,7 +2186,11 @@ export function ProductConfigurator({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") e.currentTarget.blur();
                 }}
-                className="w-16 text-center font-medium rounded-lg border border-line py-1 focus:outline-none focus:border-dark"
+                aria-invalid={quantityBelowMinimum}
+                aria-describedby={quantityBelowMinimum ? quantityErrorId : undefined}
+                className={`w-16 text-center font-medium rounded-lg border py-1 focus:outline-none focus:border-dark ${
+                  quantityBelowMinimum ? "border-red-500" : "border-line"
+                }`}
               />
               <button
                 onClick={() => updateQuantity(quantity + product.minOrder)}
@@ -1898,6 +2200,11 @@ export function ProductConfigurator({
               </button>
             </div>
           </div>
+          {quantityBelowMinimum && (
+            <p id={quantityErrorId} className="text-xs text-red-600 mb-2">
+              The minimum order is {product.minOrder} units.
+            </p>
+          )}
           <div className="flex gap-2 flex-wrap">
             {quickQuantities.map((q) => (
               <button
@@ -1931,7 +2238,10 @@ export function ProductConfigurator({
           </div>
           <button
             onClick={handleAddToCart}
-            disabled={addingToCart}
+            disabled={addingToCart || !namesValid || quantityBelowMinimum}
+            aria-describedby={
+              !namesValid ? namesErrorId : quantityBelowMinimum ? quantityErrorId : undefined
+            }
             className="px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors shrink-0 disabled:opacity-50"
           >
             {addingToCart ? "Adding…" : justAdded ? "Added ✓" : "Add to Cart"}
@@ -1940,7 +2250,8 @@ export function ProductConfigurator({
         {product.allowSample && (
           <button
             onClick={handleAddSample}
-            disabled={addingSample}
+            disabled={addingSample || !namesValid}
+            aria-describedby={!namesValid ? namesErrorId : undefined}
             className="w-full mt-3 px-6 py-3 rounded-full border border-line text-sm font-medium hover:border-terracotta hover:text-terracotta transition-colors disabled:opacity-50"
           >
             {addingSample
