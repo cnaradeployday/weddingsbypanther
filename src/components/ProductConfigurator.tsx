@@ -1028,6 +1028,14 @@ export function ProductConfigurator({
       ? await buildAreaResult(client, uploadBase, primaryZone.id, primaryDesign, primaryZone.id === activeZoneId ? logoVector : undefined)
       : { renderUrl: undefined, renderContextUrl: undefined, snapshotUrl: undefined, logoVector: null };
 
+    // Hidden elements aren't printed (EDIT-14) — omit their content/color
+    // from the cart payload rather than relying on every downstream reader
+    // to separately check a `hidden` map.
+    const printedContent = (d: Design, key: "names" | "date" | "monogram" | "frame") =>
+      d.hidden[key] ? "" : d[key];
+    const printedColor = (d: Design, key: "names" | "date" | "monogram" | "frame" | "qr", color: string) =>
+      technique?.singleColorInk || d.hidden[key] ? undefined : color;
+
     const additionalAreas: AreaPersonalization[] = [];
     for (const z of extraAreas) {
       const areaDesign = allDesigns[z.id] ?? makeDefaultDesign(isMerchandise, z);
@@ -1036,10 +1044,10 @@ export function ProductConfigurator({
         zoneId: z.id,
         label: z.label,
         extraPrice: z.extra_price,
-        names: areaDesign.names,
-        date: areaDesign.date,
-        monogram: areaDesign.monogram,
-        frame: areaDesign.frame,
+        names: printedContent(areaDesign, "names"),
+        date: printedContent(areaDesign, "date"),
+        monogram: printedContent(areaDesign, "monogram"),
+        frame: printedContent(areaDesign, "frame"),
         textFont: areaDesign.textFont,
         positions: areaDesign.positions,
         elemScale: areaDesign.elemScale,
@@ -1049,6 +1057,12 @@ export function ProductConfigurator({
         snapshotUrl: result.snapshotUrl,
         inkColorHex: technique?.singleColorInk ? areaDesign.inkColor : undefined,
         inkPantoneCode: technique?.singleColorInk ? nearestPantone(areaDesign.inkColor)?.code : undefined,
+        namesColor: printedColor(areaDesign, "names", areaDesign.namesStyle.color),
+        dateColor: printedColor(areaDesign, "date", areaDesign.dateStyle.color),
+        monogramColor: printedColor(areaDesign, "monogram", areaDesign.monogramColor),
+        frameColor: printedColor(areaDesign, "frame", areaDesign.frameColor),
+        qrUrl: areaDesign.hidden.qr ? undefined : areaDesign.qrUrl || undefined,
+        qrColor: printedColor(areaDesign, "qr", areaDesign.qrColor),
         logoVector: result.logoVector,
       });
     }
@@ -1085,10 +1099,10 @@ export function ProductConfigurator({
       personalization: product.personalizable
         ? {
             zoneId: primaryZone?.id,
-            names: primaryDesign.names,
-            date: primaryDesign.date,
-            monogram: primaryDesign.monogram,
-            frame: primaryDesign.frame,
+            names: printedContent(primaryDesign, "names"),
+            date: printedContent(primaryDesign, "date"),
+            monogram: printedContent(primaryDesign, "monogram"),
+            frame: printedContent(primaryDesign, "frame"),
             textFont: primaryDesign.textFont,
             technique: technique?.technique,
             positions: primaryDesign.positions,
@@ -1100,6 +1114,12 @@ export function ProductConfigurator({
             snapshotUrl: primaryResult.snapshotUrl,
             inkColorHex: technique?.singleColorInk ? primaryDesign.inkColor : undefined,
             inkPantoneCode: technique?.singleColorInk ? nearestPantone(primaryDesign.inkColor)?.code : undefined,
+            namesColor: printedColor(primaryDesign, "names", primaryDesign.namesStyle.color),
+            dateColor: printedColor(primaryDesign, "date", primaryDesign.dateStyle.color),
+            monogramColor: printedColor(primaryDesign, "monogram", primaryDesign.monogramColor),
+            frameColor: printedColor(primaryDesign, "frame", primaryDesign.frameColor),
+            qrUrl: primaryDesign.hidden.qr ? undefined : primaryDesign.qrUrl || undefined,
+            qrColor: printedColor(primaryDesign, "qr", primaryDesign.qrColor),
             logoVector: primaryResult.logoVector,
             additionalAreas: additionalAreas.length > 0 ? additionalAreas : undefined,
           }

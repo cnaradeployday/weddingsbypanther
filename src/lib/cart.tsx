@@ -46,6 +46,19 @@ export type CartItem = {
     // licensed Pantone data is integrated in this app).
     inkColorHex?: string;
     inkPantoneCode?: string;
+    // Independent per-element colors — only meaningful (and only sent) for a
+    // technique that isn't single-color-ink; under single-color-ink every
+    // element shares inkColorHex above instead. Omitted for a hidden element
+    // (see `hidden` below), since it isn't printed.
+    namesColor?: string;
+    dateColor?: string;
+    monogramColor?: string;
+    frameColor?: string;
+    // The QR code's encoded URL and color — a new element type (EDIT-13)
+    // with no prior structured field. Omitted when no QR code is set, or
+    // when it's hidden.
+    qrUrl?: string;
+    qrColor?: string;
     // The logo traced into vector path data at upload time (see
     // src/lib/logoVectorize.ts) — only present for single-color-ink
     // techniques, so the print-ready outline file can include the logo as
@@ -78,6 +91,12 @@ export type AreaPersonalization = {
   snapshotUrl?: string;
   inkColorHex?: string;
   inkPantoneCode?: string;
+  namesColor?: string;
+  dateColor?: string;
+  monogramColor?: string;
+  frameColor?: string;
+  qrUrl?: string;
+  qrColor?: string;
   logoVector?: { ds: string[]; width: number; height: number } | null;
 };
 
