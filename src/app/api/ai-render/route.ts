@@ -58,11 +58,21 @@ async function callGemini(
   }
 }
 
-// Frames the already-correct, personalized product photo as a small white-
-// bordered card with a soft drop shadow, then composites it onto a
-// generated background — deterministic pixel math, not a model repainting
-// the product. This is what keeps the wedding-context shot from ever
-// risking the personalization text (see compositeOnBackground below).
+// Composites the already-correct, personalized product photo directly onto
+// a generated background with a soft grounding shadow — deterministic
+// pixel math, not a model repainting the product, which is what keeps the
+// wedding-context shot from ever risking the personalization text (see the
+// comment above this function's caller).
+//
+// Previously this also framed the product in an explicit white-bordered
+// card before compositing — meant to read as "a photo card set on the
+// table," but reported (correctly) as looking like the product pasted on a
+// white box rather than sitting in the scene. Dropping the added white
+// border removes that box outline; the product photo's own background
+// (usually a plain studio backdrop) can still show as a rectangle, since
+// true background removal/segmentation of the *reference photo* is a
+// separate, much larger undertaking this fix doesn't attempt — flagged
+// as a follow-up gap, not silently claimed as solved here.
 async function compositeOnBackground(background: ImagePayload, product: ImagePayload): Promise<ImagePayload> {
   const bgImage = sharp(Buffer.from(background.data, "base64"));
   const bgMeta = await bgImage.metadata();
@@ -70,20 +80,10 @@ async function compositeOnBackground(background: ImagePayload, product: ImagePay
   const bgH = bgMeta.height ?? 1250;
 
   const cardW = Math.round(bgW * 0.46);
-  const border = Math.max(4, Math.round(cardW * 0.035));
-  const innerW = cardW - border * 2;
-  const innerH = Math.round((innerW * 5) / 4); // product photo is 4:5 (w:h)
-  const cardH = innerH + border * 2;
+  const cardH = Math.round((cardW * 5) / 4); // product photo is 4:5 (w:h)
 
   const resizedProduct = await sharp(Buffer.from(product.data, "base64"))
-    .resize(innerW, innerH, { fit: "cover" })
-    .png()
-    .toBuffer();
-
-  const framedCard = await sharp({
-    create: { width: cardW, height: cardH, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } },
-  })
-    .composite([{ input: resizedProduct, left: border, top: border }])
+    .resize(cardW, cardH, { fit: "cover" })
     .png()
     .toBuffer();
 
@@ -97,7 +97,7 @@ async function compositeOnBackground(background: ImagePayload, product: ImagePay
   const composited = await bgImage
     .composite([
       { input: shadow, left: left - shadowPad, top: top - shadowPad },
-      { input: framedCard, left, top },
+      { input: resizedProduct, left, top },
     ])
     .png()
     .toBuffer();

@@ -881,6 +881,40 @@ export function ProductConfigurator({
     [design.locked, design.elemScale, design.frame, design.positions, design.elemRotationOffset, elemRotationDeg, nameFontPx, posToPhotoPx, quadCornersPx, autoRotationDeg]
   );
 
+  // EDIT-07/BUG-03 for the size steppers (+/-): unlike the drag-resize
+  // handle (startElemAdjust above), the steppers had no containment check
+  // at all — repeatedly clicking "+" could grow an element past the print
+  // area with nothing capping it. Mirrors startElemAdjust's own maxScale
+  // computation (live box measurement, plus BUG-04's frame padding),
+  // predicting the footprint the proposed scale would produce from the
+  // currently-measured one.
+  const stepElemScale = useCallback(
+    (key: ElemKey, dir: 1 | -1) => {
+      const currentScale = design.elemScale[key] || 1;
+      const proposedScale = Math.max(0.3, Math.min(4, currentScale + dir * 0.05));
+      const box = elemBoxRefs.current[key];
+      const centerPhotoPx = posToPhotoPx(design.positions[key]);
+      if (box && quadCornersPx && centerPhotoPx && currentScale > 0) {
+        const framePadX = key === "names" && design.frame ? nameFontPx * 1.4 : 0;
+        const framePadY = key === "names" && design.frame ? nameFontPx * 0.9 : 0;
+        const ratio = proposedScale / currentScale;
+        const halfW = ((box.offsetWidth + framePadX) / 2) * ratio;
+        const halfH = ((box.offsetHeight + framePadY) / 2) * ratio;
+        const rotationRad = (elemRotationDeg[key] * Math.PI) / 180;
+        const fitScale = maxOrientedBoxScale(centerPhotoPx, quadCornersPx, halfW, halfH, rotationRad);
+        if (Number.isFinite(fitScale) && fitScale < 1) {
+          const cappedScale = Math.max(0.3, proposedScale * fitScale * 0.98);
+          setDesign((prev) => ({ ...prev, elemScale: { ...prev.elemScale, [key]: cappedScale } }));
+          setElemNotice({ key, message: "Max size for this print area" });
+          setTimeout(() => setElemNotice((prev) => (prev?.key === key ? null : prev)), 2000);
+          return;
+        }
+      }
+      setDesign((prev) => ({ ...prev, elemScale: { ...prev.elemScale, [key]: proposedScale } }));
+    },
+    [design.elemScale, design.positions, design.frame, quadCornersPx, posToPhotoPx, elemRotationDeg, nameFontPx, setDesign]
+  );
+
   const technique = product.techniques.find((t) => t.id === techniqueId);
   const variant = product.variants.find((v) => v.id === variantId);
 
@@ -1451,6 +1485,11 @@ export function ProductConfigurator({
             )}
             {product.personalizable && zone && showOverlayHere && guidesOn && (
               <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
+                {/* A plain colored dashed line can disappear against a
+                    similarly-toned photo (e.g. a wood-toned coaster) — a
+                    wider white halo underneath keeps the outline visible
+                    against any product photo. */}
+                <polygon points={zonePoints} fill="none" stroke="#FFFFFF" strokeWidth="2.5" vectorEffect="non-scaling-stroke" strokeOpacity="0.9" />
                 <polygon
                   points={zonePoints}
                   fill="none"
@@ -2199,7 +2238,7 @@ export function ProductConfigurator({
           font={design.textFont}
           onChangeFont={(id) => setDesign((prev) => ({ ...prev, textFont: id }))}
           sizeCm={nameSizeCm}
-          onStepSize={(dir) => setDesign((prev) => ({ ...prev, elemScale: { ...prev.elemScale, names: Math.max(0.3, Math.min(4, prev.elemScale.names + dir * 0.05)) } }))}
+          onStepSize={(dir) => stepElemScale("names", dir)}
           style={design.namesStyle}
           onChangeStyle={(style) => setDesign((prev) => ({ ...prev, namesStyle: style }))}
           allowedColors={singleAllowedColor}
@@ -2232,7 +2271,7 @@ export function ProductConfigurator({
               font={design.textFont}
               onChangeFont={(id) => setDesign((prev) => ({ ...prev, textFont: id }))}
               sizeCm={dateSizeCm}
-              onStepSize={(dir) => setDesign((prev) => ({ ...prev, elemScale: { ...prev.elemScale, date: Math.max(0.3, Math.min(4, prev.elemScale.date + dir * 0.05)) } }))}
+              onStepSize={(dir) => stepElemScale("date", dir)}
               style={design.dateStyle}
               onChangeStyle={(style) => setDesign((prev) => ({ ...prev, dateStyle: style }))}
               allowedColors={singleAllowedColor}
