@@ -183,17 +183,21 @@ export function TextToolPanel({
             className="w-full accent-terracotta"
           />
         </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs uppercase tracking-wide text-muted">Line spacing</span>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={style.lineSpacing}
-            onChange={(e) => onChangeStyle({ ...style, lineSpacing: Number(e.target.value) })}
-            className="w-full accent-terracotta"
-          />
-        </label>
+        {/* Date is always a single fixed-format line (whitespace-nowrap on
+            canvas) — line spacing would have no visible effect there. */}
+        {textEditable && (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs uppercase tracking-wide text-muted">Line spacing</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={style.lineSpacing}
+              onChange={(e) => onChangeStyle({ ...style, lineSpacing: Number(e.target.value) })}
+              className="w-full accent-terracotta"
+            />
+          </label>
+        )}
         <label className="flex flex-col gap-1.5">
           <span className="text-xs uppercase tracking-wide text-muted">Curve</span>
           <input

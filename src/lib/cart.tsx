@@ -59,6 +59,19 @@ export type CartItem = {
     // when it's hidden.
     qrUrl?: string;
     qrColor?: string;
+    // The rest of names/date's own text styling (EDIT-07) — not part of
+    // `positions`/`elemScale`/`elemRotationOffset` above, and needed
+    // alongside them for the order to carry the *full* design state
+    // (FLOW-07), not just enough to render a flat preview image.
+    namesLetterSpacing?: number;
+    namesLineSpacing?: number;
+    namesCurve?: number;
+    namesAlign?: "left" | "center" | "right";
+    dateLetterSpacing?: number;
+    dateCurve?: number;
+    dateAlign?: "left" | "center" | "right";
+    // Front-to-back stacking order of every element.
+    elemOrder?: string[];
     // The logo traced into vector path data at upload time (see
     // src/lib/logoVectorize.ts) — only present for single-color-ink
     // techniques, so the print-ready outline file can include the logo as
@@ -97,6 +110,14 @@ export type AreaPersonalization = {
   frameColor?: string;
   qrUrl?: string;
   qrColor?: string;
+  namesLetterSpacing?: number;
+  namesLineSpacing?: number;
+  namesCurve?: number;
+  namesAlign?: "left" | "center" | "right";
+  dateLetterSpacing?: number;
+  dateCurve?: number;
+  dateAlign?: "left" | "center" | "right";
+  elemOrder?: string[];
   logoVector?: { ds: string[]; width: number; height: number } | null;
 };
 
