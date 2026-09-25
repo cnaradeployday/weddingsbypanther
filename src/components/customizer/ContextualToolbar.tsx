@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import type { ElemKey } from "./types";
+import type { HorizontalAlign, VerticalAlign } from "@/lib/alignment";
 
 // EDIT-04's floating toolbar above the selected element — a compact set of
 // the most common per-type actions (the full set of controls lives in the
@@ -13,13 +15,24 @@ import type { ElemKey } from "./types";
 // arbitrary multiple elements of the same type — a bigger data-model and
 // server-pipeline change than this document asks for — so no Duplicate
 // button is shown.
+const H_ALIGNS: { id: HorizontalAlign; label: string }[] = [
+  { id: "left", label: "Left" },
+  { id: "center", label: "Center" },
+  { id: "right", label: "Right" },
+];
+const V_ALIGNS: { id: VerticalAlign; label: string }[] = [
+  { id: "top", label: "Top" },
+  { id: "middle", label: "Middle" },
+  { id: "bottom", label: "Bottom" },
+];
+
 export function ContextualToolbar({
   elemType,
   rotationDeg,
   color,
   onChangeRotation,
   onChangeColor,
-  onAlignCenter,
+  onAlign,
   onDelete,
   deletable,
   colorEditable,
@@ -30,18 +43,22 @@ export function ContextualToolbar({
   color?: string;
   onChangeRotation: (deg: number) => void;
   onChangeColor?: (hex: string) => void;
-  onAlignCenter: () => void;
+  // EDIT-15: align the selected element to the print area along one axis
+  // at a time (left/center/right, top/middle/bottom) — the other axis's
+  // position is left untouched.
+  onAlign: (axis: "horizontal" | "vertical", align: HorizontalAlign | VerticalAlign) => void;
   onDelete?: () => void;
   deletable: boolean;
   colorEditable: boolean;
   // Type-specific extra controls (font name button + size for text, etc.)
   trailing?: React.ReactNode;
 }) {
+  const [showAlignMenu, setShowAlignMenu] = useState(false);
   return (
     <div
       role="toolbar"
       aria-label={`${elemType} options`}
-      className="flex items-center gap-1 h-11 px-1.5 bg-white border border-line rounded-xl shadow-lg whitespace-nowrap"
+      className="relative flex items-center gap-1 h-11 px-1.5 bg-white border border-line rounded-xl shadow-lg whitespace-nowrap"
     >
       {trailing}
       {colorEditable && onChangeColor && (
@@ -78,9 +95,10 @@ export function ContextualToolbar({
       </label>
       <button
         type="button"
-        onClick={onAlignCenter}
-        aria-label="Center in print area"
-        className="h-9 w-9 flex items-center justify-center rounded-lg text-dark hover:bg-cream"
+        onClick={() => setShowAlignMenu((s) => !s)}
+        aria-label="Align to print area"
+        aria-expanded={showAlignMenu}
+        className={`h-9 w-9 flex items-center justify-center rounded-lg text-dark hover:bg-cream ${showAlignMenu ? "bg-cream" : ""}`}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
           <path d="M12 3v18" />
@@ -88,6 +106,46 @@ export function ContextualToolbar({
           <rect x="8" y="14" width="8" height="4" rx="1" />
         </svg>
       </button>
+      {showAlignMenu && (
+        <div className="absolute top-full right-0 mt-1.5 z-10 bg-white border border-line rounded-xl shadow-lg p-2.5 flex flex-col gap-2 w-40">
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-wide text-muted">Horizontal</span>
+            <div className="flex border border-line rounded-lg overflow-hidden">
+              {H_ALIGNS.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => {
+                    onAlign("horizontal", a.id);
+                    setShowAlignMenu(false);
+                  }}
+                  className="flex-1 h-8 text-xs text-dark hover:bg-cream"
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-wide text-muted">Vertical</span>
+            <div className="flex border border-line rounded-lg overflow-hidden">
+              {V_ALIGNS.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => {
+                    onAlign("vertical", a.id);
+                    setShowAlignMenu(false);
+                  }}
+                  className="flex-1 h-8 text-xs text-dark hover:bg-cream"
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       {deletable && onDelete && (
         <>
           <span className="w-px h-5 bg-line" aria-hidden="true" />

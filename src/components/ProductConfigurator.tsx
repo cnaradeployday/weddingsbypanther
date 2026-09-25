@@ -25,7 +25,7 @@ import { nearestPantone, resolveColorInput } from "@/lib/pantoneMatch";
 import { leadTimeRange } from "@/lib/leadTime";
 import { letterSpacingEm, lineHeightMultiplier, curveTextPath } from "@/lib/textStyle";
 import { computeSnap, boxSnapTargets } from "@/lib/snapping";
-import { alignHorizontal, alignVertical } from "@/lib/alignment";
+import { alignHorizontal, alignVertical, type HorizontalAlign, type VerticalAlign } from "@/lib/alignment";
 import { useQrSvg } from "@/lib/useQrSvg";
 import type { BusinessType } from "@/lib/businessType";
 import {
@@ -1523,7 +1523,7 @@ export function ProductConfigurator({
         onChangeRotation={(deg) => {
           setDesign((prev) => ({ ...prev, elemRotationOffset: { ...prev.elemRotationOffset, [key]: deg } }));
         }}
-        onAlignCenter={() => {
+        onAlign={(axis, align) => {
           const box = elemBoxRefs.current[key];
           const halfWPct = box && zoneSize.width ? (box.offsetWidth / 2 / zoneSize.width) * 100 : 5;
           const halfHPct = box && zoneSize.height ? (box.offsetHeight / 2 / zoneSize.height) * 100 : 5;
@@ -1531,7 +1531,10 @@ export function ProductConfigurator({
             ...prev,
             positions: {
               ...prev.positions,
-              [key]: { x: alignHorizontal("center", halfWPct), y: alignVertical("middle", halfHPct) },
+              [key]:
+                axis === "horizontal"
+                  ? { ...prev.positions[key], x: alignHorizontal(align as HorizontalAlign, halfWPct) }
+                  : { ...prev.positions[key], y: alignVertical(align as VerticalAlign, halfHPct) },
             },
           }));
         }}
