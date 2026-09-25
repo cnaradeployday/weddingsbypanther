@@ -57,6 +57,23 @@ describe("designHistory — EDIT-05 undo/redo", () => {
     expect(state.present).toBe(""); // the whole typing run undoes in one step
   });
 
+  it("keeps two separate coalesced gestures as two undo steps once committed between them", () => {
+    // Drag element A, release (commit), then drag element B — without the
+    // commit in between, both drags would merge into a single undo step.
+    let state = initHistory("start");
+    state = historyReducer(state, { type: "set", value: "A-mid", coalesce: true });
+    state = historyReducer(state, { type: "set", value: "A-end", coalesce: true });
+    state = historyReducer(state, { type: "commit" });
+    state = historyReducer(state, { type: "set", value: "B-mid", coalesce: true });
+    state = historyReducer(state, { type: "set", value: "B-end", coalesce: true });
+
+    expect(state.present).toBe("B-end");
+    state = historyReducer(state, { type: "undo" });
+    expect(state.present).toBe("A-end"); // undoing the B gesture lands on A's result, not "start"
+    state = historyReducer(state, { type: "undo" });
+    expect(state.present).toBe("start");
+  });
+
   it("starts a new step for a set that isn't marked coalesce, even right after a coalesced one", () => {
     let state = initHistory("");
     state = historyReducer(state, { type: "set", value: "A", coalesce: true });

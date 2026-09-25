@@ -23,7 +23,14 @@ export type HistoryAction<T> =
   | { type: "redo" }
   // Loads a different design (e.g. switching print zones) without it being
   // an undoable step itself, and without carrying over unrelated history.
-  | { type: "replace"; value: T };
+  | { type: "replace"; value: T }
+  // Ends the current gesture (pointerup after a drag/resize/rotate, blur
+  // after a typing run) without changing `present` — so the *next*
+  // coalesced "set" starts a fresh step instead of silently merging into
+  // whatever gesture came before it. Without this, two separate drags
+  // back-to-back (both dispatched with coalesce: true) would merge into
+  // one undo step, since nothing else ever turns coalescing back off.
+  | { type: "commit" };
 
 // "at least 50 steps" (EDIT-05) — kept generously above that so ordinary use
 // never silently loses history, while still bounding memory.
@@ -64,6 +71,8 @@ export function historyReducer<T>(state: HistoryState<T>, action: HistoryAction<
     }
     case "replace":
       return { past: [], present: action.value, future: [], coalescing: false };
+    case "commit":
+      return state.coalescing ? { ...state, coalescing: false } : state;
     default:
       return state;
   }

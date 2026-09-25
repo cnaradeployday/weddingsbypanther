@@ -39,6 +39,9 @@ export function useDesignReducer(initial: Design) {
 
   const undo = useCallback(() => dispatch({ type: "undo" }), []);
   const redo = useCallback(() => dispatch({ type: "redo" }), []);
+  // Call on pointerup/blur after a drag, resize, rotate, or typing run —
+  // see designHistory.ts's "commit" action for why this is needed.
+  const commitGesture = useCallback(() => dispatch({ type: "commit" }), []);
 
   return useMemo(
     () => ({
@@ -48,10 +51,11 @@ export function useDesignReducer(initial: Design) {
       replaceDesign,
       undo,
       redo,
+      commitGesture,
       canUndo: canUndo(history),
       canRedo: canRedo(history),
     }),
-    [design, setDesign, setDesignCoalescing, replaceDesign, undo, redo, history]
+    [design, setDesign, setDesignCoalescing, replaceDesign, undo, redo, commitGesture, history]
   );
 }
 
