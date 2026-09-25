@@ -795,7 +795,13 @@ export function ProductConfigurator({
         // Same complaint, same fix: amplify the angle actually dragged
         // rather than requiring a wide arc for a modest rotation.
         const delta = rawDelta * ROTATE_SENSITIVITY;
-        const next = Math.max(-45, Math.min(45, state.startRotation + delta));
+        // Any orientation, not just a +/-45deg nudge — matches the range
+        // the toolbar's typed degree field already allowed (BUG report:
+        // "tengo que poder rotarlo 360"). +/-180 already covers every
+        // possible final orientation (190deg and -170deg look identical),
+        // it just can't be reached by spinning past 180 in one continuous
+        // drag — reversing direction gets there from the other side.
+        const next = Math.max(-180, Math.min(180, state.startRotation + delta));
         if (state.quadCornersPx && state.centerPhotoPx && state.naturalHalfW > 0 && state.naturalHalfH > 0) {
           const rotationRad = ((state.autoRotationDeg + next) * Math.PI) / 180;
           const resolved = resolveRotatedContainment(
