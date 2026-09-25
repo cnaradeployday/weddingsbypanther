@@ -119,7 +119,12 @@ export function ContextualToolbar({
           90°
         </button>
         {showRotateMenu && (
-          <div className="absolute top-full left-0 mt-1.5 z-10 bg-white border border-line rounded-xl shadow-lg p-1.5 flex gap-1 w-max">
+          // This whole toolbar already floats just above the selected
+          // element (see the caller's clearancePx calculation) — a menu
+          // that opens downward from it lands right back on top of that
+          // element instead of clearing it. Opens upward instead, same
+          // direction the toolbar itself already floats.
+          <div className="absolute bottom-full left-0 mb-1.5 z-10 bg-white border border-line rounded-xl shadow-lg p-1.5 flex gap-1 w-max">
             {QUICK_ROTATE_STEPS.map((step) => (
               <button
                 key={step}
@@ -150,7 +155,9 @@ export function ContextualToolbar({
         </svg>
       </button>
       {showAlignMenu && (
-        <div className="absolute top-full right-0 mt-1.5 z-10 bg-white border border-line rounded-xl shadow-lg p-2.5 flex flex-col gap-2 w-40">
+        // Same reasoning as the rotate menu above — opens upward so it
+        // doesn't drop onto the element the toolbar is floating over.
+        <div className="absolute bottom-full right-0 mb-1.5 z-10 bg-white border border-line rounded-xl shadow-lg p-2.5 flex flex-col gap-2 w-40">
           <div className="flex flex-col gap-1">
             <span className="text-[10px] uppercase tracking-wide text-muted">Horizontal</span>
             <div className="flex border border-line rounded-lg overflow-hidden">
