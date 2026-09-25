@@ -4,7 +4,18 @@
 // estimate to cap font-size to the available width. It's an approximation,
 // not exact shaping, but it keeps long names/dates from overflowing the
 // print area instead of letting them run past its edges unconstrained.
-const AVG_CHAR_WIDTH_RATIO = 0.56;
+//
+// Reported overflow (text visibly sitting outside the print-area guide on
+// the live canvas, in a script font — "Great Vibes"/"Parisienne" — whose
+// actual glyphs run noticeably wider per character than an upright serif)
+// showed 0.56 wasn't conservative enough for every font in the picker: the
+// estimate only has ONE ratio for all six font choices (it can't measure
+// the real, selected font without a browser/canvas round trip this shared
+// client+server function doesn't have), so it has to be sized for the
+// widest one rather than the average, even though that slightly
+// undersizes text in the narrower fonts. Overflowing the print area is a
+// print-quality bug; a slightly smaller-than-necessary font is not.
+const AVG_CHAR_WIDTH_RATIO = 0.66;
 
 // Names/event text can span multiple lines (the customer presses Enter) —
 // width fitting only cares about the widest line, since that's what
