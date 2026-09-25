@@ -135,11 +135,29 @@ const ROTATE_SENSITIVITY = 1.8;
 function useElementSize<T extends HTMLElement>() {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const observerRef = useRef<ResizeObserver | null>(null);
+  // The Design step mounts a desktop AND a mobile copy of the canvas at
+  // once (CSS `hidden`/`md:hidden` toggles which one is visible — both are
+  // always in the DOM), and both copies use the SAME ref from a single
+  // useElementSize() call in the parent. Whichever copy's ref callback
+  // fires last used to win, no matter whether it was the hidden one — a
+  // hidden element measures 0x0, so the reported size (and anything
+  // computed from it, like the zoom "Fit" percentage) could silently end
+  // up stuck at zero depending on mount order. Track whether the currently
+  // bound element was actually visible, and never let a hidden new mount
+  // steal the binding from a visible one that's already attached.
+  const boundWasVisible = useRef(false);
 
   const ref = useCallback((el: T | null) => {
+    if (!el) {
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      boundWasVisible.current = false;
+      return;
+    }
+    const isVisible = el.offsetWidth > 0 || el.offsetHeight > 0;
+    if (observerRef.current && boundWasVisible.current && !isVisible) return;
     observerRef.current?.disconnect();
-    observerRef.current = null;
-    if (!el) return;
+    boundWasVisible.current = isVisible;
     const observer = new ResizeObserver(([entry]) => {
       setSize({ width: entry.contentRect.width, height: entry.contentRect.height });
     });
@@ -795,7 +813,13 @@ export function ProductConfigurator({
         // Same complaint, same fix: amplify the angle actually dragged
         // rather than requiring a wide arc for a modest rotation.
         const delta = rawDelta * ROTATE_SENSITIVITY;
-        const next = Math.max(-45, Math.min(45, state.startRotation + delta));
+        // Any orientation, not just a +/-45deg nudge — matches the range
+        // the toolbar's typed degree field already allowed (BUG report:
+        // "tengo que poder rotarlo 360"). +/-180 already covers every
+        // possible final orientation (190deg and -170deg look identical),
+        // it just can't be reached by spinning past 180 in one continuous
+        // drag — reversing direction gets there from the other side.
+        const next = Math.max(-180, Math.min(180, state.startRotation + delta));
         if (state.quadCornersPx && state.centerPhotoPx && state.naturalHalfW > 0 && state.naturalHalfH > 0) {
           const rotationRad = ((state.autoRotationDeg + next) * Math.PI) / 180;
           const resolved = resolveRotatedContainment(
