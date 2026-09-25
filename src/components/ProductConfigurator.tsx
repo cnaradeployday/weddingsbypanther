@@ -111,6 +111,13 @@ type Zone = {
 
 const SAMPLE_FEE = 50;
 
+// How much to amplify the raw mouse-drag gesture for the resize/rotate
+// handles — see the comment at their pointermove handler. 1 = the old,
+// unamplified 1:1 behavior reported as needing more drag than the screen
+// has room for.
+const RESIZE_SENSITIVITY = 2.2;
+const ROTATE_SENSITIVITY = 1.8;
+
 // Measures the rendered zone box so text/logo sizing can be derived from the
 // product's real print-area dimensions (mm), not a guessed fixed size.
 //
@@ -307,6 +314,34 @@ export function ProductConfigurator({
   // EDIT-03 canvas view state — never part of the undoable design (zoom
   // doesn't change what's printed).
   const [zoomPct, setZoomPct] = useState(100);
+  const [canvasScrollRef, canvasScrollSize] = useElementSize<HTMLDivElement>();
+  // "Fit" was hardcoded to 100% — the photo wrapper is width:zoomPct% with
+  // a fixed aspect-[4/5], so at 100% its height is 1.25x the scroll area's
+  // width. Whenever the scroll area is wider than it is tall (any normal
+  // desktop panel), that height overflows the visible area and the customer
+  // has to scroll to see the bottom of the product — "no se ve toda la
+  // foto". A real fit shrinks zoom just enough that BOTH dimensions land
+  // inside the current container.
+  const fitZoomPct = useCallback(() => {
+    const w = canvasScrollSize.width;
+    const h = canvasScrollSize.height;
+    if (!w || !h) return 100;
+    const heightConstrained = ((h / 1.25) / w) * 100;
+    return Math.max(20, Math.min(100, Math.floor(heightConstrained)));
+  }, [canvasScrollSize.width, canvasScrollSize.height]);
+  // Also used as the *default* zoom on load (not just the "Fit" button),
+  // per BUG report: the whole product photo should be visible from the
+  // start, not only after the customer discovers and clicks Fit.
+  const [zoomInitialized, setZoomInitialized] = useState(false);
+  useEffect(() => {
+    if (zoomInitialized || !canvasScrollSize.width || !canvasScrollSize.height) return;
+    // Reacting to the ResizeObserver-backed measurement becoming available,
+    // not to React state — same shape as the other one-time "sync once
+    // external measurement is ready" effects in this file.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setZoomPct(fitZoomPct());
+    setZoomInitialized(true);
+  }, [zoomInitialized, canvasScrollSize.width, canvasScrollSize.height, fitZoomPct]);
   const [guidesOn, setGuidesOn] = useState(true);
   const [gridOn, setGridOn] = useState(false);
   const [snapLines, setSnapLines] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
@@ -739,14 +774,27 @@ export function ProductConfigurator({
       if (!state) return;
       if (state.mode === "resize") {
         const dist = Math.hypot(e.clientX - state.centerX, e.clientY - state.centerY);
-        const ratio = state.startDist > 0 ? dist / state.startDist : 1;
+        const rawRatio = state.startDist > 0 ? dist / state.startDist : 1;
+        // A small element (the common case — a logo a few dozen px across
+        // on screen) puts its corner handle close to the center, so the
+        // raw 1:1 distance ratio needed a mouse drag well beyond the
+        // visible canvas to grow it meaningfully ("no me alcanza la
+        // pantalla para estirar tanto"). Raising the ratio to a power > 1
+        // keeps it anchored at 1 (no movement = no change) while making
+        // the same physical drag produce a much bigger size change, in
+        // both directions (shrinking stays > 0 since ratio is always
+        // positive, unlike a linear amplification which can go negative).
+        const ratio = Math.pow(rawRatio, RESIZE_SENSITIVITY);
         const uncapped = state.startScale * ratio;
         const next = Math.max(0.3, Math.min(state.maxScale, uncapped));
         setElemNotice(uncapped > state.maxScale ? { key: state.key, message: "Max size for this print area" } : null);
         setDesignCoalescing((prev) => ({ ...prev, elemScale: { ...prev.elemScale, [state.key]: next } }));
       } else {
         const angle = (Math.atan2(e.clientY - state.centerY, e.clientX - state.centerX) * 180) / Math.PI;
-        const delta = angle - state.startAngle;
+        const rawDelta = angle - state.startAngle;
+        // Same complaint, same fix: amplify the angle actually dragged
+        // rather than requiring a wide arc for a modest rotation.
+        const delta = rawDelta * ROTATE_SENSITIVITY;
         const next = Math.max(-45, Math.min(45, state.startRotation + delta));
         if (state.quadCornersPx && state.centerPhotoPx && state.naturalHalfW > 0 && state.naturalHalfH > 0) {
           const rotationRad = ((state.autoRotationDeg + next) * Math.PI) / 180;
@@ -1419,7 +1467,15 @@ export function ProductConfigurator({
   const [previewPhotos, setPreviewPhotos] = useState<PreviewPhoto[]>([]);
   const openPreviewModal = useCallback(() => {
     const photos: PreviewPhoto[] = product.images.map((img) => {
-      const mappedZone = product.zones.find((z) => z.image_id === img.id);
+      // A zone with no image_id (the common case — one photo, one print
+      // area) applies to whichever image doesn't have a more specific
+      // zone of its own, the same "null = default" rule `showOverlayHere`
+      // already uses for the live canvas. Matching only `z.image_id ===
+      // img.id` missed that default zone entirely, so the Preview for a
+      // product's main photo silently fell back to the untouched photo
+      // with nothing composited on it at all — "the preview doesn't
+      // match what I see before" for the most common single-zone case.
+      const mappedZone = product.zones.find((z) => z.image_id === img.id) ?? product.zones.find((z) => !z.image_id);
       if (!mappedZone) return { id: img.id, url: img.url, snapshotRequest: null };
       const zoneDesign =
         mappedZone.id === activeZoneId ? design : zoneDesignsRef.current[mappedZone.id] ?? makeDefaultDesign(isMerchandise, mappedZone);
@@ -1457,7 +1513,7 @@ export function ProductConfigurator({
   // Options and Review steps (FLOW-03/FLOW-06).
   const renderCanvas = () => (
     <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-[#F1ECE3] relative overflow-hidden">
-      <div className="flex-1 overflow-auto">
+      <div ref={canvasScrollRef} className="flex-1 overflow-auto">
         <div
           className="mx-auto"
           style={{
@@ -1697,6 +1753,16 @@ export function ProductConfigurator({
                     return (
                       <div
                         className="absolute z-20 pointer-events-auto"
+                        // Nothing here stopped a pointerdown from bubbling up
+                        // to the canvas's own onPointerDown={() =>
+                        // selectElem(null)} (it deselects on any background
+                        // click). Clicking into the toolbar's rotation-degree
+                        // number field triggered exactly that: the element
+                        // deselected and the whole toolbar — including the
+                        // input the customer was about to type into —
+                        // unmounted before focus ever landed, so typing (and
+                        // Enter) appeared to do nothing.
+                        onPointerDown={(e) => e.stopPropagation()}
                         style={{
                           left: `${design.positions[activeElem].x}%`,
                           top: `${design.positions[activeElem].y}%`,
@@ -1729,7 +1795,7 @@ export function ProductConfigurator({
         <CanvasControls
           zoomPct={zoomPct}
           onZoomChange={setZoomPct}
-          onFit={() => setZoomPct(100)}
+          onFit={() => setZoomPct(fitZoomPct())}
           guidesOn={guidesOn}
           onToggleGuides={() => setGuidesOn((g) => !g)}
           gridOn={gridOn}

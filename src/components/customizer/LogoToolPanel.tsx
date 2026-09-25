@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { fileToDataUrl } from "@/lib/dataUrl";
+import { nearestPantone } from "@/lib/pantoneMatch";
 import type { LogoRemoveWhiteMode } from "./types";
 
 // A generous technical safety cap, not a business rule — no maximum upload
@@ -170,12 +171,22 @@ export function LogoToolPanel({
             <div className="pt-3 border-t border-line">
               <p className="text-xs text-muted mb-1.5">Colors detected in this logo</p>
               <div className="flex flex-wrap gap-2">
-                {detectedColors.map((c) => (
-                  <span key={c.hex} className="inline-flex items-center gap-1.5 text-[11px] rounded-full border border-line px-2 py-1">
-                    <span className="h-3 w-3 rounded-full border border-line shrink-0" style={{ backgroundColor: c.hex }} />
-                    {c.hex.toUpperCase()} · {c.pct}%
-                  </span>
-                ))}
+                {detectedColors.map((c) => {
+                  const pantone = nearestPantone(c.hex);
+                  return (
+                    <span key={c.hex} className="inline-flex flex-col gap-0.5 text-[11px] rounded-lg border border-line px-2 py-1.5">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-3 w-3 rounded-full border border-line shrink-0" style={{ backgroundColor: c.hex }} />
+                        {c.hex.toUpperCase()} · {c.pct}%
+                      </span>
+                      {pantone && (
+                        <span className="text-muted">
+                          ≈ {pantone.code} <span className="text-[10px]">(approximate)</span>
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           )}

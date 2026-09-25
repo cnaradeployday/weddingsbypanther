@@ -77,12 +77,20 @@ export function LogoCropModal({
           <img src={preview} alt="" className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
           <div
             onPointerDown={startDrag("move")}
-            className="absolute border-2 border-terracotta bg-terracotta/10 cursor-move touch-none"
+            className="absolute border-2 border-terracotta cursor-move touch-none"
             style={{
               left: `${rect.x * 100}%`,
               top: `${rect.y * 100}%`,
               width: `${rect.width * 100}%`,
               height: `${rect.height * 100}%`,
+              // A tinted fill *inside* the selection used to sit directly on
+              // top of the logo's own colors — for a red logo against this
+              // reddish terracotta tint, the boundary read as a second,
+              // offset copy of the mark rather than a crop selection. A
+              // spotlight shadow dims everything *outside* the rect instead,
+              // leaving the kept area untouched (the standard cropper
+              // convention), so there's no color interaction with the logo.
+              boxShadow: "0 0 0 9999px rgba(0,0,0,0.45)",
             }}
           >
             <div
