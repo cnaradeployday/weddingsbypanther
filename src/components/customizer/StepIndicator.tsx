@@ -6,12 +6,16 @@ import { SegmentedControl } from "./SegmentedControl";
 // Customizer redesign (design_handoff_product_customizer/README.md), with
 // completed steps still clickable to go back. The primary "Next" button
 // lives with each step's own content, not here.
-export type FlowStep = "design" | "options" | "review";
+//
+// Options and Review were merged into one "Confirmación" step per request:
+// quantity, technique summary and the pre-order checklist together, shown
+// alongside a read-only preview instead of the live editable canvas — no
+// more back-and-forth between a pricing screen and a review screen.
+export type FlowStep = "design" | "confirmation";
 
 export const FLOW_STEPS: { id: FlowStep; label: string }[] = [
   { id: "design", label: "Design" },
-  { id: "options", label: "Options" },
-  { id: "review", label: "Review" },
+  { id: "confirmation", label: "Confirmación" },
 ];
 
 export function StepIndicator({

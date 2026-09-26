@@ -67,8 +67,8 @@ import { KeyboardShortcutsHelp } from "./customizer/KeyboardShortcutsHelp";
 import { StepIndicator, MobileStepIndicator, type FlowStep } from "./customizer/StepIndicator";
 import { RecoveryModal } from "./customizer/RecoveryModal";
 import { PreviewModal, type PreviewPhoto, type PreviewAiRender } from "./customizer/PreviewModal";
-import { OptionsStep } from "./customizer/OptionsStep";
-import { ReviewStep } from "./customizer/ReviewStep";
+import { ConfirmationStep } from "./customizer/ConfirmationStep";
+import { ConfirmationPreview } from "./customizer/ConfirmationPreview";
 
 // Approximates how each print technique looks on the manual (non-AI) live
 // preview — a plain color swap for printed techniques, plus a debossed
@@ -244,7 +244,7 @@ export function ProductConfigurator({
   const isMerchandise = product.businessType === "merchandise";
   const primaryZone = product.zones[0];
 
-  // FLOW-01: the current step lives in the URL (?step=design|options|review)
+  // FLOW-01: the current step lives in the URL (?step=design|confirmation)
   // so reloading keeps it and browser back/forward moves between steps —
   // derived straight from the URL rather than duplicated into local state.
   const step = (searchParams.get("step") as FlowStep | null) ?? "design";
@@ -1515,8 +1515,8 @@ export function ProductConfigurator({
   // purchaseFlowValidation.ts for why "element outside the print area,"
   // "color not allowed for the technique," and "QR below minimum size"
   // aren't separately re-checked here.
-  const [checklist, setChecklistRaw] = useState<{ namesCorrect: boolean; insidePrintArea: boolean; forDesign: Design }>(
-    () => ({ namesCorrect: false, insidePrintArea: false, forDesign: design })
+  const [checklist, setChecklistRaw] = useState<{ namesCorrect: boolean; insidePrintArea: boolean; logoCorrect: boolean; forDesign: Design }>(
+    () => ({ namesCorrect: false, insidePrintArea: false, logoCorrect: false, forDesign: design })
   );
   // Derived, not stored: as soon as `design` changes to a new object (any
   // real edit — useDesignReducer always returns a fresh object), the stored
@@ -1525,14 +1525,16 @@ export function ProductConfigurator({
   // were checked... the checks are cleared." No effect needed to reset
   // anything; this recomputes every render.
   const checklistCurrent =
-    checklist.forDesign === design ? checklist : { namesCorrect: false, insidePrintArea: false, forDesign: design };
-  const toggleChecklistItem = (item: "namesCorrect" | "insidePrintArea") => {
+    checklist.forDesign === design
+      ? checklist
+      : { namesCorrect: false, insidePrintArea: false, logoCorrect: false, forDesign: design };
+  const toggleChecklistItem = (item: "namesCorrect" | "insidePrintArea" | "logoCorrect") => {
     setChecklistRaw((prev) => {
-      const base = prev.forDesign === design ? prev : { namesCorrect: false, insidePrintArea: false, forDesign: design };
+      const base = prev.forDesign === design ? prev : { namesCorrect: false, insidePrintArea: false, logoCorrect: false, forDesign: design };
       return { ...base, [item]: !base[item] };
     });
   };
-  const checklistConfirmed = checklistCurrent.namesCorrect && checklistCurrent.insidePrintArea;
+  const checklistConfirmed = checklistCurrent.namesCorrect && checklistCurrent.insidePrintArea && checklistCurrent.logoCorrect;
 
   const hiddenPresentElements = (["logo", "monogram", "frame", "names", "date", "qr"] as ElemKey[])
     .filter((k) => design.hidden[k] && isElemPresent(design, k))
@@ -1555,8 +1557,12 @@ export function ProductConfigurator({
   // since it reads `zoneDesignsRef` — refs may only be read outside of
   // render.
   const [previewPhotos, setPreviewPhotos] = useState<PreviewPhoto[]>([]);
-  const openPreviewModal = useCallback(() => {
-    const photos: PreviewPhoto[] = product.images.map((img) => {
+  // Shared by the "Preview" button's modal and the Confirmación step's
+  // always-visible inline preview (ConfirmationPreview) — both show the
+  // same per-image snapshot-request mapping, just one populates state on
+  // click and the other stays live via useMemo.
+  const computePreviewPhotos = useCallback((): PreviewPhoto[] => {
+    return product.images.map((img) => {
       // A zone with no image_id (the common case — one photo, one print
       // area) applies to whichever image doesn't have a more specific
       // zone of its own, the same "null = default" rule `showOverlayHere`
@@ -1588,9 +1594,19 @@ export function ProductConfigurator({
         },
       };
     });
-    setPreviewPhotos(photos);
-    setShowPreviewModal(true);
   }, [product.images, product.zones, product.id, activeZoneId, design, isMerchandise]);
+  const openPreviewModal = useCallback(() => {
+    setPreviewPhotos(computePreviewPhotos());
+    setShowPreviewModal(true);
+  }, [computePreviewPhotos]);
+  // computePreviewPhotos reads zoneDesignsRef (a ref), which is only safe
+  // outside of render — an effect, not useMemo, so it can't run during the
+  // render pass itself.
+  const [confirmationPreviewPhotos, setConfirmationPreviewPhotos] = useState<PreviewPhoto[]>([]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setConfirmationPreviewPhotos(computePreviewPhotos());
+  }, [computePreviewPhotos]);
   const previewAiRenders: PreviewAiRender[] = aiRenders.flatMap((r, i) => [
     { label: `AI render ${i + 1} · Product`, url: r.imageDataUrl },
     ...(r.contextImageDataUrl ? [{ label: `AI render ${i + 1} · Wedding context`, url: r.contextImageDataUrl }] : []),
@@ -2269,10 +2285,10 @@ export function ProductConfigurator({
                       </div>
                       <button
                         type="button"
-                        onClick={() => goToStep("options")}
+                        onClick={() => goToStep("confirmation")}
                         className="px-6 h-[46px] rounded-full text-sm font-medium bg-terracotta text-cream-light hover:bg-terracotta-dark transition-colors"
                       >
-                        Next: Options
+                        Next: Confirmación
                       </button>
                     </div>
                   </div>
@@ -2295,22 +2311,26 @@ export function ProductConfigurator({
               <div className="p-4 border-t border-line flex justify-end md:hidden">
                 <button
                   type="button"
-                  onClick={() => goToStep("options")}
+                  onClick={() => goToStep("confirmation")}
                   className="px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors"
                 >
-                  Next: Options
+                  Next: Confirmación
                 </button>
               </div>
             </>
           )}
 
-          {step === "options" && (
+          {step === "confirmation" && (
             <div className="flex flex-col md:flex-row gap-6 p-4 md:p-6">
-              <div className="md:w-1/2 lg:w-3/5 h-[50vh] md:h-[70vh] flex flex-col rounded-xl overflow-hidden border border-line">
-                {renderCanvas()}
+              {/* Read-only preview only — no editable canvas, no tool
+                  rail, nothing logo-related to touch here. "Dejar solo el
+                  preview, nada mas. No poder editar nada del logo en esa
+                  pantalla." */}
+              <div className="md:w-1/2 lg:w-3/5 h-[50vh] md:h-[70vh] flex flex-col">
+                <ConfirmationPreview photos={confirmationPreviewPhotos} aiRenders={previewAiRenders} />
               </div>
               <div className="md:w-1/2 lg:w-2/5">
-                <OptionsStep
+                <ConfirmationStep
                   productName={product.name}
                   productDescription={product.description ?? ""}
                   unitPrice={unitPriceWithTechnique}
@@ -2330,33 +2350,18 @@ export function ProductConfigurator({
                   popularQty={popularQty}
                   onSelectQuantity={updateQuantity}
                   allowSample={product.allowSample}
+                  sampleFee={SAMPLE_FEE}
                   total={total}
-                  onNext={() => goToStep("review")}
-                />
-              </div>
-            </div>
-          )}
-
-          {step === "review" && (
-            <div className="flex flex-col md:flex-row gap-6 p-4 md:p-6">
-              <div className="md:w-1/2 lg:w-3/5 h-[50vh] md:h-[70vh] flex flex-col rounded-xl overflow-hidden border border-line">
-                {renderCanvas()}
-              </div>
-              <div className="md:w-1/2 lg:w-2/5">
-                <ReviewStep
                   issues={validationIssues}
                   onFixInDesign={fixInDesign}
-                  checklist={{ namesCorrect: checklistCurrent.namesCorrect, insidePrintArea: checklistCurrent.insidePrintArea }}
+                  checklist={{
+                    namesCorrect: checklistCurrent.namesCorrect,
+                    insidePrintArea: checklistCurrent.insidePrintArea,
+                    logoCorrect: checklistCurrent.logoCorrect,
+                  }}
                   onToggleChecklistItem={toggleChecklistItem}
                   technique={technique?.technique ?? null}
-                  quantity={quantity}
-                  productionTime={productionTime}
-                  total={total}
-                  unitPrice={unitPriceWithTechnique}
-                  allowSample={product.allowSample}
-                  sampleFee={SAMPLE_FEE}
                   namesValid={namesValid}
-                  quantityBelowMinimum={quantityBelowMinimum}
                   addingToCart={addingToCart}
                   justAdded={justAdded}
                   addingSample={addingSample}
