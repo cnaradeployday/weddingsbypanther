@@ -91,9 +91,10 @@ export function ToolRail({
         onClick={() => onSelectTool(tool)}
         aria-label={TOOL_LABELS[tool]}
         aria-pressed={active}
-        className={`flex flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-medium transition-colors ${
-          orientation === "vertical" ? "h-16" : "h-full min-w-[64px] px-2"
-        } ${active ? "bg-[#EEE9FF] text-[#4520B8]" : "text-muted hover:bg-cream"}`}
+        className={`flex flex-col items-center justify-center gap-[3px] rounded-[14px] text-[10px] font-medium transition-colors shrink-0 ${
+          orientation === "vertical" ? "w-[52px] h-[52px]" : "h-[52px] min-w-[52px] px-2"
+        }`}
+        style={{ background: active ? "var(--color-terracotta)" : "transparent", color: active ? "#fff" : "var(--pc-ink-500)" }}
       >
         {TOOL_ICONS[tool]}
         <span>{TOOL_LABELS[tool]}</span>
@@ -114,7 +115,11 @@ export function ToolRail({
   }
 
   return (
-    <nav aria-label="Tools" className="flex w-[88px] shrink-0 flex-col gap-1.5 bg-white border-r border-line p-2">
+    <nav
+      aria-label="Tools"
+      className="flex w-16 shrink-0 flex-col items-center gap-1 py-2 bg-white"
+      style={{ borderRadius: 20, border: "1px solid var(--pc-border-subtle)", boxShadow: "var(--pc-shadow-sm)" }}
+    >
       {mainTools.map(button)}
       <div className="flex-1" />
       {hasLayers && button("layers")}

@@ -34,12 +34,16 @@ export function QrToolPanel({
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <h2 className="font-serif text-2xl">QR code</h2>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h2 className="font-serif text-[22px]" style={{ color: "var(--pc-ink-950)" }}>
+          QR code
+        </h2>
+        <p className="text-sm" style={{ color: "var(--pc-ink-500)" }}>
+          Links to any URL.
+        </p>
+      </div>
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="qr-url" className="text-xs uppercase tracking-wide text-muted">
-          Link URL
-        </label>
         <input
           id="qr-url"
           // Deliberately type="text" (not "url"): some browsers treat a
@@ -51,7 +55,8 @@ export function QrToolPanel({
           // without that navigation heuristic.
           type="text"
           inputMode="url"
-          placeholder="https://example.com"
+          placeholder="https://"
+          aria-label="Link URL"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onBlur={commit}
@@ -63,12 +68,15 @@ export function QrToolPanel({
           }}
           aria-invalid={touched && !valid}
           aria-describedby={touched && !valid ? "qr-url-error" : undefined}
-          className={`w-full rounded-lg border px-4 py-3 focus:outline-none focus:border-dark ${
-            touched && !valid ? "border-red-500" : "border-line"
-          }`}
+          className="w-full h-11 rounded-xl border-[1.5px] px-3.5 text-[15px] outline-none"
+          style={{
+            borderColor: touched && !valid ? "var(--pc-danger)" : "var(--pc-ink-200)",
+            background: "var(--pc-ink-50)",
+            color: "var(--pc-ink-950)",
+          }}
         />
         {touched && !valid && (
-          <p id="qr-url-error" className="text-xs text-red-600">
+          <p id="qr-url-error" className="text-xs" style={{ color: "var(--pc-danger)" }}>
             Enter a valid web address (starting with https:// or http://).
           </p>
         )}
@@ -76,7 +84,7 @@ export function QrToolPanel({
       {url && (
         <>
           <ColorPicker value={color} onChange={onChangeColor} label="Code color" />
-          <p className="text-xs text-muted">
+          <p className="text-xs" style={{ color: "var(--pc-ink-400)" }}>
             Scan this code yourself with a phone camera before ordering, to make sure it links where you expect.
           </p>
         </>

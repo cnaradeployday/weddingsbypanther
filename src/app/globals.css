@@ -50,6 +50,34 @@
   --font-sans: var(--font-sans-manrope);
 }
 
+/* Product Customizer (Design step) iOS-style redesign — a self-contained
+   cool-neutral scale, radii and shadows, scoped to their own variable
+   names so they don't touch the cream/terracotta wedding palette used
+   everywhere else in the app. The design handoff's "brand cyan" accent
+   is deliberately NOT included here: this app already has a per-store
+   dynamic accent (--color-terracotta, overridden inline per planner's
+   accent_color — see the merchandise re-skin block above), so the
+   customizer reuses that existing variable for the accent role instead
+   of hardcoding one fixed brand color that would fight every store's
+   own branding. */
+:root {
+  --pc-ink-950: #0a0c0f;
+  --pc-ink-900: #121620;
+  --pc-ink-700: #2b313c;
+  --pc-ink-600: #434b58;
+  --pc-ink-500: #5d6675;
+  --pc-ink-400: #818b9a;
+  --pc-ink-300: #a8b0bd;
+  --pc-ink-200: #cdd3dc;
+  --pc-ink-100: #e7eaef;
+  --pc-ink-50: #f4f6f9;
+  --pc-danger: #e2483d;
+  --pc-border-subtle: rgba(18, 22, 32, 0.06);
+  --pc-shadow-xs: 0 1px 2px rgba(18, 22, 32, 0.06);
+  --pc-shadow-sm: 0 2px 6px rgba(18, 22, 32, 0.07);
+  --pc-shadow-md: 0 8px 24px rgba(18, 22, 32, 0.09);
+}
+
 body {
   background: var(--color-cream-light);
   color: var(--color-dark);

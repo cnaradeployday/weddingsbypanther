@@ -70,30 +70,42 @@ export function LogoToolPanel({
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <h2 className="font-serif text-2xl">Logo</h2>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h2 className="font-serif text-[22px]" style={{ color: "var(--pc-ink-950)" }}>
+          Logo
+        </h2>
+        <p className="text-sm" style={{ color: "var(--pc-ink-500)" }}>
+          Higher-resolution files print more sharply.
+        </p>
+      </div>
 
       {!preview && (
-        <div className="flex flex-col gap-3">
-          <p className="text-xs text-muted">
-            Accepts PNG, JPG, SVG, and most other image formats, up to {Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB.
-            A higher-resolution file prints more sharply.
-          </p>
-          <label className="flex items-center justify-center gap-2 h-14 rounded-lg border-2 border-dashed border-line cursor-pointer text-sm text-dark">
-            {uploading ? "Uploading…" : "Upload a logo"}
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              disabled={uploading}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleFile(file, "upload");
-                e.target.value = "";
-              }}
-            />
-          </label>
-        </div>
+        <label
+          className="flex-1 min-h-[160px] rounded-2xl border-[1.5px] border-dashed flex flex-col items-center justify-center gap-2.5 cursor-pointer text-[15px] transition-colors"
+          style={{ borderColor: "var(--pc-ink-200)", background: "var(--pc-ink-50)", color: "var(--pc-ink-700)" }}
+        >
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 15V3" />
+            <path d="m7 8 5-5 5 5" />
+            <path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4" />
+          </svg>
+          {uploading ? "Uploading…" : "Upload a logo"}
+          <span className="text-xs" style={{ color: "var(--pc-ink-400)" }}>
+            Drag here or click · PNG, JPG, SVG · max {Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB
+          </span>
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            disabled={uploading}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleFile(file, "upload");
+              e.target.value = "";
+            }}
+          />
+        </label>
       )}
 
       {error && <p className="text-xs text-red-600">{error}</p>}
@@ -101,14 +113,14 @@ export function LogoToolPanel({
       {preview && (
         <>
           <div className="flex items-center gap-3">
-            <span className="relative h-16 w-16 rounded-lg overflow-hidden border border-line bg-white shrink-0">
+            <span className="relative h-16 w-16 rounded-2xl overflow-hidden bg-white shrink-0" style={{ border: "1px solid var(--pc-ink-100)" }}>
               {/* Logo already validated as an image; a plain <img> avoids
                   next/image's remote-loader requirements for a data: URL. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={preview} alt="" className="absolute inset-0 w-full h-full object-contain" />
             </span>
             <div className="flex flex-col gap-1.5 text-xs">
-              <label className="text-dark font-medium underline underline-offset-2 cursor-pointer">
+              <label className="font-medium underline underline-offset-2 cursor-pointer" style={{ color: "var(--pc-ink-950)" }}>
                 {uploading ? "Uploading…" : "Replace"}
                 <input
                   type="file"
@@ -122,33 +134,39 @@ export function LogoToolPanel({
                   }}
                 />
               </label>
-              <button type="button" onClick={onCrop} className="text-left text-dark font-medium underline underline-offset-2">
+              <button type="button" onClick={onCrop} className="text-left font-medium underline underline-offset-2" style={{ color: "var(--pc-ink-950)" }}>
                 Crop
               </button>
-              <button type="button" onClick={onRemove} className="text-left text-terracotta-dark font-medium">
+              <button type="button" onClick={onRemove} className="text-left font-medium" style={{ color: "var(--pc-danger)" }}>
                 Remove
               </button>
             </div>
           </div>
 
-          {sizeLabel && <p className="text-xs text-muted">{sizeLabel}</p>}
+          {sizeLabel && (
+            <p className="text-xs" style={{ color: "var(--pc-ink-500)" }}>
+              {sizeLabel}
+            </p>
+          )}
           {isLowRes && (
-            <p className="text-xs text-red-600">
+            <p className="text-xs" style={{ color: "var(--pc-danger)" }}>
               ⚠️ This logo is low resolution for the size it&apos;s being printed at — it may look blurry or pixelated on the finished product.
             </p>
           )}
 
           <div className="flex flex-col gap-2">
-            <span className="text-xs uppercase tracking-wide text-muted">
+            <span className="text-[11px] tracking-[0.14em] uppercase" style={{ color: "var(--pc-ink-500)" }}>
               Remove white{processing ? " · Processing…" : ""}
             </span>
             <div className="flex flex-col gap-1.5">
               {REMOVE_WHITE_OPTIONS.map((opt) => (
                 <label
                   key={opt.id}
-                  className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 ${
-                    processing ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
-                  } ${removeWhiteMode === opt.id ? "border-dark bg-cream" : "border-line"}`}
+                  className={`flex items-start gap-2.5 rounded-2xl border px-3 py-2.5 ${processing ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+                  style={{
+                    borderColor: removeWhiteMode === opt.id ? "var(--color-terracotta)" : "var(--pc-ink-200)",
+                    background: removeWhiteMode === opt.id ? "var(--pc-ink-50)" : "transparent",
+                  }}
                 >
                   <input
                     type="radio"
@@ -159,8 +177,12 @@ export function LogoToolPanel({
                     className="mt-0.5"
                   />
                   <span className="flex flex-col">
-                    <span className="text-sm font-medium">{opt.label}</span>
-                    <span className="text-xs text-muted">{opt.hint}</span>
+                    <span className="text-sm font-medium" style={{ color: "var(--pc-ink-950)" }}>
+                      {opt.label}
+                    </span>
+                    <span className="text-xs" style={{ color: "var(--pc-ink-500)" }}>
+                      {opt.hint}
+                    </span>
                   </span>
                 </label>
               ))}
@@ -168,19 +190,25 @@ export function LogoToolPanel({
           </div>
 
           {detectedColors.length > 0 && (
-            <div className="pt-3 border-t border-line">
-              <p className="text-xs text-muted mb-1.5">Colors detected in this logo</p>
+            <div className="pt-3" style={{ borderTop: "1px solid var(--pc-ink-100)" }}>
+              <p className="text-xs mb-1.5" style={{ color: "var(--pc-ink-500)" }}>
+                Colors detected in this logo
+              </p>
               <div className="flex flex-wrap gap-2">
                 {detectedColors.map((c) => {
                   const pantone = nearestPantone(c.hex);
                   return (
-                    <span key={c.hex} className="inline-flex flex-col gap-0.5 text-[11px] rounded-lg border border-line px-2 py-1.5">
+                    <span
+                      key={c.hex}
+                      className="inline-flex flex-col gap-0.5 text-[11px] rounded-xl px-2 py-1.5"
+                      style={{ border: "1px solid var(--pc-ink-100)" }}
+                    >
                       <span className="inline-flex items-center gap-1.5">
-                        <span className="h-3 w-3 rounded-full border border-line shrink-0" style={{ backgroundColor: c.hex }} />
+                        <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: c.hex, border: "1px solid var(--pc-ink-200)" }} />
                         {c.hex.toUpperCase()} · {c.pct}%
                       </span>
                       {pantone && (
-                        <span className="text-muted">
+                        <span style={{ color: "var(--pc-ink-500)" }}>
                           ≈ {pantone.code} <span className="text-[10px]">(approximate)</span>
                         </span>
                       )}
@@ -191,8 +219,8 @@ export function LogoToolPanel({
             </div>
           )}
 
-          <div className="pt-3 border-t border-line">
-            <p className="text-xs text-muted">
+          <div className="pt-3" style={{ borderTop: "1px solid var(--pc-ink-100)" }}>
+            <p className="text-xs" style={{ color: "var(--pc-ink-400)" }}>
               Automatic background removal (for photos, not just flat white) isn&apos;t available yet — the
               in-browser library considered for it (@imgly/background-removal) is AGPL-licensed, which isn&apos;t
               compatible with this app, and no adequately free, production-quality alternative was found.

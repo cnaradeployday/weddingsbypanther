@@ -1,14 +1,21 @@
 "use client";
 
-// FLOW-01's step indicator: "1 Design — 2 Options — 3 Review" in the top
-// bar, with completed steps checked and clickable to go back. The primary
-// "Next" button lives with each step's own content, not here.
-export type FlowStep = "design" | "options" | "review";
+import { SegmentedControl } from "./SegmentedControl";
+
+// FLOW-01's step indicator — an iOS pill segmented control per the Product
+// Customizer redesign (design_handoff_product_customizer/README.md), with
+// completed steps still clickable to go back. The primary "Next" button
+// lives with each step's own content, not here.
+//
+// Options and Review were merged into one "Confirmación" step per request:
+// quantity, technique summary and the pre-order checklist together, shown
+// alongside a read-only preview instead of the live editable canvas — no
+// more back-and-forth between a pricing screen and a review screen.
+export type FlowStep = "design" | "confirmation";
 
 export const FLOW_STEPS: { id: FlowStep; label: string }[] = [
   { id: "design", label: "Design" },
-  { id: "options", label: "Options" },
-  { id: "review", label: "Review" },
+  { id: "confirmation", label: "Confirmación" },
 ];
 
 export function StepIndicator({
@@ -21,42 +28,17 @@ export function StepIndicator({
   onSelectStep: (step: FlowStep) => void;
 }) {
   return (
-    <nav aria-label="Purchase steps" className="hidden md:flex items-center gap-1.5">
-      {FLOW_STEPS.map((s, i) => {
-        const isActive = s.id === step;
-        const isDone = completedSteps.has(s.id) && !isActive;
-        const clickable = isDone || isActive;
-        return (
-          <div key={s.id} className="flex items-center gap-1.5">
-            {i > 0 && <span className="w-5 h-px bg-line" aria-hidden="true" />}
-            <button
-              type="button"
-              onClick={() => clickable && onSelectStep(s.id)}
-              disabled={!clickable}
-              aria-current={isActive ? "step" : undefined}
-              className={`flex items-center gap-1.5 text-sm h-11 px-3 rounded-full ${
-                isActive ? "font-medium text-dark bg-cream" : isDone ? "text-terracotta-dark" : "text-muted"
-              } ${!clickable ? "cursor-default" : ""}`}
-            >
-              {isDone ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M20 6L9 17l-5-5" />
-                </svg>
-              ) : (
-                <span
-                  className={`h-4 w-4 shrink-0 rounded-full border text-[10px] flex items-center justify-center ${
-                    isActive ? "border-dark" : "border-muted"
-                  }`}
-                  aria-hidden="true"
-                >
-                  {i + 1}
-                </span>
-              )}
-              {s.label}
-            </button>
-          </div>
-        );
-      })}
+    <nav aria-label="Purchase steps" className="hidden md:flex items-center">
+      <SegmentedControl
+        height={28}
+        fitContent
+        value={step}
+        onChange={(id) => {
+          const clickable = id === step || completedSteps.has(id);
+          if (clickable) onSelectStep(id);
+        }}
+        options={FLOW_STEPS.map((s) => ({ id: s.id, label: s.label, ariaLabel: s.label }))}
+      />
     </nav>
   );
 }

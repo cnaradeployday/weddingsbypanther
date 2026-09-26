@@ -72,7 +72,8 @@ export function ContextualToolbar({
     <div
       role="toolbar"
       aria-label={`${elemType} options`}
-      className="relative flex items-center gap-1 py-1.5 px-1.5 bg-white border border-line rounded-xl shadow-lg whitespace-nowrap"
+      className="relative flex items-center gap-1 py-1.5 px-1.5 bg-white border border-line rounded-full whitespace-nowrap"
+      style={{ boxShadow: "var(--pc-shadow-md)" }}
     >
       {trailing}
       {colorEditable && onChangeColor && (
@@ -203,7 +204,8 @@ export function ContextualToolbar({
             type="button"
             onClick={onDelete}
             aria-label="Delete"
-            className="h-11 w-11 flex items-center justify-center rounded-lg text-dark hover:bg-cream"
+            className="h-11 w-11 flex items-center justify-center rounded-full hover:bg-cream"
+            style={{ color: "var(--pc-danger)" }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
               <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
