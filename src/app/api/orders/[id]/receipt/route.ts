@@ -39,6 +39,7 @@ type Personalization = {
   snapshotUrl?: string;
   inkColorHex?: string;
   inkPantoneCode?: string;
+  selectedPantoneCodes?: string[];
   additionalAreas?: { label?: string }[];
 };
 
@@ -46,7 +47,9 @@ function personalizationSummary(p: Personalization | null): string | null {
   if (!p) return null;
   const ink = p.inkColorHex
     ? `Ink ${p.inkColorHex.toUpperCase()}${p.inkPantoneCode ? ` (${p.inkPantoneCode} approx.)` : ""}`
-    : null;
+    : p.selectedPantoneCodes?.length
+      ? `Reference colors ${p.selectedPantoneCodes.join(", ")} (approx.)`
+      : null;
   const extraAreas = p.additionalAreas?.length
     ? `+${p.additionalAreas.length} more area${p.additionalAreas.length > 1 ? "s" : ""}`
     : null;

@@ -15,7 +15,7 @@ export type FlowStep = "design" | "confirmation";
 
 export const FLOW_STEPS: { id: FlowStep; label: string }[] = [
   { id: "design", label: "Design" },
-  { id: "confirmation", label: "Confirmación" },
+  { id: "confirmation", label: "Confirmation" },
 ];
 
 export function StepIndicator({

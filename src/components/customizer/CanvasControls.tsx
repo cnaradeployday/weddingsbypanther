@@ -5,7 +5,9 @@
 // Product Customizer iOS redesign (design_handoff_product_customizer).
 // Zoom is purely a view transform — it never touches `design`.
 
-export const ZOOM_STEPS = [50, 75, 100, 125, 150, 200, 300];
+// 50 used to be the lowest step, which meant the zoom-out button and the
+// dropdown could never go below it — "no me deja ir a menos del 50%".
+export const ZOOM_STEPS = [10, 25, 50, 75, 100, 125, 150, 200, 300];
 
 export function CanvasControls({
   zoomPct,

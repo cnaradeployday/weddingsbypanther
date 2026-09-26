@@ -31,6 +31,8 @@ export function LogoToolPanel({
   processing,
   selectedInkColor,
   onSelectInkColor,
+  selectedPantoneHexes,
+  onTogglePantone,
 }: {
   preview: string | null;
   onUpload: (file: File, dataUrl: string) => void;
@@ -51,6 +53,12 @@ export function LogoToolPanel({
   // no choosable ink at all (e.g. laser engraving).
   selectedInkColor?: string | null;
   onSelectInkColor?: (hex: string) => void;
+  // Reference colors the customer has confirmed independent of a single
+  // chosen ink — used whenever the technique has no single customer-
+  // choosable ink (onSelectInkColor is omitted), where more than one
+  // detected color can be flagged at once instead of just one.
+  selectedPantoneHexes?: string[];
+  onTogglePantone?: (hex: string) => void;
 }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -205,19 +213,31 @@ export function LogoToolPanel({
               <div className="flex flex-wrap gap-2">
                 {detectedColors.map((c) => {
                   const pantone = nearestPantone(c.hex);
-                  // Selecting a suggested Pantone sets it as the order's
-                  // ink color — the same field the Technique panel's ink
-                  // picker uses, which already flows through to
-                  // inkPantoneCode/inkColorHex on the cart item, so this
-                  // becomes part of the order like size/quantity/technique
-                  // without a separate field to plumb through.
-                  const isSelected = !!pantone && !!selectedInkColor && selectedInkColor.toLowerCase() === c.hex.toLowerCase();
+                  // Two modes, depending on whether the technique has a
+                  // single customer-choosable ink: onSelectInkColor sets
+                  // that one ink color (single-select — the same field the
+                  // Technique panel's ink picker uses). Otherwise there's
+                  // no single ink to set, but the customer can still flag
+                  // any number of detected colors as references for the
+                  // order via onTogglePantone (multi-select) — previously
+                  // this whole button was disabled in that case, so tapping
+                  // a color silently did nothing ("no los selecciona").
+                  const isSingleMode = !!onSelectInkColor;
+                  const isSelected = !pantone
+                    ? false
+                    : isSingleMode
+                      ? !!selectedInkColor && selectedInkColor.toLowerCase() === c.hex.toLowerCase()
+                      : !!selectedPantoneHexes?.some((hex) => hex.toLowerCase() === c.hex.toLowerCase());
                   return (
                     <button
                       key={c.hex}
                       type="button"
-                      onClick={() => pantone && onSelectInkColor?.(c.hex)}
-                      disabled={!pantone || !onSelectInkColor}
+                      onClick={() => {
+                        if (!pantone) return;
+                        if (isSingleMode) onSelectInkColor?.(c.hex);
+                        else onTogglePantone?.(c.hex);
+                      }}
+                      disabled={!pantone}
                       aria-pressed={isSelected}
                       className="inline-flex flex-col gap-0.5 text-[11px] rounded-xl px-2 py-1.5 text-left disabled:cursor-default"
                       style={{ border: `1px solid ${isSelected ? "var(--color-terracotta)" : "var(--pc-ink-100)"}`, background: isSelected ? "var(--pc-ink-50)" : "transparent" }}

@@ -60,6 +60,14 @@ export type Design = {
 
   inkColor: string;
   colorTextInput: string;
+  // Detected-logo-color Pantone matches the customer has tapped to confirm
+  // as reference colors for the order — separate from `inkColor` (the
+  // single ink used by a single-color-ink technique like screen print).
+  // Multi-color techniques (e.g. UV/full-color print) have no single
+  // customer-choosable ink, but the customer can still flag which detected
+  // colors matter so the supplier has them as reference, and more than one
+  // can be selected at once.
+  selectedPantones: string[];
 
   qrUrl: string;
   qrColor: string;

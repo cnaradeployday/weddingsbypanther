@@ -46,6 +46,11 @@ export type CartItem = {
     // licensed Pantone data is integrated in this app).
     inkColorHex?: string;
     inkPantoneCode?: string;
+    // For a technique with no single customer-choosable ink (the above two
+    // stay unset): any detected logo colors the customer flagged as
+    // reference colors for the order — unlike inkPantoneCode, more than one
+    // can be selected.
+    selectedPantoneCodes?: string[];
     // Independent per-element colors — only meaningful (and only sent) for a
     // technique that isn't single-color-ink; under single-color-ink every
     // element shares inkColorHex above instead. Omitted for a hidden element
@@ -104,6 +109,7 @@ export type AreaPersonalization = {
   snapshotUrl?: string;
   inkColorHex?: string;
   inkPantoneCode?: string;
+  selectedPantoneCodes?: string[];
   namesColor?: string;
   dateColor?: string;
   monogramColor?: string;
