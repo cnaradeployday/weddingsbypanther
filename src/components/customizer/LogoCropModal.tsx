@@ -73,11 +73,14 @@ export function LogoCropModal({
       role="dialog"
       aria-modal="true"
       aria-label="Crop logo"
-      className="fixed inset-0 z-50 flex items-center justify-center p-6"
-      // Was bg-black/50 — translucent enough that the selected logo's own
-      // on-canvas resize handles (bright white circles) still showed
-      // through from behind, right on top of the crop preview, reading as
-      // a second resizable logo. Fully opaque removes any bleed-through.
+      // Was z-50 with an opaque backdrop — but the on-canvas selected
+      // element's wrapper (ProductConfigurator) sets zIndex:100 while
+      // active, which sits ABOVE z-50 regardless of backdrop opacity. That
+      // let the real canvas element's own resize/rotate handles paint on
+      // top of this modal, reading as a second resizable logo. z-[200]
+      // guarantees the modal — and its own single resize handle — always
+      // wins the stacking order.
+      className="fixed inset-0 z-[200] flex items-center justify-center p-6"
       style={{ background: "var(--pc-ink-950)" }}
     >
       <div className="bg-white rounded-2xl p-6 flex flex-col gap-4 max-w-lg w-full">

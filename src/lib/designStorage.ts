@@ -44,6 +44,7 @@ export type SavedZoneDesign = {
   logoRemoveWhiteMode: "never" | "background" | "all";
   inkColor: string;
   colorTextInput: string;
+  selectedPantones: string[];
   qrUrl: string;
   qrColor: string;
   positions: Record<string, SavedElemPos>;

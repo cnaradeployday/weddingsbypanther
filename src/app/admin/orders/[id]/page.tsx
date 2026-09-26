@@ -22,6 +22,7 @@ type AreaPersonalization = {
   snapshotUrl?: string;
   inkColorHex?: string;
   inkPantoneCode?: string;
+  selectedPantoneCodes?: string[];
   logoVector?: { ds: string[] } | null;
 };
 
@@ -90,6 +91,11 @@ function AreaPersonalizationDetail({
           />
           {area.inkColorHex.toUpperCase()}
           {area.inkPantoneCode && ` · ${area.inkPantoneCode} (approx.)`}
+        </p>
+      )}
+      {!area.inkColorHex && area.selectedPantoneCodes && area.selectedPantoneCodes.length > 0 && (
+        <p>
+          <span className="text-muted">Reference colors:</span> {area.selectedPantoneCodes.join(", ")} (approx.)
         </p>
       )}
       {(area.renderUrl || area.renderContextUrl || area.snapshotUrl) && (

@@ -34,6 +34,7 @@ function makeDesign(overrides: Partial<SavedDesign> = {}): SavedDesign {
         logoRemoveWhiteMode: "all",
         inkColor: "#1a1a1a",
         colorTextInput: "",
+        selectedPantones: [],
         qrUrl: "",
         qrColor: "#1a1a1a",
         positions: {

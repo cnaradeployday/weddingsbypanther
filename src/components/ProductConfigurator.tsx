@@ -192,6 +192,7 @@ function makeDefaultDesign(isMerchandise: boolean, zoneForDefaults?: Zone): Desi
     logoRemoveWhiteMode: "all",
     inkColor: "#1a1a1a",
     colorTextInput: "",
+    selectedPantones: [],
     qrUrl: "",
     qrColor: "#1a1a1a",
     positions: computeDefaultPositions(zoneForDefaults),
@@ -353,7 +354,7 @@ export function ProductConfigurator({
     const h = canvasScrollSize.height;
     if (!w || !h) return 100;
     const heightConstrained = ((h / 1.25) / w) * 100;
-    return Math.max(20, Math.min(100, Math.floor(heightConstrained)));
+    return Math.max(10, Math.min(100, Math.floor(heightConstrained)));
   }, [canvasScrollSize.width, canvasScrollSize.height]);
   // Also used as the *default* zoom on load (not just the "Fit" button),
   // per BUG report: the whole product photo should be visible from the
@@ -917,6 +918,34 @@ export function ProductConfigurator({
   }, [logoNaturalSize, logoWidthMm]);
   const logoIsLowRes = logoPrintDpi !== null && logoPrintDpi < MIN_PRINT_DPI;
 
+  // The half-width/half-height footprint used for print-area containment
+  // math. For every element except the logo, the measured box IS the
+  // visible content (plus BUG-04's frame padding for names). The logo's
+  // wrapper is a fixed aspectRatio:1 square (see logoWidthPct/the photo
+  // JSX below) so its `Image` (object-contain) can letterbox any aspect
+  // ratio inside it — but that means box.offsetWidth/offsetHeight measure
+  // the SQUARE, not the actual visible logo. Using the square's own
+  // footprint as the containment box overstates how much room the logo
+  // needs in whichever axis it's letterboxed on, capping growth well short
+  // of the print area's real edge ("no me deja agrandar el logo hasta el
+  // limite del area de impresion"). Recovering the true visible footprint
+  // from the logo's natural aspect ratio fixes that.
+  const elemFootprint = useCallback(
+    (key: ElemKey, box: HTMLElement): { halfW: number; halfH: number } => {
+      if (key === "logo" && logoNaturalSize && logoNaturalSize.width > 0 && logoNaturalSize.height > 0) {
+        const squareSize = box.offsetWidth;
+        const aspect = logoNaturalSize.width / logoNaturalSize.height;
+        const visibleW = aspect >= 1 ? squareSize : squareSize * aspect;
+        const visibleH = aspect >= 1 ? squareSize / aspect : squareSize;
+        return { halfW: visibleW / 2, halfH: visibleH / 2 };
+      }
+      const framePadX = key === "names" && design.frame ? nameFontPx * 1.4 : 0;
+      const framePadY = key === "names" && design.frame ? nameFontPx * 0.9 : 0;
+      return { halfW: (box.offsetWidth + framePadX) / 2, halfH: (box.offsetHeight + framePadY) / 2 };
+    },
+    [design.frame, nameFontPx, logoNaturalSize]
+  );
+
   const startElemAdjust = useCallback(
     (key: ElemKey, mode: "resize" | "rotate") => (e: React.PointerEvent) => {
       if (design.locked[key]) return;
@@ -928,15 +957,12 @@ export function ProductConfigurator({
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
       const currentScale = design.elemScale[key] || 1;
-      const framePadX = key === "names" && design.frame ? nameFontPx * 1.4 : 0;
-      const framePadY = key === "names" && design.frame ? nameFontPx * 0.9 : 0;
-      const naturalW = box.offsetWidth + framePadX;
-      const naturalH = box.offsetHeight + framePadY;
+      const { halfW: naturalHalfW, halfH: naturalHalfH } = elemFootprint(key, box);
       const centerPhotoPx = posToPhotoPx(design.positions[key]);
       const rotationRad = (elemRotationDeg[key] * Math.PI) / 180;
       const growthRatio =
-        quadCornersPx && centerPhotoPx && naturalW > 0 && naturalH > 0
-          ? maxOrientedBoxScale(centerPhotoPx, quadCornersPx, naturalW / 2, naturalH / 2, rotationRad)
+        quadCornersPx && centerPhotoPx && naturalHalfW > 0 && naturalHalfH > 0
+          ? maxOrientedBoxScale(centerPhotoPx, quadCornersPx, naturalHalfW, naturalHalfH, rotationRad)
           : null;
       const maxScale =
         growthRatio != null && Number.isFinite(growthRatio) ? Math.max(0.3, currentScale * growthRatio * 0.98) : 4;
@@ -952,12 +978,12 @@ export function ProductConfigurator({
         maxScale,
         quadCornersPx,
         centerPhotoPx,
-        naturalHalfW: naturalW / 2,
-        naturalHalfH: naturalH / 2,
+        naturalHalfW,
+        naturalHalfH,
         autoRotationDeg,
       };
     },
-    [design.locked, design.elemScale, design.frame, design.positions, design.elemRotationOffset, elemRotationDeg, nameFontPx, posToPhotoPx, quadCornersPx, autoRotationDeg]
+    [design.locked, design.elemScale, design.positions, design.elemRotationOffset, elemRotationDeg, posToPhotoPx, quadCornersPx, autoRotationDeg, elemFootprint]
   );
 
   // EDIT-07/BUG-03 for the size steppers (+/-): unlike the drag-resize
@@ -974,11 +1000,10 @@ export function ProductConfigurator({
       const box = elemBoxRefs.current[key];
       const centerPhotoPx = posToPhotoPx(design.positions[key]);
       if (box && quadCornersPx && centerPhotoPx && currentScale > 0) {
-        const framePadX = key === "names" && design.frame ? nameFontPx * 1.4 : 0;
-        const framePadY = key === "names" && design.frame ? nameFontPx * 0.9 : 0;
         const ratio = proposedScale / currentScale;
-        const halfW = ((box.offsetWidth + framePadX) / 2) * ratio;
-        const halfH = ((box.offsetHeight + framePadY) / 2) * ratio;
+        const footprint = elemFootprint(key, box);
+        const halfW = footprint.halfW * ratio;
+        const halfH = footprint.halfH * ratio;
         const rotationRad = (elemRotationDeg[key] * Math.PI) / 180;
         const fitScale = maxOrientedBoxScale(centerPhotoPx, quadCornersPx, halfW, halfH, rotationRad);
         if (Number.isFinite(fitScale) && fitScale < 1) {
@@ -991,7 +1016,7 @@ export function ProductConfigurator({
       }
       setDesign((prev) => ({ ...prev, elemScale: { ...prev.elemScale, [key]: proposedScale } }));
     },
-    [design.elemScale, design.positions, design.frame, quadCornersPx, posToPhotoPx, elemRotationDeg, nameFontPx, setDesign]
+    [design.elemScale, design.positions, quadCornersPx, posToPhotoPx, elemRotationDeg, setDesign, elemFootprint]
   );
 
   const technique = product.techniques.find((t) => t.id === techniqueId);
@@ -1330,6 +1355,14 @@ export function ProductConfigurator({
       d.hidden[key] ? "" : d[key];
     const printedColor = (d: Design, key: "names" | "date" | "monogram" | "frame" | "qr", color: string) =>
       technique?.singleColorInk || d.hidden[key] ? undefined : color;
+    // Multi-color-technique reference colors (#24's sibling for techniques
+    // with no single customer-choosable ink) — only meaningful when there's
+    // no single inkColor/inkPantoneCode to carry this instead.
+    const selectedPantoneCodesFor = (d: Design): string[] | undefined => {
+      if (canChooseInkColor || !d.selectedPantones?.length) return undefined;
+      const codes = d.selectedPantones.map((hex) => nearestPantone(hex)?.code).filter((c): c is string => !!c);
+      return codes.length > 0 ? codes : undefined;
+    };
 
     const additionalAreas: AreaPersonalization[] = [];
     for (const z of extraAreas) {
@@ -1352,6 +1385,7 @@ export function ProductConfigurator({
         snapshotUrl: result.snapshotUrl,
         inkColorHex: technique?.singleColorInk ? (canChooseInkColor ? areaDesign.inkColor : techniqueInkColor(technique.technique)) : undefined,
         inkPantoneCode: canChooseInkColor ? nearestPantone(areaDesign.inkColor)?.code : undefined,
+        selectedPantoneCodes: selectedPantoneCodesFor(areaDesign),
         namesColor: printedColor(areaDesign, "names", areaDesign.namesStyle.color),
         dateColor: printedColor(areaDesign, "date", areaDesign.dateStyle.color),
         monogramColor: printedColor(areaDesign, "monogram", areaDesign.monogramColor),
@@ -1417,6 +1451,7 @@ export function ProductConfigurator({
             snapshotUrl: primaryResult.snapshotUrl,
             inkColorHex: technique?.singleColorInk ? (canChooseInkColor ? primaryDesign.inkColor : techniqueInkColor(technique.technique)) : undefined,
             inkPantoneCode: canChooseInkColor ? nearestPantone(primaryDesign.inkColor)?.code : undefined,
+            selectedPantoneCodes: selectedPantoneCodesFor(primaryDesign),
             namesColor: printedColor(primaryDesign, "names", primaryDesign.namesStyle.color),
             dateColor: printedColor(primaryDesign, "date", primaryDesign.dateStyle.color),
             monogramColor: printedColor(primaryDesign, "monogram", primaryDesign.monogramColor),
@@ -1986,15 +2021,12 @@ export function ProductConfigurator({
           // leaving part of the element outside the print area. Mirror
           // the same containment the drag handle already applies.
           const box = elemBoxRefs.current[key];
-          const framePadX = key === "names" && design.frame ? nameFontPx * 1.4 : 0;
-          const framePadY = key === "names" && design.frame ? nameFontPx * 0.9 : 0;
-          const naturalW = (box?.offsetWidth ?? 0) + framePadX;
-          const naturalH = (box?.offsetHeight ?? 0) + framePadY;
+          const { halfW: naturalHalfW, halfH: naturalHalfH } = box ? elemFootprint(key, box) : { halfW: 0, halfH: 0 };
           const centerPhotoPx = posToPhotoPx(design.positions[key]);
           const currentScale = design.elemScale[key] || 1;
-          if (quadCornersPx && centerPhotoPx && naturalW > 0 && naturalH > 0) {
+          if (quadCornersPx && centerPhotoPx && naturalHalfW > 0 && naturalHalfH > 0) {
             const rotationRad = ((autoRotationDeg + deg) * Math.PI) / 180;
-            const resolved = resolveRotatedContainment(centerPhotoPx, quadCornersPx, naturalW / 2, naturalH / 2, rotationRad);
+            const resolved = resolveRotatedContainment(centerPhotoPx, quadCornersPx, naturalHalfW, naturalHalfH, rotationRad);
             const resolvedPos = photoPxToPos(resolved.center);
             setDesign((prev) => ({
               ...prev,
@@ -2247,7 +2279,7 @@ export function ProductConfigurator({
                         onClick={() => goToStep("confirmation")}
                         className="px-6 h-[46px] rounded-full text-sm font-medium bg-terracotta text-cream-light hover:bg-terracotta-dark transition-colors"
                       >
-                        Next: Confirmación
+                        Next: Confirmation
                       </button>
                     </div>
                   </div>
@@ -2273,7 +2305,7 @@ export function ProductConfigurator({
                   onClick={() => goToStep("confirmation")}
                   className="px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors"
                 >
-                  Next: Confirmación
+                  Next: Confirmation
                 </button>
               </div>
             </>
@@ -2502,6 +2534,20 @@ export function ProductConfigurator({
           processing={removingBackground}
           selectedInkColor={canChooseInkColor ? design.inkColor : null}
           onSelectInkColor={canChooseInkColor ? (hex) => setDesign((prev) => ({ ...prev, inkColor: hex, colorTextInput: hex })) : undefined}
+          selectedPantoneHexes={canChooseInkColor ? undefined : design.selectedPantones ?? []}
+          onTogglePantone={
+            canChooseInkColor
+              ? undefined
+              : (hex) =>
+                  setDesign((prev) => {
+                    const current = prev.selectedPantones ?? [];
+                    const exists = current.some((h) => h.toLowerCase() === hex.toLowerCase());
+                    return {
+                      ...prev,
+                      selectedPantones: exists ? current.filter((h) => h.toLowerCase() !== hex.toLowerCase()) : [...current, hex],
+                    };
+                  })
+          }
         />
       );
     }

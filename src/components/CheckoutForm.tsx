@@ -7,6 +7,7 @@ import { formatUSD } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import { createClient } from "@/lib/supabase/client";
 import { COUNTRIES, US_STATES, postalCodeLabel, regionLabel, regionsForCountry } from "@/lib/geoData";
+import type { BusinessType } from "@/lib/businessType";
 
 const SHIPPING_FLAT = 42;
 const FREE_SHIPPING_THRESHOLD = 1500;
@@ -17,7 +18,18 @@ const PROOF_BUFFER_DAYS = 2;
 
 type OtpStage = "idle" | "sent" | "verified";
 
-export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; plannerSlug: string }) {
+export function CheckoutForm({
+  plannerId,
+  plannerSlug,
+  businessType,
+}: {
+  plannerId: string;
+  plannerSlug: string;
+  businessType: BusinessType;
+}) {
+  // A merchandise storefront has no couple or wedding date to collect —
+  // "quitale wedding date, y wedding details" for that vertical.
+  const isWedding = businessType === "wedding";
   const router = useRouter();
   const { items, subtotal, personalizationFee, sampleFee, clear } = useCart();
   const [submitting, setSubmitting] = useState(false);
@@ -71,21 +83,23 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
         setCustomerId(data.user.id);
         setOtpStage("verified");
         setForm((f) => (f.email ? f : { ...f, email: data.user.email ?? f.email }));
-        const { data: profile } = await authClient
-          .from("profiles")
-          .select("couple_names, wedding_date")
-          .eq("id", data.user.id)
-          .maybeSingle();
-        if (profile) {
-          setForm((f) => ({
-            ...f,
-            coupleNames: f.coupleNames || profile.couple_names || "",
-            weddingDate: f.weddingDate || profile.wedding_date || "",
-          }));
+        if (isWedding) {
+          const { data: profile } = await authClient
+            .from("profiles")
+            .select("couple_names, wedding_date")
+            .eq("id", data.user.id)
+            .maybeSingle();
+          if (profile) {
+            setForm((f) => ({
+              ...f,
+              coupleNames: f.coupleNames || profile.couple_names || "",
+              weddingDate: f.weddingDate || profile.wedding_date || "",
+            }));
+          }
         }
       }
     });
-  }, []);
+  }, [isWedding]);
 
   const shipping = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FLAT;
   const total = subtotal + personalizationFee + sampleFee + shipping;
@@ -195,7 +209,7 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
       // order itself. Needs the cookie-backed client (not the plain anon
       // one above) since the "profiles self update" RLS policy checks
       // auth.uid(), which only that client carries.
-      if (customerId && (form.coupleNames.trim() || form.weddingDate)) {
+      if (isWedding && customerId && (form.coupleNames.trim() || form.weddingDate)) {
         await createClient()
           .from("profiles")
           .update({
@@ -218,26 +232,28 @@ export function CheckoutForm({ plannerId, plannerSlug }: { plannerId: string; pl
       <div>
         <h1 className="font-serif text-4xl mb-8">Checkout</h1>
 
-        <div className="mb-8">
-          <p className="text-xs uppercase tracking-wide text-muted mb-3">Wedding details</p>
-          <input
-            required
-            placeholder="The couple's names (e.g. Amelia & Ravi)"
-            value={form.coupleNames}
-            onChange={update("coupleNames")}
-            className="w-full rounded-lg border border-line px-4 py-3 mb-3 focus:outline-none focus:border-dark"
-          />
-          <div>
-            <label className="text-xs text-muted block mb-1">Wedding date</label>
+        {isWedding && (
+          <div className="mb-8">
+            <p className="text-xs uppercase tracking-wide text-muted mb-3">Wedding details</p>
             <input
               required
-              type="date"
-              value={form.weddingDate}
-              onChange={update("weddingDate")}
-              className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+              placeholder="The couple's names (e.g. Amelia & Ravi)"
+              value={form.coupleNames}
+              onChange={update("coupleNames")}
+              className="w-full rounded-lg border border-line px-4 py-3 mb-3 focus:outline-none focus:border-dark"
             />
+            <div>
+              <label className="text-xs text-muted block mb-1">Wedding date</label>
+              <input
+                required
+                type="date"
+                value={form.weddingDate}
+                onChange={update("weddingDate")}
+                className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="mb-8">
           <p className="text-xs uppercase tracking-wide text-muted mb-3">Contact</p>

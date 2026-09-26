@@ -87,6 +87,11 @@ function CartLineItem({
             {item.personalization.inkPantoneCode && ` · ${item.personalization.inkPantoneCode} (approx.)`}
           </p>
         )}
+        {!item.personalization?.inkColorHex && item.personalization?.selectedPantoneCodes && item.personalization.selectedPantoneCodes.length > 0 && (
+          <p className="text-xs text-muted mt-1">
+            Reference colors: {item.personalization.selectedPantoneCodes.join(", ")} (approx.)
+          </p>
+        )}
         {item.personalization?.additionalAreas?.map((area) => (
           <p key={area.zoneId} className="text-xs text-muted mt-1">
             + {area.label}
