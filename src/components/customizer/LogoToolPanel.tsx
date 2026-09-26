@@ -29,6 +29,8 @@ export function LogoToolPanel({
   sizeLabel,
   detectedColors,
   processing,
+  selectedInkColor,
+  onSelectInkColor,
 }: {
   preview: string | null;
   onUpload: (file: File, dataUrl: string) => void;
@@ -43,6 +45,12 @@ export function LogoToolPanel({
   // True while a background-removal mode change is being computed (EDIT-11)
   // — the flood-fill runs on the full-resolution logo and can take a moment.
   processing?: boolean;
+  // The order's current ink color (only meaningful when the technique lets
+  // the customer choose one) — lets a detected color show as "already
+  // selected." Omitted entirely (no tap-to-select) when the technique has
+  // no choosable ink at all (e.g. laser engraving).
+  selectedInkColor?: string | null;
+  onSelectInkColor?: (hex: string) => void;
 }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -197,22 +205,38 @@ export function LogoToolPanel({
               <div className="flex flex-wrap gap-2">
                 {detectedColors.map((c) => {
                   const pantone = nearestPantone(c.hex);
+                  // Selecting a suggested Pantone sets it as the order's
+                  // ink color — the same field the Technique panel's ink
+                  // picker uses, which already flows through to
+                  // inkPantoneCode/inkColorHex on the cart item, so this
+                  // becomes part of the order like size/quantity/technique
+                  // without a separate field to plumb through.
+                  const isSelected = !!pantone && !!selectedInkColor && selectedInkColor.toLowerCase() === c.hex.toLowerCase();
                   return (
-                    <span
+                    <button
                       key={c.hex}
-                      className="inline-flex flex-col gap-0.5 text-[11px] rounded-xl px-2 py-1.5"
-                      style={{ border: "1px solid var(--pc-ink-100)" }}
+                      type="button"
+                      onClick={() => pantone && onSelectInkColor?.(c.hex)}
+                      disabled={!pantone || !onSelectInkColor}
+                      aria-pressed={isSelected}
+                      className="inline-flex flex-col gap-0.5 text-[11px] rounded-xl px-2 py-1.5 text-left disabled:cursor-default"
+                      style={{ border: `1px solid ${isSelected ? "var(--color-terracotta)" : "var(--pc-ink-100)"}`, background: isSelected ? "var(--pc-ink-50)" : "transparent" }}
                     >
                       <span className="inline-flex items-center gap-1.5">
                         <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: c.hex, border: "1px solid var(--pc-ink-200)" }} />
                         {c.hex.toUpperCase()} · {c.pct}%
+                        {isSelected && (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-terracotta)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M20 6 9 17l-5-5" />
+                          </svg>
+                        )}
                       </span>
                       {pantone && (
                         <span style={{ color: "var(--pc-ink-500)" }}>
-                          ≈ {pantone.code} <span className="text-[10px]">(approximate)</span>
+                          ≈ {pantone.code} <span className="text-[10px]">{isSelected ? "· used for this order" : "(approximate — tap to use)"}</span>
                         </span>
                       )}
-                    </span>
+                    </button>
                   );
                 })}
               </div>

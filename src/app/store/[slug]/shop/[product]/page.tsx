@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { getStorefrontProduct, getRelatedProducts } from "@/lib/queries";
-import { getSessionProfile } from "@/lib/supabase/server";
 import { ProductConfigurator } from "@/components/ProductConfigurator";
 import { isBusinessType } from "@/lib/businessType";
 
@@ -11,15 +10,10 @@ export default async function ProductPage({
   params: Promise<{ slug: string; product: string }>;
 }) {
   const { slug, product: productSlug } = await params;
-  const [product, session] = await Promise.all([
-    getStorefrontProduct(slug, productSlug),
-    getSessionProfile(),
-  ]);
+  const product = await getStorefrontProduct(slug, productSlug);
   if (!product) notFound();
 
   const relatedProducts = await getRelatedProducts(slug, product.relatedProductIds);
-
-  const unlimitedRenders = session?.profile.role === "admin";
 
   return (
     // ProductConfigurator reads/writes the `step` query param
@@ -28,7 +22,6 @@ export default async function ProductPage({
     // doesn't fail — see node_modules/next/dist/docs/.../use-search-params.md.
     <Suspense fallback={null}>
       <ProductConfigurator
-        unlimitedRenders={unlimitedRenders}
         product={{
           id: product.id,
           slug: product.slug,

@@ -48,7 +48,6 @@ export function ConfirmationStep({
   sampleAdded,
   onAddToCart,
   onAddSample,
-  aiRenderSlot,
 }: {
   productName: string;
   productDescription: string;
@@ -73,8 +72,10 @@ export function ConfirmationStep({
   total: number;
   issues: ValidationIssue[];
   onFixInDesign: (elemKey: string) => void;
-  checklist: { namesCorrect: boolean; insidePrintArea: boolean; logoCorrect: boolean };
-  onToggleChecklistItem: (item: "namesCorrect" | "insidePrintArea" | "logoCorrect") => void;
+  // Was three separate items (names, logo, print area) — merged into one
+  // per request, to cut down on scrolling on this step.
+  checklist: { confirmed: boolean };
+  onToggleChecklistItem: () => void;
   technique: string | null;
   namesValid: boolean;
   addingToCart: boolean;
@@ -83,9 +84,8 @@ export function ConfirmationStep({
   sampleAdded: boolean;
   onAddToCart: () => void;
   onAddSample: () => void;
-  aiRenderSlot: React.ReactNode;
 }) {
-  const checklistConfirmed = checklist.namesCorrect && checklist.insidePrintArea && checklist.logoCorrect;
+  const checklistConfirmed = checklist.confirmed;
   const blockingIssues = issues.filter((i) => i.level === "blocking");
   const otherIssues = issues.filter((i) => i.level !== "blocking");
   const cartDisabled = addingToCart || !namesValid || quantityBelowMinimum || !checklistConfirmed;
@@ -205,40 +205,16 @@ export function ConfirmationStep({
         </div>
       </div>
 
-      {aiRenderSlot}
-
       <div>
         <h2 className="font-serif text-xl mb-3">Before you confirm</h2>
-        <div className="flex flex-col gap-2">
-          <label className="flex items-start gap-3 rounded-lg border border-line p-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={checklist.namesCorrect}
-              onChange={() => onToggleChecklistItem("namesCorrect")}
-              className="mt-0.5 h-5 w-5"
-            />
-            <span className="text-sm">Names and date spelled correctly</span>
-          </label>
-          <label className="flex items-start gap-3 rounded-lg border border-line p-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={checklist.logoCorrect}
-              onChange={() => onToggleChecklistItem("logoCorrect")}
-              className="mt-0.5 h-5 w-5"
-            />
-            <span className="text-sm">Logo is the right one and looks correct</span>
-          </label>
-          <label className="flex items-start gap-3 rounded-lg border border-line p-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={checklist.insidePrintArea}
-              onChange={() => onToggleChecklistItem("insidePrintArea")}
-              className="mt-0.5 h-5 w-5"
-            />
-            <span className="text-sm">All elements inside the print area</span>
-          </label>
-        </div>
-        {!checklistConfirmed && <p className="text-xs text-muted mt-2">Confirm all three items before adding to cart.</p>}
+        <label className="flex items-start gap-3 rounded-lg border border-line p-3 cursor-pointer">
+          <input type="checkbox" checked={checklist.confirmed} onChange={onToggleChecklistItem} className="mt-0.5 h-5 w-5" />
+          <span className="text-sm">
+            Names and date are spelled correctly, the logo is the right one and looks correct, and everything is
+            inside the print area
+          </span>
+        </label>
+        {!checklistConfirmed && <p className="text-xs text-muted mt-2">Confirm before adding to cart.</p>}
       </div>
 
       <div className="rounded-xl bg-cream p-6">

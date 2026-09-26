@@ -69,7 +69,17 @@ export function LogoCropModal({
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Crop logo" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Crop logo"
+      className="fixed inset-0 z-50 flex items-center justify-center p-6"
+      // Was bg-black/50 — translucent enough that the selected logo's own
+      // on-canvas resize handles (bright white circles) still showed
+      // through from behind, right on top of the crop preview, reading as
+      // a second resizable logo. Fully opaque removes any bleed-through.
+      style={{ background: "var(--pc-ink-950)" }}
+    >
       <div className="bg-white rounded-2xl p-6 flex flex-col gap-4 max-w-lg w-full">
         <h2 className="font-serif text-2xl">Crop logo</h2>
         <div ref={frameRef} className="relative bg-cream rounded-lg overflow-hidden" style={{ aspectRatio: "1" }}>
