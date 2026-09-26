@@ -60,8 +60,10 @@ export function ColorPicker({
   if (allowedColors && allowedColors.length > 0) {
     return (
       <div className="flex flex-col gap-2">
-        <span className="text-xs uppercase tracking-wide text-muted">{label}</span>
-        <div className="flex gap-2 flex-wrap">
+        <span className="text-[11px] tracking-[0.14em] uppercase" style={{ color: "var(--pc-ink-500)" }}>
+          {label}
+        </span>
+        <div className="flex gap-2.5 flex-wrap">
           {allowedColors.map((c) => (
             <button
               key={c}
@@ -69,45 +71,50 @@ export function ColorPicker({
               onClick={() => commit(c)}
               aria-label={`Use color ${c}`}
               aria-pressed={value.toLowerCase() === c.toLowerCase()}
-              className={`h-11 w-11 rounded-full border-2 ${value.toLowerCase() === c.toLowerCase() ? "border-terracotta" : "border-white"}`}
-              style={{ backgroundColor: c, boxShadow: "0 0 0 1px #E6DFD3" }}
+              className="h-8 w-8 rounded-full"
+              style={{
+                backgroundColor: c,
+                border: "1px solid rgba(18,22,32,0.15)",
+                boxShadow: value.toLowerCase() === c.toLowerCase() ? "0 0 0 2px #fff, 0 0 0 4px var(--color-terracotta)" : "none",
+              }}
             />
           ))}
         </div>
-        <p className="text-xs text-muted">Colors available for this print technique.</p>
+        <p className="text-xs" style={{ color: "var(--pc-ink-400)" }}>
+          Colors available for this print technique.
+        </p>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-xs uppercase tracking-wide text-muted">{label}</span>
-      <div className="flex items-center gap-2">
-        <label className="h-11 w-11 shrink-0 rounded-lg border border-line p-1 flex" aria-label={`${label} swatch`}>
+      <span className="text-[11px] tracking-[0.14em] uppercase" style={{ color: "var(--pc-ink-500)" }}>
+        {label}
+      </span>
+      <div className="flex items-center gap-2.5">
+        <label className="h-8 w-8 shrink-0 rounded-full cursor-pointer relative overflow-hidden" style={{ backgroundColor: value, border: "1px solid rgba(18,22,32,0.15)" }} aria-label={`${label} picker`}>
           <input
             type="color"
             value={value}
             onChange={(e) => commit(e.target.value)}
-            className="w-full h-full border-none p-0 bg-transparent cursor-pointer"
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
         </label>
-        <div className="flex-1 h-11 rounded-lg border border-line flex items-center px-3 gap-1.5">
-          <span className="text-xs text-muted">HEX</span>
-          <input
-            type="text"
-            value={hexInput}
-            onChange={(e) => setHexInput(e.target.value)}
-            onBlur={applyHexInput}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                applyHexInput();
-              }
+        {recent.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => commit(c)}
+            aria-label={`Use recent color ${c}`}
+            className="h-8 w-8 rounded-full shrink-0"
+            style={{
+              backgroundColor: c,
+              border: "1px solid rgba(18,22,32,0.15)",
+              boxShadow: value.toLowerCase() === c.toLowerCase() ? "0 0 0 2px #fff, 0 0 0 4px var(--color-terracotta)" : "none",
             }}
-            aria-label="Hex color code"
-            className="w-full bg-transparent text-sm"
           />
-        </div>
+        ))}
         {eyedropperAvailable && (
           <button
             type="button"
@@ -116,31 +123,36 @@ export function ColorPicker({
               const picked = await pickColorWithEyedropper();
               if (picked) commit(picked);
             }}
-            className="h-11 w-11 shrink-0 rounded-lg border border-line flex items-center justify-center text-dark"
+            className="h-8 w-8 shrink-0 rounded-full flex items-center justify-center"
+            style={{ color: "var(--pc-ink-600)" }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M14 4l6 6" />
               <path d="M17 7l-9.5 9.5L5 19l2.5-2.5" />
               <path d="M12 6l6 6" />
             </svg>
           </button>
         )}
+        <span className="ml-auto font-mono text-xs" style={{ color: "var(--pc-ink-500)" }}>
+          {value.toUpperCase()}
+        </span>
       </div>
-      {recent.length > 0 && (
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted w-14">Recent</span>
-          {recent.map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => commit(c)}
-              aria-label={`Use recent color ${c}`}
-              className="h-11 w-11 rounded-full border-2 border-white"
-              style={{ backgroundColor: c, boxShadow: value.toLowerCase() === c ? "0 0 0 2px #5B2EE0" : "0 0 0 1px #E6DFD3" }}
-            />
-          ))}
-        </div>
-      )}
+      <input
+        type="text"
+        value={hexInput}
+        onChange={(e) => setHexInput(e.target.value)}
+        onBlur={applyHexInput}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            applyHexInput();
+          }
+        }}
+        aria-label="Hex color code"
+        placeholder="#1A1A1A"
+        className="w-full h-9 rounded-lg px-3 text-sm bg-transparent outline-none"
+        style={{ border: "1px solid var(--pc-ink-200)", color: "var(--pc-ink-950)" }}
+      />
     </div>
   );
 }

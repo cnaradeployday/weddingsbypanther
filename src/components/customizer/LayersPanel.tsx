@@ -43,11 +43,20 @@ export function LayersPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="font-serif text-2xl">Layers</h2>
+      <div className="flex flex-col gap-1">
+        <h2 className="font-serif text-[22px]" style={{ color: "var(--pc-ink-950)" }}>
+          Layers
+        </h2>
+        <p className="text-sm" style={{ color: "var(--pc-ink-500)" }}>
+          Elements on this view.
+        </p>
+      </div>
       {presentKeys.length === 0 ? (
-        <p className="text-sm text-muted">Nothing on the design yet.</p>
+        <p className="text-sm" style={{ color: "var(--pc-ink-400)" }}>
+          Nothing on the design yet.
+        </p>
       ) : (
-        <ul className="flex flex-col gap-1.5">
+        <ul className="rounded-2xl overflow-hidden flex flex-col" style={{ background: "var(--pc-ink-50)" }}>
           {presentKeys.map((key, i) => {
             const locked = !!design.locked[key];
             const hidden = !!design.hidden[key];
@@ -69,18 +78,17 @@ export function LayersPanel({
                   dragIndex.current = null;
                   setDragOverIndex(null);
                 }}
-                className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 ${
-                  activeElem === key ? "border-dark bg-cream" : "border-line"
-                } ${dragOverIndex === i ? "border-terracotta" : ""}`}
+                className="flex items-center gap-1 pl-3 pr-1.5"
+                style={{
+                  height: 48,
+                  borderTop: i ? "1px solid var(--pc-ink-100)" : "none",
+                  background: activeElem === key ? "var(--pc-ink-100)" : dragOverIndex === i ? "var(--pc-ink-100)" : "transparent",
+                }}
               >
-                <span aria-hidden="true" className="cursor-grab text-muted px-0.5">
+                <span aria-hidden="true" className="cursor-grab px-0.5" style={{ color: "var(--pc-ink-400)" }}>
                   ⠿
                 </span>
-                <button
-                  type="button"
-                  onClick={() => onSelect(key)}
-                  className="flex-1 text-left text-sm truncate"
-                >
+                <button type="button" onClick={() => onSelect(key)} className="flex-1 text-left text-[15px] truncate" style={{ color: "var(--pc-ink-950)" }}>
                   {ELEM_LABELS[key]}
                 </button>
                 <button
@@ -88,7 +96,8 @@ export function LayersPanel({
                   onClick={() => onToggleLock(key)}
                   aria-label={locked ? `Unlock ${ELEM_LABELS[key]}` : `Lock ${ELEM_LABELS[key]}`}
                   aria-pressed={locked}
-                  className={`h-11 w-11 shrink-0 flex items-center justify-center rounded-lg ${locked ? "text-terracotta-dark" : "text-muted"}`}
+                  className="h-11 w-11 shrink-0 flex items-center justify-center rounded-full"
+                  style={{ color: locked ? "var(--color-terracotta-dark)" : "var(--pc-ink-400)" }}
                 >
                   {locked ? (
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -107,7 +116,8 @@ export function LayersPanel({
                   onClick={() => onToggleHide(key)}
                   aria-label={hidden ? `Show ${ELEM_LABELS[key]}` : `Hide ${ELEM_LABELS[key]}`}
                   aria-pressed={hidden}
-                  className={`h-11 w-11 shrink-0 flex items-center justify-center rounded-lg ${hidden ? "text-terracotta-dark" : "text-muted"}`}
+                  className="h-11 w-11 shrink-0 flex items-center justify-center rounded-full"
+                  style={{ color: hidden ? "var(--color-terracotta-dark)" : "var(--pc-ink-400)" }}
                 >
                   {hidden ? (
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -128,7 +138,7 @@ export function LayersPanel({
         </ul>
       )}
       {presentKeys.some((k) => design.hidden[k]) && (
-        <p className="text-xs text-terracotta-dark">
+        <p className="text-xs" style={{ color: "var(--color-terracotta-dark)" }}>
           Hidden layers won&apos;t be printed.
         </p>
       )}

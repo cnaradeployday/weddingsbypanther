@@ -1,7 +1,9 @@
 "use client";
 
-// EDIT-03's bottom-left canvas controls: zoom, "Fit", guides and grid
-// toggles. Zoom is purely a view transform — it never touches `design`.
+// EDIT-03's canvas controls: zoom, "Fit", guides/grid toggles and reset —
+// one floating blurred pill anchored to the bottom of the stage, per the
+// Product Customizer iOS redesign (design_handoff_product_customizer).
+// Zoom is purely a view transform — it never touches `design`.
 
 export const ZOOM_STEPS = [50, 75, 100, 125, 150, 200, 300];
 
@@ -13,6 +15,7 @@ export function CanvasControls({
   onToggleGuides,
   gridOn,
   onToggleGrid,
+  onReset,
 }: {
   zoomPct: number;
   onZoomChange: (pct: number) => void;
@@ -21,6 +24,7 @@ export function CanvasControls({
   onToggleGuides: () => void;
   gridOn: boolean;
   onToggleGrid: () => void;
+  onReset?: () => void;
 }) {
   const stepZoom = (dir: 1 | -1) => {
     const idx = ZOOM_STEPS.findIndex((s) => s >= zoomPct);
@@ -28,50 +32,57 @@ export function CanvasControls({
     onZoomChange(ZOOM_STEPS[nextIdx]);
   };
 
+  const divider = <span className="w-px h-5 mx-0.5 shrink-0" style={{ background: "var(--pc-ink-200)" }} aria-hidden="true" />;
+  const pillBtn = (extra = "") =>
+    `h-[34px] px-3.5 rounded-full text-[13px] shrink-0 transition-colors hover:bg-[var(--pc-ink-50)] ${extra}`;
+
   return (
-    <div className="flex items-center gap-2 flex-wrap">
-      <div className="flex items-center h-11 bg-white border border-line rounded-lg">
-        <button
-          type="button"
-          aria-label="Zoom out"
-          onClick={() => stepZoom(-1)}
-          className="w-11 h-full text-lg text-dark"
-        >
-          −
-        </button>
-        <label className="sr-only" htmlFor="zoom-select">
-          Zoom level
-        </label>
-        <select
-          id="zoom-select"
-          value={zoomPct}
-          onChange={(e) => onZoomChange(Number(e.target.value))}
-          className="w-16 text-center text-sm bg-transparent"
-        >
-          {ZOOM_STEPS.map((s) => (
-            <option key={s} value={s}>
-              {s}%
-            </option>
-          ))}
-        </select>
-        <button type="button" aria-label="Zoom in" onClick={() => stepZoom(1)} className="w-11 h-full text-lg text-dark">
-          +
-        </button>
-      </div>
-      <button
-        type="button"
-        onClick={onFit}
-        className="h-11 px-3.5 border border-line bg-white rounded-lg text-sm text-dark"
+    <div
+      className="flex items-center gap-0.5 p-[5px] rounded-full flex-wrap justify-center"
+      style={{
+        background: "rgba(255,255,255,0.86)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
+        border: "1px solid var(--pc-border-subtle)",
+        boxShadow: "var(--pc-shadow-md)",
+      }}
+    >
+      <button type="button" aria-label="Zoom out" onClick={() => stepZoom(-1)} className="w-[34px] h-[34px] rounded-full grid place-items-center shrink-0 transition-colors hover:bg-[var(--pc-ink-50)]" style={{ color: "var(--pc-ink-700)" }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+          <path d="M5 12h14" />
+        </svg>
+      </button>
+      <label className="sr-only" htmlFor="zoom-select">
+        Zoom level
+      </label>
+      <select
+        id="zoom-select"
+        value={zoomPct}
+        onChange={(e) => onZoomChange(Number(e.target.value))}
+        className="w-14 text-center text-[13px] bg-transparent shrink-0"
+        style={{ color: "var(--pc-ink-950)" }}
       >
+        {ZOOM_STEPS.map((s) => (
+          <option key={s} value={s}>
+            {s}%
+          </option>
+        ))}
+      </select>
+      <button type="button" aria-label="Zoom in" onClick={() => stepZoom(1)} className="w-[34px] h-[34px] rounded-full grid place-items-center shrink-0 transition-colors hover:bg-[var(--pc-ink-50)]" style={{ color: "var(--pc-ink-700)" }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+          <path d="M5 12h14M12 5v14" />
+        </svg>
+      </button>
+      {divider}
+      <button type="button" onClick={onFit} className={pillBtn()} style={{ color: "var(--pc-ink-700)" }}>
         Fit
       </button>
       <button
         type="button"
         onClick={onToggleGuides}
         aria-pressed={guidesOn}
-        className={`h-11 px-3.5 rounded-lg text-sm border ${
-          guidesOn ? "border-terracotta bg-[#F7F4FF] text-[#4520B8]" : "border-line bg-white text-dark"
-        }`}
+        className={pillBtn()}
+        style={{ background: guidesOn ? "var(--pc-ink-950)" : "transparent", color: guidesOn ? "#fff" : "var(--pc-ink-700)" }}
       >
         Guides
       </button>
@@ -79,12 +90,19 @@ export function CanvasControls({
         type="button"
         onClick={onToggleGrid}
         aria-pressed={gridOn}
-        className={`h-11 px-3.5 rounded-lg text-sm border ${
-          gridOn ? "border-terracotta bg-[#F7F4FF] text-[#4520B8]" : "border-line bg-white text-dark"
-        }`}
+        className={pillBtn()}
+        style={{ background: gridOn ? "var(--pc-ink-950)" : "transparent", color: gridOn ? "#fff" : "var(--pc-ink-700)" }}
       >
         Grid
       </button>
+      {onReset && (
+        <>
+          {divider}
+          <button type="button" onClick={onReset} className={pillBtn()} style={{ color: "var(--pc-danger)" }}>
+            Reset
+          </button>
+        </>
+      )}
     </div>
   );
 }

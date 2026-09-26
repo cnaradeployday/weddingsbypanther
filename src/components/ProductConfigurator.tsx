@@ -1602,7 +1602,7 @@ export function ProductConfigurator({
   // interaction-gated, as the "design always visible" preview on the
   // Options and Review steps (FLOW-03/FLOW-06).
   const renderCanvas = () => (
-    <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-[#F1ECE3] relative overflow-hidden">
+    <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-[var(--pc-ink-50)] relative overflow-hidden">
       <div ref={canvasScrollRef} className="flex-1 overflow-auto">
         <div
           className="mx-auto"
@@ -1639,7 +1639,7 @@ export function ProductConfigurator({
                 <polygon
                   points={zonePoints}
                   fill="none"
-                  stroke="#B5471B"
+                  stroke="var(--color-terracotta)"
                   strokeWidth="0.4"
                   strokeDasharray="2,1.5"
                   vectorEffect="non-scaling-stroke"
@@ -1893,7 +1893,7 @@ export function ProductConfigurator({
           {activeElem === "qr" && sizeLabelWH(qrSizePx, qrSizePx)}
         </div>
       )}
-      <div className="p-3 flex items-center justify-between gap-3 flex-wrap bg-white border-t border-line">
+      <div className="absolute left-1/2 bottom-4 -translate-x-1/2 z-30">
         <CanvasControls
           zoomPct={zoomPct}
           onZoomChange={setZoomPct}
@@ -1902,10 +1902,7 @@ export function ProductConfigurator({
           onToggleGuides={() => setGuidesOn((g) => !g)}
           gridOn={gridOn}
           onToggleGrid={() => setGridOn((g) => !g)}
-        />
-        <button
-          type="button"
-          onClick={() => {
+          onReset={() => {
             setDesign((prev) => ({
               ...prev,
               positions: computeDefaultPositions(zone),
@@ -1913,10 +1910,7 @@ export function ProductConfigurator({
               elemRotationOffset: DEFAULT_ROTATIONS,
             }));
           }}
-          className="text-xs text-terracotta-dark font-medium"
-        >
-          Reset positions
-        </button>
+        />
       </div>
     </div>
   );
@@ -1960,7 +1954,32 @@ export function ProductConfigurator({
         colorEditable={key !== "logo"}
         onChangeColor={setColorFor}
         onChangeRotation={(deg) => {
-          setDesign((prev) => ({ ...prev, elemRotationOffset: { ...prev.elemRotationOffset, [key]: deg } }));
+          // The drag-rotate handle re-contains the box (resolveRotated-
+          // Containment) after every change, but typing a degree or using
+          // the quick-rotate buttons went straight through to state with
+          // no such check — nothing stopped the resulting rotation from
+          // leaving part of the element outside the print area. Mirror
+          // the same containment the drag handle already applies.
+          const box = elemBoxRefs.current[key];
+          const framePadX = key === "names" && design.frame ? nameFontPx * 1.4 : 0;
+          const framePadY = key === "names" && design.frame ? nameFontPx * 0.9 : 0;
+          const naturalW = (box?.offsetWidth ?? 0) + framePadX;
+          const naturalH = (box?.offsetHeight ?? 0) + framePadY;
+          const centerPhotoPx = posToPhotoPx(design.positions[key]);
+          const currentScale = design.elemScale[key] || 1;
+          if (quadCornersPx && centerPhotoPx && naturalW > 0 && naturalH > 0) {
+            const rotationRad = ((autoRotationDeg + deg) * Math.PI) / 180;
+            const resolved = resolveRotatedContainment(centerPhotoPx, quadCornersPx, naturalW / 2, naturalH / 2, rotationRad);
+            const resolvedPos = photoPxToPos(resolved.center);
+            setDesign((prev) => ({
+              ...prev,
+              positions: resolvedPos ? { ...prev.positions, [key]: resolvedPos } : prev.positions,
+              elemScale: { ...prev.elemScale, [key]: currentScale * resolved.scale },
+              elemRotationOffset: { ...prev.elemRotationOffset, [key]: deg },
+            }));
+          } else {
+            setDesign((prev) => ({ ...prev, elemRotationOffset: { ...prev.elemRotationOffset, [key]: deg } }));
+          }
         }}
         onAlign={(axis, align) => {
           const box = elemBoxRefs.current[key];
@@ -2055,24 +2074,50 @@ export function ProductConfigurator({
       )}
 
       {product.personalizable ? (
-        <div className="flex flex-col border border-line rounded-2xl overflow-hidden bg-white">
-          {/* Top bar (EDIT-01 / FLOW-01) */}
-          <header className="flex flex-col gap-2 shrink-0 px-4 py-3 border-b border-line bg-white md:h-16 md:flex-row md:items-center md:justify-between md:gap-3 md:py-0">
+        <div
+          className="flex flex-col overflow-hidden"
+          style={{ background: "var(--pc-ink-50)", borderRadius: 20, border: `1px solid var(--pc-border-subtle)`, boxShadow: "var(--pc-shadow-sm)" }}
+        >
+          {/* Top bar (EDIT-01 / FLOW-01) — restyled per the iOS Product
+              Customizer redesign: sticky, blurred, grid header with a
+              centered step segmented control (see design_handoff_
+              product_customizer/README.md). */}
+          <header
+            className="flex flex-col gap-2 shrink-0 px-4 py-3 md:h-14 md:grid md:grid-cols-[1fr_auto_1fr] md:items-center md:gap-3 md:py-0"
+            style={{ background: "rgba(255,255,255,0.8)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--pc-ink-100)" }}
+          >
             <div className="flex items-center justify-between gap-3 md:contents">
-              <div className="flex flex-col min-w-0">
-                <span className="font-serif text-lg leading-tight truncate">{product.name}</span>
-                <span className="text-xs text-muted truncate">
-                  {product.categoryName} · {product.supplierName}
-                </span>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => window.history.back()}
+                  aria-label="Back"
+                  className="h-8 w-8 rounded-full flex items-center justify-center shrink-0 transition-colors hover:bg-[var(--pc-ink-50)]"
+                  style={{ color: "var(--color-terracotta-dark)" }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="m15 18-6-6 6-6" />
+                  </svg>
+                </button>
+                <div className="flex flex-col min-w-0 leading-tight">
+                  <span className="font-serif text-[15px] truncate" style={{ color: "var(--pc-ink-950)" }}>
+                    {product.name}
+                  </span>
+                  <span className="text-xs truncate" style={{ color: "var(--pc-ink-500)" }}>
+                    {product.categoryName} · {product.supplierName}
+                  </span>
+                </div>
               </div>
               <MobileStepIndicator step={step} />
             </div>
-            <StepIndicator step={step} completedSteps={visitedSteps} onSelectStep={goToStep} />
-            <div className="hidden md:flex items-center gap-2 text-xs text-[#2E6B47]">
-              <span className="h-2 w-2 rounded-full bg-[#2E7D4F]" />
-              {saveStatus === "saving" ? "Saving…" : "Saved"}
+            <div className="hidden md:flex justify-self-center">
+              <StepIndicator step={step} completedSteps={visitedSteps} onSelectStep={goToStep} />
             </div>
-            <div className="flex items-center gap-1.5 shrink-0 justify-end">
+            <div className="flex items-center gap-1 shrink-0 justify-end">
+              <span className="hidden md:flex items-center gap-1.5 text-xs mr-2" style={{ color: "var(--pc-ink-500)" }}>
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--color-terracotta)" }} />
+                {saveStatus === "saving" ? "Saving…" : "Saved"}
+              </span>
               {step === "design" && (
                 <>
                   <button
@@ -2080,7 +2125,8 @@ export function ProductConfigurator({
                     onClick={undo}
                     disabled={!canUndo}
                     aria-label="Undo"
-                    className="h-11 w-11 rounded-lg border border-line flex items-center justify-center disabled:opacity-40"
+                    className="h-8 w-8 rounded-full flex items-center justify-center disabled:opacity-40 transition-colors hover:enabled:bg-[var(--pc-ink-50)]"
+                    style={{ color: "var(--pc-ink-600)" }}
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M9 14L4 9l5-5" />
@@ -2092,7 +2138,8 @@ export function ProductConfigurator({
                     onClick={redo}
                     disabled={!canRedo}
                     aria-label="Redo"
-                    className="h-11 w-11 rounded-lg border border-line flex items-center justify-center disabled:opacity-40"
+                    className="h-8 w-8 rounded-full flex items-center justify-center disabled:opacity-40 transition-colors hover:enabled:bg-[var(--pc-ink-50)]"
+                    style={{ color: "var(--pc-ink-600)" }}
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M15 14l5-5-5-5" />
@@ -2105,80 +2152,131 @@ export function ProductConfigurator({
               <button
                 type="button"
                 onClick={openPreviewModal}
-                className="h-11 px-4 rounded-lg border border-line text-sm font-medium hover:bg-cream"
+                aria-label="Preview"
+                className="h-8 w-8 rounded-full flex items-center justify-center transition-colors hover:bg-[var(--pc-ink-50)]"
+                style={{ color: "var(--pc-ink-600)" }}
               >
-                Preview
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
               </button>
             </div>
           </header>
 
           {step === "design" && (
             <>
-              {/* Desktop editor body */}
-              <div className="hidden md:flex h-[70vh] min-h-[560px]">
-                <ToolRail availableTools={availableTools} activeTool={activeTool} onSelectTool={(t) => (t === "layers" || t === "technique" ? setActiveTool(t) : selectElem(t as ElemKey))} />
-                <div className="w-[320px] shrink-0 border-r border-line overflow-y-auto p-5">
-                  {renderToolPanelContent()}
+              {/* Desktop editor body — iOS redesign layout: rail+panel on
+                  the left, stage+bottom row on the right (see
+                  design_handoff_product_customizer/README.md). The view
+                  tiles, print-area zone picker and price/CTA that used to
+                  live in a right-hand "Views" aside now sit in a row
+                  under the stage, with the Next button moved out of the
+                  page footer to sit there too. */}
+              <div className="hidden md:grid grid-cols-[380px_1fr] gap-3 p-3 h-[70vh] min-h-[560px]">
+                <div className="flex gap-3 min-h-0">
+                  <ToolRail availableTools={availableTools} activeTool={activeTool} onSelectTool={(t) => (t === "layers" || t === "technique" ? setActiveTool(t) : selectElem(t as ElemKey))} />
+                  <div
+                    className="flex-1 min-w-0 flex flex-col overflow-hidden bg-white"
+                    style={{ borderRadius: 20, border: "1px solid var(--pc-border-subtle)", boxShadow: "var(--pc-shadow-sm)" }}
+                  >
+                    <div className="flex-1 min-h-0 overflow-y-auto p-5">{renderToolPanelContent()}</div>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0 relative flex">
-                  {renderCanvas()}
-                </div>
-                <aside aria-label="Views" className="w-[128px] shrink-0 border-l border-line p-3 flex flex-col gap-3 overflow-y-auto">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-muted">Views</span>
-                  {product.images.map((img, i) => (
-                    <button
-                      key={img.id}
-                      onClick={() => setActiveImage(i)}
-                      className={`p-2 rounded-lg border flex flex-col items-center gap-1.5 text-xs ${
-                        i === activeImage ? "border-terracotta bg-cream" : "border-dashed border-line"
-                      }`}
-                    >
-                      <span className="relative h-[70px] w-full block">
-                        <Image src={img.url} alt="" fill className="object-contain" />
-                      </span>
-                      {i === 0 ? "Front" : `View ${i + 1}`}
-                    </button>
-                  ))}
-                  {product.aiRenderEnabled && (
-                    <button
-                      type="button"
-                      onClick={() => setShowAiViewModal(true)}
-                      className="p-2 rounded-lg border border-dashed border-gold flex flex-col items-center gap-1.5 text-xs"
-                    >
-                      <span className="relative h-[70px] w-full flex items-center justify-center text-gold">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <div className="flex flex-col gap-3 min-h-0">
+                  <div
+                    className="flex-1 min-h-0 relative flex overflow-hidden bg-white"
+                    style={{ borderRadius: 20, border: "1px solid var(--pc-border-subtle)", boxShadow: "var(--pc-shadow-sm)" }}
+                  >
+                    {renderCanvas()}
+                  </div>
+                  <div className="flex-none flex items-center gap-3">
+                    {product.images.map((img, i) => (
+                      <button
+                        key={img.id}
+                        onClick={() => setActiveImage(i)}
+                        className="w-24 h-24 shrink-0 flex flex-col items-center gap-1 text-xs p-1.5 box-border bg-white"
+                        style={{
+                          borderRadius: 16,
+                          boxShadow: "var(--pc-shadow-xs)",
+                          border: `2px solid ${i === activeImage ? "var(--color-terracotta)" : "transparent"}`,
+                          color: "var(--pc-ink-700)",
+                        }}
+                      >
+                        <span className="relative flex-1 w-full block">
+                          <Image src={img.url} alt="" fill className="object-contain rounded-[10px]" />
+                        </span>
+                        {i === 0 ? "Front" : `View ${i + 1}`}
+                      </button>
+                    ))}
+                    {product.aiRenderEnabled && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAiViewModal(true)}
+                        className="w-24 h-24 shrink-0 flex flex-col items-center justify-center gap-2 text-xs p-1.5 box-border bg-white"
+                        style={{ borderRadius: 16, boxShadow: "var(--pc-shadow-xs)", border: "2px solid transparent", color: "var(--color-terracotta-dark)" }}
+                      >
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18" />
                         </svg>
-                      </span>
-                      AI view{aiRenders.length > 0 ? ` (${aiRenders.length})` : ""}
-                    </button>
-                  )}
-                  {product.zones.length > 1 && (
-                    <div className="pt-2 border-t border-line flex flex-col gap-1.5">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">Print area</span>
-                      {product.zones.map((z, i) => {
-                        const isPrimary = i === 0;
-                        const isActive = z.id === activeZoneId;
-                        const isIncluded = isPrimary || selectedExtraZoneIds.has(z.id);
-                        return (
-                          <button
-                            key={z.id}
-                            type="button"
-                            onClick={() => (isPrimary ? switchActiveZone(z.id) : toggleExtraZone(z.id))}
-                            className={`px-2 py-1.5 rounded-lg text-[11px] border text-left ${
-                              isActive ? "border-dark bg-cream" : isIncluded ? "border-dark/60" : "border-line"
-                            }`}
-                          >
-                            {z.label}
-                            {!isPrimary && (
-                              <span className="text-muted ml-1">{isIncluded ? "✓" : z.extra_price > 0 ? `+${formatUSD(z.extra_price)}` : "+"}</span>
-                            )}
-                          </button>
-                        );
-                      })}
+                        AI view{aiRenders.length > 0 ? ` (${aiRenders.length})` : ""}
+                      </button>
+                    )}
+                    {product.zones.length > 1 && (
+                      <div className="flex flex-col gap-1 max-w-[220px]">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--pc-ink-500)" }}>
+                          Print area
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {product.zones.map((z, i) => {
+                            const isPrimary = i === 0;
+                            const isActive = z.id === activeZoneId;
+                            const isIncluded = isPrimary || selectedExtraZoneIds.has(z.id);
+                            return (
+                              <button
+                                key={z.id}
+                                type="button"
+                                onClick={() => (isPrimary ? switchActiveZone(z.id) : toggleExtraZone(z.id))}
+                                className="px-2 py-1 rounded-lg text-[11px] border text-left"
+                                style={{
+                                  borderColor: isActive ? "var(--pc-ink-950)" : isIncluded ? "var(--pc-ink-400)" : "var(--pc-ink-200)",
+                                  background: isActive ? "var(--pc-ink-100)" : "transparent",
+                                }}
+                              >
+                                {z.label}
+                                {!isPrimary && (
+                                  <span style={{ color: "var(--pc-ink-500)" }} className="ml-1">
+                                    {isIncluded ? "✓" : z.extra_price > 0 ? `+${formatUSD(z.extra_price)}` : "+"}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    <div className="ml-auto flex items-center gap-4">
+                      <div className="flex flex-col items-end leading-tight">
+                        <span className="font-serif text-[17px]" style={{ color: "var(--pc-ink-950)" }}>
+                          {formatUSD(unitPriceWithTechnique)}{" "}
+                          <span className="font-sans text-[13px]" style={{ color: "var(--pc-ink-500)" }}>
+                            / unit
+                          </span>
+                        </span>
+                        <span className="text-xs" style={{ color: "var(--pc-ink-500)" }}>
+                          {quantity} units{technique ? ` · ${technique.technique}` : ""}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => goToStep("options")}
+                        className="px-6 h-[46px] rounded-full text-sm font-medium bg-terracotta text-cream-light hover:bg-terracotta-dark transition-colors"
+                      >
+                        Next: Options
+                      </button>
                     </div>
-                  )}
-                </aside>
+                  </div>
+                </div>
               </div>
 
               {/* Mobile editor body (EDIT-02) */}
@@ -2192,7 +2290,9 @@ export function ProductConfigurator({
                 <ToolRail orientation="horizontal" availableTools={availableTools} activeTool={activeTool} onSelectTool={(t) => (t === "layers" || t === "technique" ? setActiveTool(t) : selectElem(t as ElemKey))} />
               </div>
 
-              <div className="p-4 border-t border-line flex justify-end">
+              {/* Desktop's Next button moved into the bottom row above,
+                  next to the price — this footer is mobile-only now. */}
+              <div className="p-4 border-t border-line flex justify-end md:hidden">
                 <button
                   type="button"
                   onClick={() => goToStep("options")}

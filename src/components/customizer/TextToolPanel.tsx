@@ -4,6 +4,7 @@ import { useState } from "react";
 import { TEXT_FONTS, textFontStyle } from "@/lib/textFonts";
 import type { TextAlign, TextStyle } from "./types";
 import { ColorPicker } from "./ColorPicker";
+import { SegmentedControl } from "./SegmentedControl";
 
 // The 6 existing fonts' categories, for the filter chips (EDIT-07) — kept
 // here rather than in textFonts.ts since it's purely a UI grouping, not
@@ -63,35 +64,44 @@ export function TextToolPanel({
   const visibleFonts = TEXT_FONTS.filter((f) => category === "all" || FONT_CATEGORIES[f.id] === category);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h2 className="font-serif text-2xl">{title}</h2>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h2 className="font-serif text-[22px]" style={{ color: "var(--pc-ink-950)" }}>
+          {title}
+        </h2>
       </div>
 
       {textEditable && onChangeText && (
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="text-tool-content" className="text-xs uppercase tracking-wide text-muted">
-            Text
-          </label>
-          <textarea
-            id="text-tool-content"
-            value={text}
-            rows={maxLines ?? 2}
-            onChange={(e) => {
-              const capped = e.target.value
-                .split("\n")
-                .slice(0, maxLines ?? 2)
-                .map((line) => (maxChars ? line.slice(0, maxChars) : line))
-                .join("\n");
-              onChangeText(capped);
-            }}
-            className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark resize-none"
-          />
-        </div>
+        <textarea
+          id="text-tool-content"
+          aria-label="Text"
+          value={text}
+          rows={maxLines ?? 2}
+          onChange={(e) => {
+            const capped = e.target.value
+              .split("\n")
+              .slice(0, maxLines ?? 2)
+              .map((line) => (maxChars ? line.slice(0, maxChars) : line))
+              .join("\n");
+            onChangeText(capped);
+          }}
+          className="w-full min-h-[72px] rounded-xl border-[1.5px] px-3.5 py-3 text-[15px] resize-none outline-none transition-colors"
+          style={{ borderColor: "var(--pc-ink-200)", background: "var(--pc-ink-50)", color: "var(--pc-ink-950)" }}
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = "var(--color-terracotta)";
+            e.currentTarget.style.background = "#fff";
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = "var(--pc-ink-200)";
+            e.currentTarget.style.background = "var(--pc-ink-50)";
+          }}
+        />
       )}
 
       <div className="flex flex-col gap-2">
-        <span className="text-xs uppercase tracking-wide text-muted">Font</span>
+        <span className="text-[11px] tracking-[0.14em] uppercase" style={{ color: "var(--pc-ink-500)" }}>
+          Font
+        </span>
         <div className="flex gap-1.5 flex-wrap">
           {CATEGORY_LABELS.map((c) => (
             <button
@@ -99,9 +109,11 @@ export function TextToolPanel({
               type="button"
               onClick={() => setCategory(c.id)}
               aria-pressed={category === c.id}
-              className={`px-2.5 py-1.5 rounded-full text-xs border ${
-                category === c.id ? "border-dark bg-dark text-cream-light" : "border-line text-muted"
-              }`}
+              className="h-[30px] px-3 rounded-full text-[13px] transition-colors"
+              style={{
+                background: category === c.id ? "var(--pc-ink-950)" : "var(--pc-ink-50)",
+                color: category === c.id ? "#fff" : "var(--pc-ink-700)",
+              }}
             >
               {c.label}
             </button>
@@ -114,12 +126,16 @@ export function TextToolPanel({
               type="button"
               onClick={() => onChangeFont(f.id)}
               aria-pressed={font === f.id}
-              className={`rounded-lg border px-3 py-2 text-left overflow-hidden ${
-                font === f.id ? "border-dark bg-cream" : "border-line"
-              }`}
+              className="h-[60px] rounded-xl border-2 px-2.5 py-2 text-left overflow-hidden flex flex-col justify-between"
+              style={{
+                borderColor: font === f.id ? "var(--color-terracotta)" : "transparent",
+                background: font === f.id ? "var(--pc-ink-50)" : "var(--pc-ink-50)",
+              }}
             >
-              <span className="block text-[9px] uppercase tracking-wide text-muted">{f.label}</span>
-              <span className="block truncate text-lg leading-tight" style={textFontStyle(f.id)}>
+              <span className="block text-[10px] tracking-[0.1em] uppercase" style={{ color: "var(--pc-ink-500)" }}>
+                {f.label}
+              </span>
+              <span className="block truncate text-[17px] leading-tight" style={{ ...textFontStyle(f.id), color: "var(--pc-ink-950)" }}>
                 {previewText}
               </span>
             </button>
@@ -127,41 +143,47 @@ export function TextToolPanel({
         </div>
       </div>
 
-      <div className="flex gap-3">
-        <div className="flex-1 flex flex-col gap-1.5">
-          <span className="text-xs uppercase tracking-wide text-muted">Size</span>
-          <div className="flex items-center border border-line rounded-lg h-11">
-            <button type="button" aria-label="Decrease size" onClick={() => onStepSize(-1)} className="w-11 h-full text-lg text-dark">
-              −
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-2">
+          <span className="text-[11px] tracking-[0.14em] uppercase" style={{ color: "var(--pc-ink-500)" }}>
+            Size
+          </span>
+          <div className="flex items-center p-0.5 gap-0.5 rounded-[9px] h-9" style={{ background: "rgba(118,118,128,0.12)" }}>
+            <button type="button" aria-label="Decrease size" onClick={() => onStepSize(-1)} className="w-8 h-8 rounded-[7px] grid place-items-center" style={{ color: "var(--pc-ink-700)" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                <path d="M5 12h14" />
+              </svg>
             </button>
-            <span className="flex-1 text-center text-sm">{sizeCm != null ? `${sizeCm.toFixed(1)} cm` : "—"}</span>
-            <button type="button" aria-label="Increase size" onClick={() => onStepSize(1)} className="w-11 h-full text-lg text-dark">
-              +
+            <span className="flex-1 text-center text-[13px] tabular-nums" style={{ color: "var(--pc-ink-950)" }}>
+              {sizeCm != null ? `${sizeCm.toFixed(1)} cm` : "—"}
+            </span>
+            <button type="button" aria-label="Increase size" onClick={() => onStepSize(1)} className="w-8 h-8 rounded-[7px] grid place-items-center" style={{ color: "var(--pc-ink-700)" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                <path d="M5 12h14M12 5v14" />
+              </svg>
             </button>
           </div>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-xs uppercase tracking-wide text-muted">Align</span>
-          <div className="flex border border-line rounded-lg h-11 overflow-hidden">
-            {(["left", "center", "right"] as TextAlign[]).map((a) => (
-              <button
-                key={a}
-                type="button"
-                aria-label={a[0].toUpperCase() + a.slice(1)}
-                aria-pressed={style.align === a}
-                onClick={() => onChangeStyle({ ...style, align: a })}
-                className={`w-10 flex items-center justify-center ${
-                  style.align === a ? "bg-[#EEE9FF] text-[#4520B8]" : "text-muted"
-                }`}
-              >
+        <div className="flex flex-col gap-2">
+          <span className="text-[11px] tracking-[0.14em] uppercase" style={{ color: "var(--pc-ink-500)" }}>
+            Align
+          </span>
+          <SegmentedControl
+            height={32}
+            value={style.align}
+            onChange={(a) => onChangeStyle({ ...style, align: a })}
+            options={(["left", "center", "right"] as TextAlign[]).map((a) => ({
+              id: a,
+              ariaLabel: a[0].toUpperCase() + a.slice(1),
+              label: (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                   {a === "left" && <path d="M4 6h16M4 12h10M4 18h14" />}
                   {a === "center" && <path d="M4 6h16M7 12h10M5 18h14" />}
                   {a === "right" && <path d="M4 6h16M10 12h10M6 18h14" />}
                 </svg>
-              </button>
-            ))}
-          </div>
+              ),
+            }))}
+          />
         </div>
       </div>
 

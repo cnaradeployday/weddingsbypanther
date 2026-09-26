@@ -27,16 +27,20 @@ export function IconElementPanel<T extends { id: string; label: string }>({
   allowedColors?: string[];
 }) {
   return (
-    <div className="flex flex-col gap-6">
-      <h2 className="font-serif text-2xl">{title}</h2>
+    <div className="flex flex-col gap-4">
+      <h2 className="font-serif text-[22px]" style={{ color: "var(--pc-ink-950)" }}>
+        {title}
+      </h2>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
           onClick={() => onSelect("")}
           aria-pressed={selectedId === ""}
-          className={`h-14 w-16 rounded-lg border flex items-center justify-center text-[9px] font-medium shrink-0 ${
-            selectedId === "" ? "border-dark bg-dark text-cream-light" : "border-line text-muted"
-          }`}
+          className="h-14 w-16 rounded-2xl flex items-center justify-center text-[9px] font-medium shrink-0 transition-colors"
+          style={{
+            background: selectedId === "" ? "var(--pc-ink-950)" : "var(--pc-ink-50)",
+            color: selectedId === "" ? "#fff" : "var(--pc-ink-500)",
+          }}
         >
           None
         </button>
@@ -48,9 +52,12 @@ export function IconElementPanel<T extends { id: string; label: string }>({
             onClick={() => onSelect(opt.id)}
             aria-pressed={selectedId === opt.id}
             aria-label={opt.label}
-            className={`h-14 w-16 rounded-lg border flex items-center justify-center shrink-0 ${
-              selectedId === opt.id ? "border-dark bg-cream" : "border-line"
-            }`}
+            className="h-14 w-16 rounded-2xl border-2 flex items-center justify-center shrink-0"
+            style={{
+              borderColor: selectedId === opt.id ? "var(--color-terracotta)" : "transparent",
+              background: "var(--pc-ink-50)",
+              color: "var(--pc-ink-950)",
+            }}
           >
             {renderIcon(opt.id, "currentColor")}
           </button>
