@@ -38,7 +38,6 @@ import {
   type Point,
 } from "@/lib/quadGeometry";
 import type { RelatedProduct } from "@/lib/queries";
-import { AiRenderPanel } from "./AiRenderPanel";
 import { RelatedProductsRail } from "./RelatedProductsRail";
 import { QuoteRequestForm } from "./QuoteRequestForm";
 import { useDesignReducer } from "./customizer/useDesignReducer";
@@ -206,10 +205,8 @@ function makeDefaultDesign(isMerchandise: boolean, zoneForDefaults?: Zone): Desi
 
 export function ProductConfigurator({
   product,
-  unlimitedRenders = false,
   relatedProducts = [],
 }: {
-  unlimitedRenders?: boolean;
   relatedProducts?: RelatedProduct[];
   product: {
     id: string;
@@ -321,7 +318,10 @@ export function ProductConfigurator({
   // Which tool's panel is open (EDIT-01) and which element is selected on
   // the canvas (EDIT-04) — kept separate from `design` since neither is
   // part of the undoable design itself.
-  const [activeTool, setActiveTool] = useState<ToolId | null>(null);
+  // Opens straight into the Logo panel — it's the first tool in the rail
+  // and the one nearly every order needs, so showing "Pick a tool to start
+  // editing" first was an extra click for no reason.
+  const [activeTool, setActiveTool] = useState<ToolId | null>(product.personalizable ? "logo" : null);
   const [activeElem, setActiveElem] = useState<ElemKey | null>(null);
   // Brief, non-blocking feedback shown near an element's size tag while
   // resizing hits the print area's limit (BUG-10) or a rotation had to
@@ -457,7 +457,6 @@ export function ProductConfigurator({
   const [aiRenders, setAiRenders] = useState<
     { imageDataUrl: string; contextImageDataUrl: string | null; zoneId: string }[]
   >([]);
-  const [showAiViewModal, setShowAiViewModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
 
   // Which print area the shopper is currently viewing/personalizing. The
@@ -999,28 +998,38 @@ export function ProductConfigurator({
   const variant = product.variants.find((v) => v.id === variantId);
 
   const singleColorFillMode = technique?.singleColorInk ? technique.singleColorFillMode ?? "silhouette" : null;
+  // Laser engraving burns/etches the material itself — there's no ink, so
+  // the mark's color is fixed by the material, not something the customer
+  // can choose (unlike screen print, foil stamp, etc., which use an actual
+  // pigment/foil that could be special-ordered in another color). Report
+  // "if you pick laser, it shouldn't offer a suggested pantone or hex."
+  const canChooseInkColor = !!technique?.singleColorInk && technique.technique !== "Laser engrave";
+  const effectiveInkColor =
+    technique?.singleColorInk && !canChooseInkColor ? techniqueInkColor(technique.technique) : design.inkColor;
   const pantoneMatch = useMemo(
-    () => (technique?.singleColorInk ? nearestPantone(design.inkColor) : null),
-    [technique?.singleColorInk, design.inkColor]
+    () => (canChooseInkColor ? nearestPantone(design.inkColor) : null),
+    [canChooseInkColor, design.inkColor]
   );
   // Under a single-color-ink technique, one ink prints/etches everything —
-  // every element shares the same customer-chosen color, offered as the
-  // sole allowed color rather than letting each element diverge.
-  const singleAllowedColor = technique?.singleColorInk ? [design.inkColor] : undefined;
-  const effectiveNamesColor = technique?.singleColorInk ? design.inkColor : design.namesStyle.color;
-  const effectiveDateColor = technique?.singleColorInk ? design.inkColor : design.dateStyle.color;
-  const effectiveMonogramColor = technique?.singleColorInk ? design.inkColor : design.monogramColor;
-  const effectiveFrameColor = technique?.singleColorInk ? design.inkColor : design.frameColor;
-  const effectiveQrColor = technique?.singleColorInk ? design.inkColor : design.qrColor;
+  // every element shares the same color, offered as the sole allowed color
+  // rather than letting each element diverge.
+  const singleAllowedColor = technique?.singleColorInk ? [effectiveInkColor] : undefined;
+  const effectiveNamesColor = technique?.singleColorInk ? effectiveInkColor : design.namesStyle.color;
+  const effectiveDateColor = technique?.singleColorInk ? effectiveInkColor : design.dateStyle.color;
+  const effectiveMonogramColor = technique?.singleColorInk ? effectiveInkColor : design.monogramColor;
+  const effectiveFrameColor = technique?.singleColorInk ? effectiveInkColor : design.frameColor;
+  const effectiveQrColor = technique?.singleColorInk ? effectiveInkColor : design.qrColor;
   const applyColorTextInput = useCallback(() => {
     const resolved = resolveColorInput(design.colorTextInput);
     if (resolved) setDesign((prev) => ({ ...prev, inkColor: resolved.hex }));
   }, [design.colorTextInput, setDesign]);
 
   // Shared between the Design step's Technique tool panel and (previously)
-  // the Options step — only single-color-ink techniques offer a color
-  // choice at all, since every other technique's ink/finish is fixed.
-  const inkColorSlot = technique?.singleColorInk ? (
+  // the Options step — only single-color-ink techniques that actually use
+  // a choosable ink (not laser engraving, see canChooseInkColor above)
+  // offer a color choice at all; every other technique's ink/finish/mark
+  // color is fixed.
+  const inkColorSlot = canChooseInkColor ? (
     <div>
       <label htmlFor="ink-color-input" className="text-xs uppercase tracking-wide text-muted block mb-2">
         Ink color
@@ -1065,7 +1074,7 @@ export function ProductConfigurator({
       return;
     }
     let cancelled = false;
-    recolorLogoToSolid(design.logoPreview, design.inkColor)
+    recolorLogoToSolid(design.logoPreview, effectiveInkColor)
       .then((url) => {
         if (!cancelled) setLogoSilhouetteUrl(url);
       })
@@ -1075,7 +1084,7 @@ export function ProductConfigurator({
     return () => {
       cancelled = true;
     };
-  }, [design.logoPreview, design.inkColor, singleColorFillMode]);
+  }, [design.logoPreview, effectiveInkColor, singleColorFillMode]);
 
   const effectiveLogoDataUrl =
     singleColorFillMode === "silhouette" && logoSilhouetteUrl ? logoSilhouetteUrl : design.logoPreview;
@@ -1341,8 +1350,8 @@ export function ProductConfigurator({
         hasLogo: !!areaDesign.logoFile,
         renderUrl: result.renderUrl,
         snapshotUrl: result.snapshotUrl,
-        inkColorHex: technique?.singleColorInk ? areaDesign.inkColor : undefined,
-        inkPantoneCode: technique?.singleColorInk ? nearestPantone(areaDesign.inkColor)?.code : undefined,
+        inkColorHex: technique?.singleColorInk ? (canChooseInkColor ? areaDesign.inkColor : techniqueInkColor(technique.technique)) : undefined,
+        inkPantoneCode: canChooseInkColor ? nearestPantone(areaDesign.inkColor)?.code : undefined,
         namesColor: printedColor(areaDesign, "names", areaDesign.namesStyle.color),
         dateColor: printedColor(areaDesign, "date", areaDesign.dateStyle.color),
         monogramColor: printedColor(areaDesign, "monogram", areaDesign.monogramColor),
@@ -1406,8 +1415,8 @@ export function ProductConfigurator({
             renderUrl: primaryResult.renderUrl,
             renderContextUrl: primaryResult.renderContextUrl,
             snapshotUrl: primaryResult.snapshotUrl,
-            inkColorHex: technique?.singleColorInk ? primaryDesign.inkColor : undefined,
-            inkPantoneCode: technique?.singleColorInk ? nearestPantone(primaryDesign.inkColor)?.code : undefined,
+            inkColorHex: technique?.singleColorInk ? (canChooseInkColor ? primaryDesign.inkColor : techniqueInkColor(technique.technique)) : undefined,
+            inkPantoneCode: canChooseInkColor ? nearestPantone(primaryDesign.inkColor)?.code : undefined,
             namesColor: printedColor(primaryDesign, "names", primaryDesign.namesStyle.color),
             dateColor: printedColor(primaryDesign, "date", primaryDesign.dateStyle.color),
             monogramColor: printedColor(primaryDesign, "monogram", primaryDesign.monogramColor),
@@ -1499,9 +1508,9 @@ export function ProductConfigurator({
   // engraved look, etc.), so it needs picking before/while designing.
   const availableTools: ToolId[] = product.personalizable
     ? ([
+        "logo",
         ...(product.techniques.length > 0 ? (["technique"] as ToolId[]) : []),
         "names",
-        "logo",
         "frame",
         "monogram",
         "qr",
@@ -1515,26 +1524,26 @@ export function ProductConfigurator({
   // purchaseFlowValidation.ts for why "element outside the print area,"
   // "color not allowed for the technique," and "QR below minimum size"
   // aren't separately re-checked here.
-  const [checklist, setChecklistRaw] = useState<{ namesCorrect: boolean; insidePrintArea: boolean; logoCorrect: boolean; forDesign: Design }>(
-    () => ({ namesCorrect: false, insidePrintArea: false, logoCorrect: false, forDesign: design })
-  );
+  // Was three separate items (names, logo, print area) — merged into one
+  // per request, to cut down on scrolling on the Confirmación step.
+  const [checklist, setChecklistRaw] = useState<{ confirmed: boolean; forDesign: Design }>(() => ({
+    confirmed: false,
+    forDesign: design,
+  }));
   // Derived, not stored: as soon as `design` changes to a new object (any
   // real edit — useDesignReducer always returns a fresh object), the stored
-  // checklist no longer matches `forDesign`, so both items read as
-  // unconfirmed again — FLOW-06: "If the design changes after the items
-  // were checked... the checks are cleared." No effect needed to reset
-  // anything; this recomputes every render.
-  const checklistCurrent =
-    checklist.forDesign === design
-      ? checklist
-      : { namesCorrect: false, insidePrintArea: false, logoCorrect: false, forDesign: design };
-  const toggleChecklistItem = (item: "namesCorrect" | "insidePrintArea" | "logoCorrect") => {
+  // checklist no longer matches `forDesign`, so it reads as unconfirmed
+  // again — FLOW-06: "If the design changes after the items were checked...
+  // the checks are cleared." No effect needed to reset anything; this
+  // recomputes every render.
+  const checklistCurrent = checklist.forDesign === design ? checklist : { confirmed: false, forDesign: design };
+  const toggleChecklistItem = () => {
     setChecklistRaw((prev) => {
-      const base = prev.forDesign === design ? prev : { namesCorrect: false, insidePrintArea: false, logoCorrect: false, forDesign: design };
-      return { ...base, [item]: !base[item] };
+      const base = prev.forDesign === design ? prev : { confirmed: false, forDesign: design };
+      return { ...base, confirmed: !base.confirmed };
     });
   };
-  const checklistConfirmed = checklistCurrent.namesCorrect && checklistCurrent.insidePrintArea && checklistCurrent.logoCorrect;
+  const checklistConfirmed = checklistCurrent.confirmed;
 
   const hiddenPresentElements = (["logo", "monogram", "frame", "names", "date", "qr"] as ElemKey[])
     .filter((k) => design.hidden[k] && isElemPresent(design, k))
@@ -2052,43 +2061,6 @@ export function ProductConfigurator({
         <PreviewModal photos={previewPhotos} aiRenders={previewAiRenders} onClose={() => setShowPreviewModal(false)} />
       )}
 
-      {showAiViewModal && product.aiRenderEnabled && (
-        <div role="dialog" aria-modal="true" aria-label="AI render preview" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl overflow-hidden max-h-[85vh] overflow-y-auto">
-            <div className="flex justify-end p-2">
-              <button
-                type="button"
-                onClick={() => setShowAiViewModal(false)}
-                aria-label="Close"
-                className="h-11 w-11 flex items-center justify-center text-lg text-muted"
-              >
-                ×
-              </button>
-            </div>
-            <div className="px-4 pb-4">
-              <AiRenderPanel
-                key={activeZoneId}
-                productId={product.id}
-                zoneId={zone?.id}
-                names={design.names}
-                date={design.date}
-                monogram={design.monogram}
-                frame={design.frame}
-                textFont={design.textFont}
-                logoFile={design.logoFile}
-                positions={design.positions}
-                elemScale={design.elemScale}
-                elemRotationOffset={design.elemRotationOffset}
-                images={product.images}
-                defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
-                unlimited={unlimitedRenders}
-                onGenerated={handleAiGenerated}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
       {product.personalizable ? (
         <div
           className="flex flex-col overflow-hidden"
@@ -2225,19 +2197,6 @@ export function ProductConfigurator({
                         {i === 0 ? "Front" : `View ${i + 1}`}
                       </button>
                     ))}
-                    {product.aiRenderEnabled && (
-                      <button
-                        type="button"
-                        onClick={() => setShowAiViewModal(true)}
-                        className="w-24 h-24 shrink-0 flex flex-col items-center justify-center gap-2 text-xs p-1.5 box-border bg-white"
-                        style={{ borderRadius: 16, boxShadow: "var(--pc-shadow-xs)", border: "2px solid transparent", color: "var(--color-terracotta-dark)" }}
-                      >
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18" />
-                        </svg>
-                        AI view{aiRenders.length > 0 ? ` (${aiRenders.length})` : ""}
-                      </button>
-                    )}
                     {product.zones.length > 1 && (
                       <div className="flex flex-col gap-1 max-w-[220px]">
                         <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--pc-ink-500)" }}>
@@ -2354,11 +2313,7 @@ export function ProductConfigurator({
                   total={total}
                   issues={validationIssues}
                   onFixInDesign={fixInDesign}
-                  checklist={{
-                    namesCorrect: checklistCurrent.namesCorrect,
-                    insidePrintArea: checklistCurrent.insidePrintArea,
-                    logoCorrect: checklistCurrent.logoCorrect,
-                  }}
+                  checklist={{ confirmed: checklistCurrent.confirmed }}
                   onToggleChecklistItem={toggleChecklistItem}
                   technique={technique?.technique ?? null}
                   namesValid={namesValid}
@@ -2368,28 +2323,6 @@ export function ProductConfigurator({
                   sampleAdded={sampleAdded}
                   onAddToCart={handleAddToCart}
                   onAddSample={handleAddSample}
-                  aiRenderSlot={
-                    product.aiRenderEnabled ? (
-                      <AiRenderPanel
-                        key={activeZoneId}
-                        productId={product.id}
-                        zoneId={zone?.id}
-                        names={design.names}
-                        date={design.date}
-                        monogram={design.monogram}
-                        frame={design.frame}
-                        textFont={design.textFont}
-                        logoFile={design.logoFile}
-                        positions={design.positions}
-                        elemScale={design.elemScale}
-                        elemRotationOffset={design.elemRotationOffset}
-                        images={product.images}
-                        defaultImageId={zone?.image_id ?? product.images[0]?.id ?? null}
-                        unlimited={unlimitedRenders}
-                        onGenerated={handleAiGenerated}
-                      />
-                    ) : null
-                  }
                 />
                 {isMerchandise && (
                   <div className="mt-6">
@@ -2567,6 +2500,8 @@ export function ProductConfigurator({
           sizeLabel={sizeLabelWH(logoWidthPx, logoWidthPx)}
           detectedColors={detectedColors}
           processing={removingBackground}
+          selectedInkColor={canChooseInkColor ? design.inkColor : null}
+          onSelectInkColor={canChooseInkColor ? (hex) => setDesign((prev) => ({ ...prev, inkColor: hex, colorTextInput: hex })) : undefined}
         />
       );
     }
@@ -2669,11 +2604,17 @@ function AdjustHandles({
 }) {
   const expandX = expandBy?.x ?? 0;
   const expandY = expandBy?.y ?? 0;
+  // Was h-5 w-5 (20px) — a short text box (e.g. a single line of "names")
+  // leaves very little room around its edges to grab a 20px circle
+  // precisely, unlike a large logo image where the same handle has lots of
+  // surrounding clearance. Bumped to 28px and the centering offset (half
+  // the handle size) updated to match, so the handle still centers exactly
+  // on the corner.
   const corner =
-    "absolute h-5 w-5 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-nwse-resize touch-none pointer-events-auto";
-  const cornerOffset = 10 + expandX;
-  const cornerOffsetY = 10 + expandY;
-  const rotateOffset = 32 + expandY;
+    "absolute h-7 w-7 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-nwse-resize touch-none pointer-events-auto";
+  const cornerOffset = 14 + expandX;
+  const cornerOffsetY = 14 + expandY;
+  const rotateOffset = 36 + expandY;
   return (
     <>
       <div className="absolute rounded-sm border border-dashed border-terracotta pointer-events-none" style={{ inset: `${-expandY}px ${-expandX}px` }} />
