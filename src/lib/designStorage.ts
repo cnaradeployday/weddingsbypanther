@@ -41,6 +41,11 @@ export type SavedZoneDesign = {
   logoFile: File | null;
   logoPreview: string | null;
   logoOriginalPreview: string | null;
+  // A small (~96px) downscaled copy of logoPreview, generated alongside it
+  // — lets a versions/drafts list show the actual logo (not just the names
+  // text) without loading every version's full-resolution upload just to
+  // list them (see SavedDesignSummary below).
+  logoThumbnail?: string | null;
   logoRemoveWhiteMode: "never" | "background" | "all";
   inkColor: string;
   colorTextInput: string;
@@ -65,6 +70,11 @@ export type SavedDesign = {
   variantId: string;
   quantity: number;
   zones: Record<string, SavedZoneDesign>;
+  // Set only by an explicit "Save Draft" (each save creates its own new,
+  // separate version — see ProductConfigurator.tsx's handleSaveDraft).
+  // Left unset by the continuous background autosave, same as every
+  // existing version saved before this field existed.
+  draftName?: string;
 };
 
 // Lightweight metadata for a "pick a saved design" list (FLOW-02) — doesn't
@@ -84,6 +94,11 @@ export type SavedDesignSummary = {
   textFont: string;
   namesColor: string;
   namesPosition: SavedElemPos;
+  // "" for an autosaved (unnamed) session — the recovery/drafts list falls
+  // back to the design's own names, same as before this field existed.
+  draftName: string;
+  logoThumbnail: string | null;
+  logoPosition: SavedElemPos;
 };
 
 export interface DesignStorageBackend {
@@ -113,6 +128,9 @@ function toSummary(design: SavedDesign): SavedDesignSummary {
     textFont: primary?.textFont ?? "",
     namesColor: primary?.namesStyle.color ?? "#1a1a1a",
     namesPosition: primary?.positions.names ?? { x: 50, y: 65 },
+    draftName: design.draftName ?? "",
+    logoThumbnail: primary?.logoThumbnail ?? null,
+    logoPosition: primary?.positions.logo ?? { x: 50, y: 35 },
   };
 }
 

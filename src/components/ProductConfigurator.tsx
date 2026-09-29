@@ -65,6 +65,8 @@ import { useKeyboardShortcuts } from "./customizer/useKeyboardShortcuts";
 import { KeyboardShortcutsHelp } from "./customizer/KeyboardShortcutsHelp";
 import { StepIndicator, MobileStepIndicator, type FlowStep } from "./customizer/StepIndicator";
 import { RecoveryModal } from "./customizer/RecoveryModal";
+import { SaveDraftModal } from "./customizer/SaveDraftModal";
+import { generateThumbnail } from "@/lib/imageThumbnail";
 import { PreviewModal, type PreviewPhoto, type PreviewAiRender } from "./customizer/PreviewModal";
 import { ConfirmationStep } from "./customizer/ConfirmationStep";
 import { ConfirmationPreview } from "./customizer/ConfirmationPreview";
@@ -114,7 +116,10 @@ const SAMPLE_FEE = 50;
 // How much to amplify the raw mouse-drag gesture for the resize/rotate
 // handles — see the comment at their pointermove handler. 1 = the old,
 // unamplified 1:1 behavior reported as needing more drag than the screen
-// has room for.
+// has room for. Resize now applies this as a LINEAR gain on the size-ratio
+// deviation from 1 (previously an exponent, which overshot wildly for a
+// small element and then froze — see the resize pointermove comment);
+// rotate still applies it directly to the swept angle.
 const RESIZE_SENSITIVITY = 2.2;
 // Kept coming back as still not sensitive enough (1.8, then 3.2) — for a
 // small element the corner/rotate handle sits close to center, so the raw
@@ -566,6 +571,85 @@ export function ProductConfigurator({
     else handleStartNewVersion();
   }, [recoveryVersions, handleContinueVersion, handleStartNewVersion]);
 
+  // On-demand "My Drafts" — the same saved-versions list FLOW-02's recovery
+  // modal shows automatically on load, but reachable any time from the
+  // header, and re-fetched fresh on each open (drafts saved since mount
+  // must show up too).
+  const [showDraftsModal, setShowDraftsModal] = useState(false);
+  const [draftsVersions, setDraftsVersions] = useState<SavedDesignSummary[]>([]);
+  const openDraftsModal = useCallback(() => {
+    designStorage.list(product.id).then(setDraftsVersions);
+    setShowDraftsModal(true);
+  }, [product.id]);
+  const handleContinueFromDrafts = useCallback(
+    async (chosenVersionId: string) => {
+      const saved = await designStorage.load(product.id, chosenVersionId);
+      if (saved) applyVersion(saved);
+      setVersionId(chosenVersionId);
+      setShowDraftsModal(false);
+    },
+    [applyVersion, product.id]
+  );
+  const handleStartNewFromDrafts = useCallback(() => {
+    setVersionId(crypto.randomUUID());
+    setShowDraftsModal(false);
+  }, []);
+
+  // A small downscaled copy of the active zone's logo, kept in sync with
+  // logoPreview and carried into every save (autosave and explicit "Save
+  // Draft" alike) — see designStorage.ts's SavedZoneDesign.logoThumbnail.
+  // Regenerated only when the logo itself changes, not on every debounced
+  // save, since most saves are triggered by an unrelated edit.
+  const [logoThumbnail, setLogoThumbnail] = useState<string | null>(null);
+  useEffect(() => {
+    if (!design.logoPreview) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLogoThumbnail(null);
+      return;
+    }
+    let cancelled = false;
+    generateThumbnail(design.logoPreview, 96)
+      .then((thumb) => {
+        if (!cancelled) setLogoThumbnail(thumb);
+      })
+      .catch(() => {
+        if (!cancelled) setLogoThumbnail(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [design.logoPreview]);
+
+  // "Save Draft" — unlike the continuous autosave (which keeps writing to
+  // this session's own `versionId`), each explicit save creates its own new,
+  // separate, named version — a customer with a blue-logo and a red-logo
+  // variant of the same product can keep both, side by side, in My Drafts.
+  const [showSaveDraftModal, setShowSaveDraftModal] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const handleSaveDraft = useCallback(
+    async (draftName: string) => {
+      setSavingDraft(true);
+      try {
+        await designStorage.save({
+          productId: product.id,
+          versionId: crypto.randomUUID(),
+          updatedAt: Date.now(),
+          activeZoneId,
+          selectedExtraZoneIds: Array.from(selectedExtraZoneIds),
+          techniqueId,
+          variantId,
+          quantity,
+          zones: { ...zoneDesignsRef.current, [activeZoneId]: { ...design, logoThumbnail } } as never,
+          draftName,
+        });
+        setShowSaveDraftModal(false);
+      } finally {
+        setSavingDraft(false);
+      }
+    },
+    [product.id, activeZoneId, selectedExtraZoneIds, techniqueId, variantId, quantity, design, logoThumbnail]
+  );
+
   // BUG-01 + FLOW-02: on mount, list every saved version for this product.
   // None → this is a first visit, mint a fresh version id silently (today's
   // behavior). One or more → show the recovery modal instead of silently
@@ -617,12 +701,12 @@ export function ProductConfigurator({
           techniqueId,
           variantId,
           quantity,
-          zones: { ...zoneDesignsRef.current, [activeZoneId]: design } as never,
+          zones: { ...zoneDesignsRef.current, [activeZoneId]: { ...design, logoThumbnail } } as never,
         })
         .then(() => setSaveStatus("saved"));
     }, 600);
     return () => clearTimeout(timeout);
-  }, [product.personalizable, product.id, design, activeZoneId, selectedExtraZoneIds, techniqueId, variantId, quantity, versionId]);
+  }, [product.personalizable, product.id, design, activeZoneId, selectedExtraZoneIds, techniqueId, variantId, quantity, versionId, logoThumbnail]);
 
   const [zoneRef, zoneSize] = useElementSize<HTMLDivElement>();
   const [photoRef, photoSize] = useElementSize<HTMLDivElement>();
@@ -801,16 +885,22 @@ export function ProductConfigurator({
       if (state.mode === "resize") {
         const dist = Math.hypot(e.clientX - state.centerX, e.clientY - state.centerY);
         const rawRatio = state.startDist > 0 ? dist / state.startDist : 1;
-        // A small element (the common case — a logo a few dozen px across
-        // on screen) puts its corner handle close to the center, so the
-        // raw 1:1 distance ratio needed a mouse drag well beyond the
-        // visible canvas to grow it meaningfully ("no me alcanza la
-        // pantalla para estirar tanto"). Raising the ratio to a power > 1
-        // keeps it anchored at 1 (no movement = no change) while making
-        // the same physical drag produce a much bigger size change, in
-        // both directions (shrinking stays > 0 since ratio is always
-        // positive, unlike a linear amplification which can go negative).
-        const ratio = Math.pow(rawRatio, RESIZE_SENSITIVITY);
+        // Was Math.pow(rawRatio, RESIZE_SENSITIVITY) — for a small element
+        // (a corner handle only a few dozen screen px from the center),
+        // that exponential curve amplifies a completely ordinary drag into
+        // an enormous ratio (e.g. dragging 100px out from a 20px start
+        // distance is only a 6x raw ratio, but 6^2.2 ≈ 73x) — the resize
+        // instantly overshoots past the print area's real size limit and
+        // gets clamped (below) almost as soon as the drag starts, so
+        // nearly the entire gesture produces no further visible change at
+        // all ("el tirador... avanza una distancia mucho menor que el
+        // mouse... obliga a realizar varios arrastres"). A linear
+        // amplification of the ratio's *deviation* from 1 keeps the same
+        // anchor property (no movement = no change) without that runaway
+        // growth: a given amount of extra cursor travel always produces a
+        // proportional, bounded amount of extra size change, all the way
+        // out to the real limit, instead of saturating almost immediately.
+        const ratio = 1 + (rawRatio - 1) * RESIZE_SENSITIVITY;
         const uncapped = state.startScale * ratio;
         const next = Math.max(0.3, Math.min(state.maxScale, uncapped));
         setElemNotice(uncapped > state.maxScale ? { key: state.key, message: "Max size for this print area" } : null);
@@ -888,6 +978,21 @@ export function ProductConfigurator({
   );
   const monogramFontPx = (pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20) * design.elemScale.monogram;
   const frameFontPx = (pxPerMm ? Math.max(12, Math.min(32, pxPerMm * 6)) : 20) * design.elemScale.frame;
+  // On-screen CSS size for the frame/monogram boxes, as a percentage of the
+  // print-area zone rather than the raw px values above. The print-area
+  // guide rectangle resizes with zoom purely via CSS (`width: ${zoomPct}%`
+  // on an ancestor, resolved synchronously by the browser), but
+  // frameFontPx/monogramFontPx are derived from `zoneSize`, a ResizeObserver
+  // -driven React state that updates on a LATER render than the zoom CSS
+  // change. For one or more frames after a zoom change, the frame/monogram
+  // box was sized from the *previous* zoom level's measurement while the
+  // guide rectangle had already resized — the frame appeared shifted
+  // relative to the print area. Expressing the box's size as a % of the
+  // same zone container the guide rectangle uses removes that gap: the
+  // browser resolves a CSS percentage against the container's real current
+  // size, not the possibly-stale `zoneSize` value used to compute it.
+  const framePct = zoneSize.width > 0 ? ((frameFontPx * 5) / zoneSize.width) * 100 : 25;
+  const monogramPct = zoneSize.width > 0 ? (monogramFontPx / zoneSize.width) * 100 : 12;
   const formattedDate = useMemo(() => formatPrintDate(design.date), [design.date]);
   const dateFontPx = fitTextFontSize(
     "0000000000",
@@ -1044,6 +1149,26 @@ export function ProductConfigurator({
   const effectiveMonogramColor = technique?.singleColorInk ? effectiveInkColor : design.monogramColor;
   const effectiveFrameColor = technique?.singleColorInk ? effectiveInkColor : design.frameColor;
   const effectiveQrColor = technique?.singleColorInk ? effectiveInkColor : design.qrColor;
+  // Same effective-color logic as the four consts above, but for an
+  // arbitrary zone's Design rather than only the currently-active one —
+  // used to build the server snapshot request for every zone/photo (the
+  // Confirmación preview and the cart snapshot), which previously sent no
+  // color at all and let the server fall back to a technique-derived
+  // near-black for everything, ignoring the customer's actual choices.
+  const effectiveColorsFor = useCallback(
+    (zoneDesign: Design) => {
+      const ink =
+        technique?.singleColorInk && !canChooseInkColor ? techniqueInkColor(technique.technique) : zoneDesign.inkColor;
+      return {
+        inkColor: ink,
+        namesColor: technique?.singleColorInk ? ink : zoneDesign.namesStyle.color,
+        dateColor: technique?.singleColorInk ? ink : zoneDesign.dateStyle.color,
+        monogramColor: technique?.singleColorInk ? ink : zoneDesign.monogramColor,
+        frameColor: technique?.singleColorInk ? ink : zoneDesign.frameColor,
+      };
+    },
+    [technique, canChooseInkColor]
+  );
   const applyColorTextInput = useCallback(() => {
     const resolved = resolveColorInput(design.colorTextInput);
     if (resolved) setDesign((prev) => ({ ...prev, inkColor: resolved.hex }));
@@ -1277,9 +1402,10 @@ export function ProductConfigurator({
     );
     if (!snapshotUrl && product.personalizable && hasContent) {
       try {
+        const areaColors = effectiveColorsFor(areaDesign);
         const logoDataUrl =
           areaDesign.logoPreview && singleColorFillMode === "silhouette"
-            ? await recolorLogoToSolid(areaDesign.logoPreview, areaDesign.inkColor).catch(() => areaDesign.logoPreview!)
+            ? await recolorLogoToSolid(areaDesign.logoPreview, areaColors.inkColor).catch(() => areaDesign.logoPreview!)
             : areaDesign.logoPreview ?? undefined;
         const zoneRow = product.zones.find((z) => z.id === zoneId);
         const res = await fetch("/api/personalization-snapshot", {
@@ -1289,10 +1415,16 @@ export function ProductConfigurator({
             productId: product.id,
             zoneId,
             imageId: zoneRow?.image_id ?? undefined,
+            technique: technique?.technique,
             names: areaDesign.names,
             date: areaDesign.date,
             monogram: areaDesign.monogram,
             frame: areaDesign.frame,
+            inkColor: areaColors.inkColor,
+            namesColor: areaColors.namesColor,
+            dateColor: areaColors.dateColor,
+            monogramColor: areaColors.monogramColor,
+            frameColor: areaColors.frameColor,
             textFont: areaDesign.textFont,
             logoDataUrl,
             positions: areaDesign.positions,
@@ -1619,6 +1751,7 @@ export function ProductConfigurator({
       if (!mappedZone) return { id: img.id, url: img.url, snapshotRequest: null };
       const zoneDesign =
         mappedZone.id === activeZoneId ? design : zoneDesignsRef.current[mappedZone.id] ?? makeDefaultDesign(isMerchandise, mappedZone);
+      const colors = effectiveColorsFor(zoneDesign);
       return {
         id: img.id,
         url: img.url,
@@ -1626,6 +1759,7 @@ export function ProductConfigurator({
           productId: product.id,
           zoneId: mappedZone.id,
           imageId: img.id,
+          technique: technique?.technique,
           names: zoneDesign.names,
           date: zoneDesign.date,
           monogram: zoneDesign.monogram,
@@ -1635,10 +1769,15 @@ export function ProductConfigurator({
           positions: zoneDesign.positions,
           elemScale: zoneDesign.elemScale,
           elemRotationOffsetDeg: zoneDesign.elemRotationOffset,
+          inkColor: colors.inkColor,
+          namesColor: colors.namesColor,
+          dateColor: colors.dateColor,
+          monogramColor: colors.monogramColor,
+          frameColor: colors.frameColor,
         },
       };
     });
-  }, [product.images, product.zones, product.id, activeZoneId, design, isMerchandise]);
+  }, [product.images, product.zones, product.id, activeZoneId, design, isMerchandise, technique, effectiveColorsFor]);
   const openPreviewModal = useCallback(() => {
     setPreviewPhotos(computePreviewPhotos());
     setShowPreviewModal(true);
@@ -1769,8 +1908,8 @@ export function ProductConfigurator({
                     style={{
                       left: `${design.positions.frame.x}%`,
                       top: `${design.positions.frame.y}%`,
-                      width: frameFontPx * 5,
-                      height: frameFontPx * 2.2,
+                      width: `${framePct}%`,
+                      aspectRatio: "5 / 2.2",
                       zIndex: activeElem === "frame" ? 100 : design.elemOrder.indexOf("frame"),
                       transform: `translate(-50%, -50%) rotate(${elemRotationDeg.frame}deg)`,
                     }}
@@ -1797,16 +1936,16 @@ export function ProductConfigurator({
                     style={{
                       left: `${design.positions.monogram.x}%`,
                       top: `${design.positions.monogram.y}%`,
-                      width: monogramFontPx,
-                      height: monogramFontPx,
+                      width: `${monogramPct}%`,
+                      aspectRatio: "1",
                       zIndex: activeElem === "monogram" ? 100 : design.elemOrder.indexOf("monogram"),
                       transform: `translate(-50%, -50%) rotate(${elemRotationDeg.monogram}deg)`,
                     }}
                   >
                     <svg
                       viewBox="0 0 24 24"
-                      width={monogramFontPx}
-                      height={monogramFontPx}
+                      width="100%"
+                      height="100%"
                       className="pointer-events-none"
                       dangerouslySetInnerHTML={{ __html: monogramSvgInner(design.monogram, effectiveMonogramColor) }}
                     />
@@ -2093,6 +2232,25 @@ export function ProductConfigurator({
         <PreviewModal photos={previewPhotos} aiRenders={previewAiRenders} onClose={() => setShowPreviewModal(false)} />
       )}
 
+      {showDraftsModal && (
+        <RecoveryModal
+          versions={draftsVersions}
+          zones={product.zones}
+          images={product.images}
+          techniques={product.techniques}
+          onContinue={handleContinueFromDrafts}
+          onStartNew={handleStartNewFromDrafts}
+          onClose={() => setShowDraftsModal(false)}
+          title="My Drafts"
+          continueLabel="Open"
+          startNewLabel="New design"
+        />
+      )}
+
+      {showSaveDraftModal && (
+        <SaveDraftModal saving={savingDraft} onCancel={() => setShowSaveDraftModal(false)} onConfirm={handleSaveDraft} />
+      )}
+
       {product.personalizable ? (
         <div
           className="flex flex-col overflow-hidden"
@@ -2167,6 +2325,32 @@ export function ProductConfigurator({
                     </svg>
                   </button>
                   <KeyboardShortcutsHelp />
+                  <button
+                    type="button"
+                    onClick={() => setShowSaveDraftModal(true)}
+                    aria-label="Save draft"
+                    title="Save draft"
+                    className="h-8 w-8 rounded-full flex items-center justify-center transition-colors hover:bg-[var(--pc-ink-50)]"
+                    style={{ color: "var(--pc-ink-600)" }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+                      <path d="M17 21v-8H7v8" />
+                      <path d="M7 3v5h8" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openDraftsModal}
+                    aria-label="My drafts"
+                    title="My drafts"
+                    className="h-8 w-8 rounded-full flex items-center justify-center transition-colors hover:bg-[var(--pc-ink-50)]"
+                    style={{ color: "var(--pc-ink-600)" }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+                    </svg>
+                  </button>
                 </>
               )}
               <button
@@ -2541,10 +2725,18 @@ export function ProductConfigurator({
               : (hex) =>
                   setDesign((prev) => {
                     const current = prev.selectedPantones ?? [];
-                    const exists = current.some((h) => h.toLowerCase() === hex.toLowerCase());
+                    // Compare by matched Pantone code, not raw hex — the
+                    // panel now groups detected colors by their shared
+                    // Pantone match (#30's "unificar el % de pantone"), so
+                    // two different source hexes that both resolve to the
+                    // same code must toggle as one entry, not two.
+                    const code = nearestPantone(hex)?.code;
+                    const exists = code ? current.some((h) => nearestPantone(h)?.code === code) : current.includes(hex);
                     return {
                       ...prev,
-                      selectedPantones: exists ? current.filter((h) => h.toLowerCase() !== hex.toLowerCase()) : [...current, hex],
+                      selectedPantones: exists
+                        ? current.filter((h) => (code ? nearestPantone(h)?.code !== code : h !== hex))
+                        : [...current, hex],
                     };
                   })
           }

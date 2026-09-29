@@ -196,7 +196,9 @@ export function ConfirmationStep({
               className={`px-4 py-2 rounded-full text-sm border flex items-center gap-1.5 ${quantity === q ? "bg-dark text-cream-light border-dark" : "border-line"}`}
             >
               {q}
-              <span className="text-[10px] uppercase tracking-wide opacity-80">{formatUSD(unitPrice * q)}</span>
+              <span className="text-[10px] uppercase tracking-wide opacity-80">
+                {formatUSD(unitPrice)}/ea · {formatUSD(unitPrice * q)}
+              </span>
               {q === popularQty && (
                 <span className={`text-[10px] uppercase tracking-wide ${quantity === q ? "text-cream-light/70" : "text-terracotta"}`}>Popular</span>
               )}

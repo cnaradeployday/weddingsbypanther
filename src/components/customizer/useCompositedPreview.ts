@@ -36,6 +36,7 @@ export function useCompositedPreview(entries: PreviewEntry[], activeKey: string)
         productId: req.productId,
         zoneId: req.zoneId,
         imageId: req.imageId,
+        technique: req.technique,
         names: req.names,
         date: req.date,
         monogram: req.monogram,
@@ -45,6 +46,11 @@ export function useCompositedPreview(entries: PreviewEntry[], activeKey: string)
         positions: req.positions,
         elemScale: req.elemScale,
         elemRotationOffsetDeg: req.elemRotationOffsetDeg,
+        inkColor: req.inkColor,
+        namesColor: req.namesColor,
+        dateColor: req.dateColor,
+        monogramColor: req.monogramColor,
+        frameColor: req.frameColor,
       }),
     })
       .then((res) => (res.ok ? res.json() : null))
