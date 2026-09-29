@@ -6,25 +6,18 @@ import type { TextAlign, TextStyle } from "./types";
 import { ColorPicker } from "./ColorPicker";
 import { SegmentedControl } from "./SegmentedControl";
 
-// The 6 existing fonts' categories, for the filter chips (EDIT-07) — kept
-// here rather than in textFonts.ts since it's purely a UI grouping, not
-// part of the font data itself; the 6 fonts and their ids are unchanged
-// from the original customizer.
-const FONT_CATEGORIES: Record<string, "script" | "serif" | "sans"> = {
-  greatvibes: "script",
-  parisienne: "script",
-  cormorant: "serif",
-  playfair: "serif",
-  ebgaramond: "serif",
-  montserrat: "sans",
-};
-
-const CATEGORY_LABELS: { id: "all" | "script" | "serif" | "sans"; label: string }[] = [
+const CATEGORY_LABELS: { id: "all" | "script" | "serif" | "sans" | "display"; label: string }[] = [
   { id: "all", label: "All" },
   { id: "script", label: "Script" },
   { id: "serif", label: "Serif" },
   { id: "sans", label: "Sans serif" },
+  { id: "display", label: "Display" },
 ];
+
+// The original 6 fonts, shown by default — "See more" reveals the rest
+// (26 total) so the picker doesn't open into one long scroll of fonts most
+// customers will never look at.
+const DEFAULT_VISIBLE_IDS = new Set(["cormorant", "playfair", "greatvibes", "montserrat", "ebgaramond", "parisienne"]);
 
 export function TextToolPanel({
   title,
@@ -59,9 +52,14 @@ export function TextToolPanel({
   maxChars?: number;
   maxLines?: number;
 }) {
-  const [category, setCategory] = useState<"all" | "script" | "serif" | "sans">("all");
+  const [category, setCategory] = useState<"all" | "script" | "serif" | "sans" | "display">("all");
+  // Starts expanded if the design's current font is one of the "See more"
+  // ones — e.g. a saved draft that already used Poppins shouldn't open this
+  // panel with its own selected font hidden behind a collapsed list.
+  const [expanded, setExpanded] = useState(() => !DEFAULT_VISIBLE_IDS.has(font));
   const previewText = text || "Amelia & Ravi";
-  const visibleFonts = TEXT_FONTS.filter((f) => category === "all" || FONT_CATEGORIES[f.id] === category);
+  const filteredFonts = TEXT_FONTS.filter((f) => category === "all" || f.category === category);
+  const visibleFonts = expanded ? filteredFonts : filteredFonts.filter((f) => DEFAULT_VISIBLE_IDS.has(f.id));
 
   return (
     <div className="flex flex-col gap-4">
@@ -141,6 +139,26 @@ export function TextToolPanel({
             </button>
           ))}
         </div>
+        {filteredFonts.length > visibleFonts.length && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="self-start text-[13px] font-medium underline underline-offset-2"
+            style={{ color: "var(--color-terracotta)" }}
+          >
+            See more fonts ({filteredFonts.length - visibleFonts.length})
+          </button>
+        )}
+        {expanded && (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="self-start text-[13px] font-medium underline underline-offset-2"
+            style={{ color: "var(--pc-ink-500)" }}
+          >
+            Show fewer fonts
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3">

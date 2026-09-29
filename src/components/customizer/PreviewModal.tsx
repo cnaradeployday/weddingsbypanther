@@ -10,8 +10,11 @@ import { toPreviewEntries, useCompositedPreview } from "./useCompositedPreview";
 // duplicate client-side rendering path — it's the pixel-accurate, already-
 // tested source of truth for "what does this look like on the real photo."
 // Shares that route's known gap (documented in the PR): it still reflects
-// the old 4-element model, so an independently-positioned frame, the QR
-// code, and per-element colors aren't part of the composited image yet.
+// the old 4-element model, so the QR code isn't part of the composited
+// image yet. Per-element colors ARE now forwarded (see snapshotRequest
+// below) — they used to be missing entirely, which made this preview show
+// frame/monogram in a technique-derived default instead of the customer's
+// actual chosen color.
 export type PreviewPhoto = {
   id: string;
   url: string;
@@ -22,6 +25,7 @@ export type PreviewPhoto = {
     productId: string;
     zoneId: string;
     imageId: string;
+    technique?: string;
     names: string;
     date: string;
     monogram: string;
@@ -31,6 +35,16 @@ export type PreviewPhoto = {
     positions: Record<string, { x: number; y: number }>;
     elemScale: Record<string, number>;
     elemRotationOffsetDeg: Record<string, number>;
+    // The customer's actual chosen/effective colors (same values the live
+    // Design canvas renders) — without these the server had no choice but
+    // to guess a technique-derived default for every element, which is
+    // what caused the Confirmación preview to show frame/monogram in the
+    // wrong color instead of matching the live design exactly.
+    inkColor?: string;
+    namesColor?: string;
+    dateColor?: string;
+    monogramColor?: string;
+    frameColor?: string;
   } | null;
 };
 

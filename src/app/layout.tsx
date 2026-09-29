@@ -14,6 +14,26 @@ import {
   Montserrat,
   EB_Garamond,
   Parisienne,
+  Dancing_Script,
+  Alex_Brush,
+  Sacramento,
+  Allura,
+  Pacifico,
+  Merriweather,
+  Lora,
+  Crimson_Text,
+  PT_Serif,
+  Abril_Fatface,
+  Bodoni_Moda,
+  Poppins,
+  Inter,
+  Raleway,
+  Nunito,
+  Open_Sans,
+  Lato,
+  Quicksand,
+  Josefin_Sans,
+  Oswald,
 } from "next/font/google";
 import { PwaInstall } from "@/components/PwaInstall";
 import { DEPLOYMENT_BUSINESS_TYPE } from "@/lib/businessType";
@@ -105,6 +125,32 @@ const parisienneScript = Parisienne({
   subsets: ["latin"],
   weight: ["400"],
 });
+// "See more" expansion of the personalization text-font picker (weight 400
+// only, for every one of these — see textFonts.ts's own note on why: a
+// variable font instanced at any weight other than 400 gets a weight suffix
+// baked into its family name, which would need its own separate server-side
+// entry; 400 keeps every font's server family name identical to its plain
+// Google Fonts name).
+const dancingScriptFont = Dancing_Script({ variable: "--font-text-dancingscript", subsets: ["latin"], weight: ["400"] });
+const alexBrushFont = Alex_Brush({ variable: "--font-text-alexbrush", subsets: ["latin"], weight: ["400"] });
+const sacramentoFont = Sacramento({ variable: "--font-text-sacramento", subsets: ["latin"], weight: ["400"] });
+const alluraFont = Allura({ variable: "--font-text-allura", subsets: ["latin"], weight: ["400"] });
+const pacificoFont = Pacifico({ variable: "--font-text-pacifico", subsets: ["latin"], weight: ["400"] });
+const merriweatherFont = Merriweather({ variable: "--font-text-merriweather", subsets: ["latin"], weight: ["400"] });
+const loraFont = Lora({ variable: "--font-text-lora", subsets: ["latin"], weight: ["400"] });
+const crimsonTextFont = Crimson_Text({ variable: "--font-text-crimsontext", subsets: ["latin"], weight: ["400"] });
+const ptSerifFont = PT_Serif({ variable: "--font-text-ptserif", subsets: ["latin"], weight: ["400"] });
+const abrilFatfaceFont = Abril_Fatface({ variable: "--font-text-abrilfatface", subsets: ["latin"], weight: ["400"] });
+const bodoniModaFont = Bodoni_Moda({ variable: "--font-text-bodonimoda", subsets: ["latin"], weight: ["400"] });
+const poppinsFont = Poppins({ variable: "--font-text-poppins", subsets: ["latin"], weight: ["400"] });
+const interFont = Inter({ variable: "--font-text-inter", subsets: ["latin"], weight: ["400"] });
+const ralewayFont = Raleway({ variable: "--font-text-raleway", subsets: ["latin"], weight: ["400"] });
+const nunitoFont = Nunito({ variable: "--font-text-nunito", subsets: ["latin"], weight: ["400"] });
+const openSansFont = Open_Sans({ variable: "--font-text-opensans", subsets: ["latin"], weight: ["400"] });
+const latoFont = Lato({ variable: "--font-text-lato", subsets: ["latin"], weight: ["400"] });
+const quicksandFont = Quicksand({ variable: "--font-text-quicksand", subsets: ["latin"], weight: ["400"] });
+const josefinSansFont = Josefin_Sans({ variable: "--font-text-josefinsans", subsets: ["latin"], weight: ["400"] });
+const oswaldFont = Oswald({ variable: "--font-text-oswald", subsets: ["latin"], weight: ["400"] });
 
 const fontVariables = [
   cormorantSerif,
@@ -121,6 +167,26 @@ const fontVariables = [
   montserratSans,
   ebGaramondSerif,
   parisienneScript,
+  dancingScriptFont,
+  alexBrushFont,
+  sacramentoFont,
+  alluraFont,
+  pacificoFont,
+  merriweatherFont,
+  loraFont,
+  crimsonTextFont,
+  ptSerifFont,
+  abrilFatfaceFont,
+  bodoniModaFont,
+  poppinsFont,
+  interFont,
+  ralewayFont,
+  nunitoFont,
+  openSansFont,
+  latoFont,
+  quicksandFont,
+  josefinSansFont,
+  oswaldFont,
 ]
   .map((f) => f.variable)
   .join(" ");

@@ -4,7 +4,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { monogramSvgInner } from "./monograms";
 import { frameSvgInner } from "./frameTemplates";
-import { fitTextFontSize, estimateTextWidth, textLineCount } from "./textFit";
+import { fitTextFontSize, textLineCount } from "./textFit";
 import { textFontServerFamily } from "./textFonts";
 
 // Deterministic (non-AI) compositing of a customer's personalization onto
@@ -172,7 +172,7 @@ export function zoneRotationDeg(corners: Corner[], width: number, height: number
 // than asking an image-editing model to place things on the real product
 // photo. Placement here is plain arithmetic, so it can't drift the way an
 // AI edit of the whole photo could.
-export type ElemKey = "logo" | "monogram" | "names" | "date";
+export type ElemKey = "logo" | "monogram" | "frame" | "names" | "date";
 
 export async function buildArtworkImage({
   canvasW,
@@ -186,6 +186,10 @@ export async function buildArtworkImage({
   frame = "",
   textFont = "",
   inkColor,
+  namesColor,
+  dateColor,
+  monogramColor,
+  frameColor,
   fontScale = {},
   rotations = {},
 }: {
@@ -199,7 +203,18 @@ export async function buildArtworkImage({
   monogram: string;
   frame?: string;
   textFont?: string;
+  // Overall fallback used for any element below that doesn't get its own
+  // color — kept required so every existing caller (the AI-render route,
+  // in particular) still works unchanged.
   inkColor: string;
+  // Per-element overrides — the customer's own chosen colors (see
+  // effectiveColorsFor in ProductConfigurator.tsx), which can differ per
+  // element under a multi-color technique. Each falls back to `inkColor`
+  // when omitted, reproducing the old single-color behavior.
+  namesColor?: string;
+  dateColor?: string;
+  monogramColor?: string;
+  frameColor?: string;
   fontScale?: Partial<Record<Exclude<ElemKey, "logo">, number>>;
   rotations?: Partial<Record<ElemKey, number>>;
 }): Promise<Buffer> {
@@ -244,10 +259,36 @@ export async function buildArtworkImage({
     const cx = (p.x / 100) * canvasW;
     const cy = (p.y / 100) * canvasH;
     const size = canvasH * 0.14 * (fontScale.monogram ?? 1);
-    const inner = monogramSvgInner(monogram, inkColor);
+    const inner = monogramSvgInner(monogram, monogramColor ?? inkColor);
     const monogramDeg = rotations.monogram ?? 0;
     textElements.push(
       `<g transform="translate(${cx} ${cy}) rotate(${monogramDeg}) scale(${size / 24}) translate(-12 -12)">${inner}</g>`
+    );
+  }
+  if (frame.trim()) {
+    // Independently positioned/rotated/scaled, matching the live Design
+    // canvas — frame used to be rendered nested inside the `names` block,
+    // sized and placed around the NAMES text's own box/position/rotation
+    // regardless of where the customer had actually dragged the frame
+    // element to. That only looked right by coincidence when both started
+    // at their shared default position; moving either one independently
+    // (frame and names are separate draggable elements, same as monogram)
+    // made the snapshot diverge from the live canvas. Uses the same
+    // canvasH-relative scale monogram already uses as its own font-size
+    // equivalent, since there's no real mm measurement available here the
+    // way the live canvas's pxPerMm-based frameFontPx has.
+    const p = pos("frame", { x: 50, y: 65 });
+    const cx = (p.x / 100) * canvasW;
+    const cy = (p.y / 100) * canvasH;
+    const unit = canvasH * 0.14 * (fontScale.frame ?? 1);
+    const boxW = unit * 5;
+    const boxH = unit * 2.2;
+    const frameDeg = rotations.frame ?? 0;
+    textElements.push(
+      `<g transform="translate(${cx} ${cy}) rotate(${frameDeg}) scale(${boxW / 200} ${boxH / 90}) translate(-100 -45)">${frameSvgInner(
+        frame.trim(),
+        frameColor ?? inkColor
+      )}</g>`
     );
   }
   if (names.trim()) {
@@ -259,26 +300,6 @@ export async function buildArtworkImage({
     const lineCount = textLineCount(trimmed);
     const fontSize = fitTextFontSize(trimmed, canvasH * 0.11 * (fontScale.names ?? 1), canvasW * 0.92);
     const lineHeight = fontSize * 1.25;
-    if (frame.trim()) {
-      // Sized around the same text-width estimate used to fit the font
-      // itself, with padding proportional to font size (not a fixed pixel
-      // amount) so it scales sensibly whether canvasH is a tiny print area
-      // or a large supersampled render. Height grows with the line count
-      // for multi-line names/event text.
-      const textW = estimateTextWidth(trimmed, fontSize);
-      const textH = lineHeight * lineCount;
-      const padX = fontSize * 0.7;
-      const padY = fontSize * 0.45;
-      const boxW = textW + padX * 2;
-      const boxH = textH + padY * 2;
-      const frameDeg = rotations.names ?? 0;
-      textElements.push(
-        `<g transform="translate(${cx} ${cy}) rotate(${frameDeg}) scale(${boxW / 200} ${boxH / 90}) translate(-100 -45)">${frameSvgInner(
-          frame.trim(),
-          inkColor
-        )}</g>`
-      );
-    }
     // dominant-baseline="central" on the outer <text> centers the whole
     // multi-line block vertically — each tspan just needs to be offset
     // from the first line by its own line height.
@@ -287,7 +308,7 @@ export async function buildArtworkImage({
       .map((line, i) => `<tspan x="${cx}" dy="${i === 0 ? firstLineDy : lineHeight}">${escapeXml(line)}</tspan>`)
       .join("");
     textElements.push(
-      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="${fontFamily}" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "names")}>${tspans}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="${fontFamily}" fill="${namesColor ?? inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "names")}>${tspans}</text>`
     );
   }
   if (date.trim()) {
@@ -297,7 +318,7 @@ export async function buildArtworkImage({
     const trimmed = date.trim();
     const fontSize = fitTextFontSize(trimmed, canvasH * 0.05 * (fontScale.date ?? 1), canvasW * 0.92);
     textElements.push(
-      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="${fontFamily}" letter-spacing="1" fill="${inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "date")}>${escapeXml(trimmed)}</text>`
+      `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="${fontFamily}" letter-spacing="1" fill="${dateColor ?? inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "date")}>${escapeXml(trimmed)}</text>`
     );
   }
 
@@ -377,6 +398,10 @@ export async function composeProductPersonalization({
   frame = "",
   textFont = "",
   inkColor,
+  namesColor,
+  dateColor,
+  monogramColor,
+  frameColor,
   elemScale = {},
   elemRotationOffsetDeg = {},
 }: {
@@ -390,6 +415,10 @@ export async function composeProductPersonalization({
   frame?: string;
   textFont?: string;
   inkColor: string;
+  namesColor?: string;
+  dateColor?: string;
+  monogramColor?: string;
+  frameColor?: string;
   elemScale?: Partial<Record<ElemKey, number>>;
   elemRotationOffsetDeg?: Partial<Record<ElemKey, number>>;
 }): Promise<ImagePayload | null> {
@@ -424,6 +453,7 @@ export async function composeProductPersonalization({
   const rotations: Partial<Record<ElemKey, number>> = {
     logo: baseRotationDeg + (elemRotationOffsetDeg.logo ?? 0),
     monogram: baseRotationDeg + (elemRotationOffsetDeg.monogram ?? 0),
+    frame: baseRotationDeg + (elemRotationOffsetDeg.frame ?? 0),
     names: baseRotationDeg + (elemRotationOffsetDeg.names ?? 0),
     date: baseRotationDeg + (elemRotationOffsetDeg.date ?? 0),
   };
@@ -441,7 +471,11 @@ export async function composeProductPersonalization({
     frame,
     textFont,
     inkColor,
-    fontScale: { monogram: elemScale.monogram ?? 1, names: elemScale.names ?? 1, date: elemScale.date ?? 1 },
+    namesColor,
+    dateColor,
+    monogramColor,
+    frameColor,
+    fontScale: { monogram: elemScale.monogram ?? 1, frame: elemScale.frame ?? 1, names: elemScale.names ?? 1, date: elemScale.date ?? 1 },
     rotations,
   });
 

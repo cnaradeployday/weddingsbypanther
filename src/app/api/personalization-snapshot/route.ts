@@ -23,6 +23,19 @@ export async function POST(req: NextRequest) {
   const elemRotationOffsetDeg: Partial<Record<ElemKey, number>> = body?.elemRotationOffsetDeg ?? {};
   const requestedImageId: string | undefined = body?.imageId;
   const requestedZoneId: string | undefined = body?.zoneId;
+  // Which technique the customer actually has selected right now — without
+  // this the route always fell back to the product's DB-default technique,
+  // which can silently differ from what's live on the customer's screen.
+  const requestedTechnique: string | undefined = body?.technique;
+  // The customer's own effective colors (already resolved client-side the
+  // same way the live Design canvas renders them — see effectiveColorsFor
+  // in ProductConfigurator.tsx). Optional so older callers still work,
+  // falling back to a technique-derived default below.
+  const clientInkColor: string | undefined = body?.inkColor;
+  const clientNamesColor: string | undefined = body?.namesColor;
+  const clientDateColor: string | undefined = body?.dateColor;
+  const clientMonogramColor: string | undefined = body?.monogramColor;
+  const clientFrameColor: string | undefined = body?.frameColor;
 
   if (!productId) {
     return NextResponse.json({ error: "Missing productId." }, { status: 400 });
@@ -59,7 +72,15 @@ export async function POST(req: NextRequest) {
   if (!referenceImage) {
     return NextResponse.json({ error: "This product has no photo to render on." }, { status: 400 });
   }
-  const technique = (product.techniques ?? []).find((t) => t.is_default) ?? product.techniques?.[0];
+  // Prefer the technique the customer actually has selected right now
+  // (sent by the client) over the product's DB-configured default — this
+  // route previously always used the default technique regardless of what
+  // was live on screen, which could pick the wrong fixed ink/strip-color
+  // behavior whenever the customer had switched to a non-default technique.
+  const technique =
+    (product.techniques ?? []).find((t) => t.technique === requestedTechnique) ??
+    (product.techniques ?? []).find((t) => t.is_default) ??
+    product.techniques?.[0];
   const techniqueMeta = technique ? (techniqueCatalog ?? []).find((t) => t.name === technique.technique) : undefined;
 
   let logoImage: ImagePayload | null = null;
@@ -71,7 +92,13 @@ export async function POST(req: NextRequest) {
     logoImage = await toGrayscale(logoImage);
   }
 
-  const inkColor = techniqueInkColor(technique?.technique);
+  // The client already resolves the customer's real effective colors the
+  // same way the live Design canvas does (see effectiveColorsFor in
+  // ProductConfigurator.tsx) — using those directly instead of re-deriving
+  // color from the technique here keeps this route from drifting out of
+  // sync with the canvas again. The technique-derived color is kept only
+  // as a fallback for any caller that doesn't send one.
+  const inkColor = clientInkColor ?? techniqueInkColor(technique?.technique);
 
   const result = await composeProductPersonalization({
     referenceImageUrl: referenceImage.url,
@@ -84,6 +111,10 @@ export async function POST(req: NextRequest) {
     frame,
     textFont,
     inkColor,
+    namesColor: clientNamesColor,
+    dateColor: clientDateColor,
+    monogramColor: clientMonogramColor,
+    frameColor: clientFrameColor,
     elemScale,
     elemRotationOffsetDeg,
   });

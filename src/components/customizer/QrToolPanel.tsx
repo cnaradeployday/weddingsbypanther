@@ -55,6 +55,12 @@ export function QrToolPanel({
           // without that navigation heuristic.
           type="text"
           inputMode="url"
+          // Some browsers show a native address-style autofill dropdown for
+          // a URL-shaped text field and can navigate on Enter from that
+          // dropdown's own suggestion, bypassing this component's handler
+          // entirely — turning it off removes that path too, on top of the
+          // type="text"/preventDefault guards above.
+          autoComplete="off"
           placeholder="https://"
           aria-label="Link URL"
           value={input}

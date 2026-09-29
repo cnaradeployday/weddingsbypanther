@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { fileToDataUrl } from "@/lib/dataUrl";
 import { nearestPantone } from "@/lib/pantoneMatch";
 import type { LogoRemoveWhiteMode } from "./types";
@@ -62,6 +62,31 @@ export function LogoToolPanel({
 }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Groups detected colors by their nearest Pantone match and sums their
+  // percentages — two different hexes in the same logo (e.g. anti-aliased
+  // edge pixels) can easily both round to the same nearest PMS reference,
+  // which used to show as two separate, confusingly-small chips instead of
+  // one chip with their combined share.
+  const pantoneGroups = useMemo(() => {
+    const groups = new Map<string, { code: string; hex: string; pct: number; sourceCount: number }>();
+    const unmatched: { hex: string; pct: number }[] = [];
+    for (const c of detectedColors) {
+      const pantone = nearestPantone(c.hex);
+      if (!pantone) {
+        unmatched.push(c);
+        continue;
+      }
+      const existing = groups.get(pantone.code);
+      if (existing) {
+        existing.pct += c.pct;
+        existing.sourceCount += 1;
+      } else {
+        groups.set(pantone.code, { code: pantone.code, hex: pantone.hex, pct: c.pct, sourceCount: 1 });
+      }
+    }
+    return { matched: Array.from(groups.values()).sort((a, b) => b.pct - a.pct), unmatched };
+  }, [detectedColors]);
 
   const handleFile = async (file: File, mode: "upload" | "replace") => {
     setError(null);
@@ -211,8 +236,7 @@ export function LogoToolPanel({
                 Colors detected in this logo
               </p>
               <div className="flex flex-wrap gap-2">
-                {detectedColors.map((c) => {
-                  const pantone = nearestPantone(c.hex);
+                {pantoneGroups.matched.map((group) => {
                   // Two modes, depending on whether the technique has a
                   // single customer-choosable ink: onSelectInkColor sets
                   // that one ink color (single-select — the same field the
@@ -223,42 +247,50 @@ export function LogoToolPanel({
                   // this whole button was disabled in that case, so tapping
                   // a color silently did nothing ("no los selecciona").
                   const isSingleMode = !!onSelectInkColor;
-                  const isSelected = !pantone
-                    ? false
-                    : isSingleMode
-                      ? !!selectedInkColor && selectedInkColor.toLowerCase() === c.hex.toLowerCase()
-                      : !!selectedPantoneHexes?.some((hex) => hex.toLowerCase() === c.hex.toLowerCase());
+                  // Compared by matched Pantone code, not raw hex, so a
+                  // saved selection stays matched to this chip regardless
+                  // of which of the group's source hexes originally set it.
+                  const isSelected = isSingleMode
+                    ? !!selectedInkColor && nearestPantone(selectedInkColor)?.code === group.code
+                    : !!selectedPantoneHexes?.some((hex) => nearestPantone(hex)?.code === group.code);
                   return (
                     <button
-                      key={c.hex}
+                      key={group.code}
                       type="button"
                       onClick={() => {
-                        if (!pantone) return;
-                        if (isSingleMode) onSelectInkColor?.(c.hex);
-                        else onTogglePantone?.(c.hex);
+                        if (isSingleMode) onSelectInkColor?.(group.hex);
+                        else onTogglePantone?.(group.hex);
                       }}
-                      disabled={!pantone}
                       aria-pressed={isSelected}
-                      className="inline-flex flex-col gap-0.5 text-[11px] rounded-xl px-2 py-1.5 text-left disabled:cursor-default"
+                      className="inline-flex flex-col gap-0.5 text-[11px] rounded-xl px-2 py-1.5 text-left"
                       style={{ border: `1px solid ${isSelected ? "var(--color-terracotta)" : "var(--pc-ink-100)"}`, background: isSelected ? "var(--pc-ink-50)" : "transparent" }}
                     >
                       <span className="inline-flex items-center gap-1.5">
-                        <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: c.hex, border: "1px solid var(--pc-ink-200)" }} />
-                        {c.hex.toUpperCase()} · {c.pct}%
+                        <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: group.hex, border: "1px solid var(--pc-ink-200)" }} />
+                        {group.code} · {Math.round(group.pct)}%
                         {isSelected && (
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-terracotta)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <path d="M20 6 9 17l-5-5" />
                           </svg>
                         )}
                       </span>
-                      {pantone && (
-                        <span style={{ color: "var(--pc-ink-500)" }}>
-                          ≈ {pantone.code} <span className="text-[10px]">{isSelected ? "· used for this order" : "(approximate — tap to use)"}</span>
-                        </span>
-                      )}
+                      <span style={{ color: "var(--pc-ink-500)" }}>
+                        {group.sourceCount > 1 ? `${group.sourceCount} shades combined · ` : ""}
+                        <span className="text-[10px]">{isSelected ? "used for this order" : "approximate — tap to use"}</span>
+                      </span>
                     </button>
                   );
                 })}
+                {pantoneGroups.unmatched.map((c) => (
+                  <span
+                    key={c.hex}
+                    className="inline-flex items-center gap-1.5 text-[11px] rounded-xl px-2 py-1.5"
+                    style={{ border: "1px solid var(--pc-ink-100)", color: "var(--pc-ink-500)" }}
+                  >
+                    <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: c.hex, border: "1px solid var(--pc-ink-200)" }} />
+                    {c.hex.toUpperCase()} · {c.pct}%
+                  </span>
+                ))}
               </div>
             </div>
           )}

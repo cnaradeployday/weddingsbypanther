@@ -26,6 +26,12 @@ export function RecoveryModal({
   onContinue,
   onStartNew,
   onClose,
+  // Reused as-is for the on-demand "My Drafts" button (see
+  // ProductConfigurator.tsx) — only the copy differs from FLOW-02's
+  // auto-shown "pick up where you left off" case.
+  title = "Pick up where you left off?",
+  continueLabel = "Continue design",
+  startNewLabel = "Start a new one",
 }: {
   versions: SavedDesignSummary[];
   zones: { id: string; corners_pct: { x: number; y: number }[]; image_id: string | null }[];
@@ -34,16 +40,19 @@ export function RecoveryModal({
   onContinue: (versionId: string) => void;
   onStartNew: () => void;
   onClose: () => void;
+  title?: string;
+  continueLabel?: string;
+  startNewLabel?: string;
 }) {
   // The most recent version (versions[0] — designStorage.list returns
   // newest first) is preselected, per FLOW-02.
   const [selected, setSelected] = useState(versions[0]?.versionId ?? "");
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Pick up where you left off?" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl overflow-hidden max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-line">
-          <h2 className="font-serif text-2xl">Pick up where you left off?</h2>
+          <h2 className="font-serif text-2xl">{title}</h2>
           <button
             type="button"
             onClick={onClose}
@@ -54,6 +63,7 @@ export function RecoveryModal({
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+          {versions.length === 0 && <p className="text-sm text-muted p-3">No saved drafts yet.</p>}
           {versions.map((v) => {
             const zone = zones.find((z) => z.id === v.activeZoneId) ?? zones[0];
             const photoUrl =
@@ -83,9 +93,11 @@ export function RecoveryModal({
                   textFont={v.textFont}
                   namesColor={v.namesColor}
                   namesPosition={v.namesPosition}
+                  logoUrl={v.logoThumbnail}
+                  logoPosition={v.logoPosition}
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{v.names || "Untitled design"}</p>
+                  <p className="font-medium truncate">{v.draftName || v.names || "Untitled design"}</p>
                   <p className="text-xs text-muted">{relativeTime(v.updatedAt)}</p>
                   <p className="text-xs text-muted">
                     {technique?.technique ?? "—"} · {v.quantity} units
@@ -101,7 +113,7 @@ export function RecoveryModal({
             onClick={onStartNew}
             className="flex-1 h-11 rounded-full border border-line text-sm font-medium"
           >
-            Start a new one
+            {startNewLabel}
           </button>
           <button
             type="button"
@@ -109,7 +121,7 @@ export function RecoveryModal({
             disabled={!selected}
             className="flex-1 h-11 rounded-full bg-terracotta text-cream-light text-sm font-medium disabled:opacity-50"
           >
-            Continue design
+            {continueLabel}
           </button>
         </div>
       </div>
