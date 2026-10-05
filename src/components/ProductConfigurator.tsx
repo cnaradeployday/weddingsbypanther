@@ -324,10 +324,14 @@ export function ProductConfigurator({
   // Which tool's panel is open (EDIT-01) and which element is selected on
   // the canvas (EDIT-04) — kept separate from `design` since neither is
   // part of the undoable design itself.
-  // Opens straight into the Logo panel — it's the first tool in the rail
-  // and the one nearly every order needs, so showing "Pick a tool to start
-  // editing" first was an extra click for no reason.
-  const [activeTool, setActiveTool] = useState<ToolId | null>(product.personalizable ? "logo" : null);
+  // Opens straight into a tool panel rather than "Pick a tool to start
+  // editing" — an extra click nearly every order needs to skip anyway.
+  // Technique first when the product has one: it caps which ink colors
+  // Logo/Text/Frame/Monogram/QR can use, so picking it before touching any
+  // of those avoids a color choice that technique then invalidates.
+  const [activeTool, setActiveTool] = useState<ToolId | null>(
+    product.personalizable ? (product.techniques.length > 0 ? "technique" : "logo") : null
+  );
   const [activeElem, setActiveElem] = useState<ElemKey | null>(null);
   // Brief, non-blocking feedback shown near an element's size tag while
   // resizing hits the print area's limit (BUG-10) or a rotation had to
@@ -1848,10 +1852,15 @@ export function ProductConfigurator({
   // Print technique moved here (Design, step 1) from the Options step per
   // request — it affects how the whole design renders (single-color fill,
   // engraved look, etc.), so it needs picking before/while designing.
+  // Technique comes first (ahead of Logo): it determines how many ink
+  // colors Logo/Text/Frame/Monogram/QR are even allowed to use (see
+  // canChooseInkColor/singleAllowedColor below), so picking it after
+  // already choosing those colors could silently invalidate a choice the
+  // customer just made.
   const availableTools: ToolId[] = product.personalizable
     ? ([
-        "logo",
         ...(product.techniques.length > 0 ? (["technique"] as ToolId[]) : []),
+        "logo",
         "names",
         "frame",
         "monogram",
@@ -3073,11 +3082,14 @@ function AdjustHandles({
           <path d="M7.5 13 H3 V8.5" />
         </svg>
       </div>
+      {/* Below the box, not above (Canva's own placement) — the floating
+          contextual toolbar is now pinned to the top of the canvas, so a
+          rotate handle above the element sat right underneath it. */}
       <div
         onPointerDown={onRotateStart}
         aria-label="Rotate"
         className="absolute left-1/2 h-5 w-5 -translate-x-1/2 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-grab touch-none pointer-events-auto"
-        style={{ top: -rotateOffset }}
+        style={{ bottom: -rotateOffset }}
       >
         <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M13 8a5 5 0 1 1-1.7-3.75" />
@@ -3085,7 +3097,7 @@ function AdjustHandles({
         </svg>
       </div>
       {notice && (
-        <span role="status" className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-dark text-cream-light text-[11px] px-2.5 py-1 pointer-events-none" style={{ top: -rotateOffset - 32 }}>
+        <span role="status" className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-dark text-cream-light text-[11px] px-2.5 py-1 pointer-events-none" style={{ bottom: -rotateOffset - 32 }}>
           {notice}
         </span>
       )}

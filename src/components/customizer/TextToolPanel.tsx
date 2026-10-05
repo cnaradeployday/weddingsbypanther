@@ -1,23 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { TEXT_FONTS, textFontStyle } from "@/lib/textFonts";
 import type { TextAlign, TextStyle } from "./types";
 import { ColorPicker } from "./ColorPicker";
 import { SegmentedControl } from "./SegmentedControl";
-
-const CATEGORY_LABELS: { id: "all" | "script" | "serif" | "sans" | "display"; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "script", label: "Script" },
-  { id: "serif", label: "Serif" },
-  { id: "sans", label: "Sans serif" },
-  { id: "display", label: "Display" },
-];
-
-// The original 6 fonts, shown by default — "See more" reveals the rest
-// (26 total) so the picker doesn't open into one long scroll of fonts most
-// customers will never look at.
-const DEFAULT_VISIBLE_IDS = new Set(["cormorant", "playfair", "greatvibes", "montserrat", "ebgaramond", "parisienne"]);
+import { FontPicker } from "./FontPicker";
+import type { TextFontId } from "@/lib/textFonts";
 
 export function TextToolPanel({
   title,
@@ -52,15 +39,6 @@ export function TextToolPanel({
   maxChars?: number;
   maxLines?: number;
 }) {
-  const [category, setCategory] = useState<"all" | "script" | "serif" | "sans" | "display">("all");
-  // Starts expanded if the design's current font is one of the "See more"
-  // ones — e.g. a saved draft that already used Poppins shouldn't open this
-  // panel with its own selected font hidden behind a collapsed list.
-  const [expanded, setExpanded] = useState(() => !DEFAULT_VISIBLE_IDS.has(font));
-  const previewText = text || "Amelia & Ravi";
-  const filteredFonts = TEXT_FONTS.filter((f) => category === "all" || f.category === category);
-  const visibleFonts = expanded ? filteredFonts : filteredFonts.filter((f) => DEFAULT_VISIBLE_IDS.has(f.id));
-
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
@@ -96,70 +74,7 @@ export function TextToolPanel({
         />
       )}
 
-      <div className="flex flex-col gap-2">
-        <span className="text-[11px] tracking-[0.14em] uppercase" style={{ color: "var(--pc-ink-500)" }}>
-          Font
-        </span>
-        <div className="flex gap-1.5 flex-wrap">
-          {CATEGORY_LABELS.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setCategory(c.id)}
-              aria-pressed={category === c.id}
-              className="h-[30px] px-3 rounded-full text-[13px] transition-colors"
-              style={{
-                background: category === c.id ? "var(--pc-ink-950)" : "var(--pc-ink-50)",
-                color: category === c.id ? "#fff" : "var(--pc-ink-700)",
-              }}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {visibleFonts.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => onChangeFont(f.id)}
-              aria-pressed={font === f.id}
-              className="h-[60px] rounded-xl border-2 px-2.5 py-2 text-left overflow-hidden flex flex-col justify-between"
-              style={{
-                borderColor: font === f.id ? "var(--color-terracotta)" : "transparent",
-                background: font === f.id ? "var(--pc-ink-50)" : "var(--pc-ink-50)",
-              }}
-            >
-              <span className="block text-[10px] tracking-[0.1em] uppercase" style={{ color: "var(--pc-ink-500)" }}>
-                {f.label}
-              </span>
-              <span className="block truncate text-[17px] leading-tight" style={{ ...textFontStyle(f.id), color: "var(--pc-ink-950)" }}>
-                {previewText}
-              </span>
-            </button>
-          ))}
-        </div>
-        {filteredFonts.length > visibleFonts.length && (
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            className="self-start text-[13px] font-medium underline underline-offset-2"
-            style={{ color: "var(--color-terracotta)" }}
-          >
-            See more fonts ({filteredFonts.length - visibleFonts.length})
-          </button>
-        )}
-        {expanded && (
-          <button
-            type="button"
-            onClick={() => setExpanded(false)}
-            className="self-start text-[13px] font-medium underline underline-offset-2"
-            style={{ color: "var(--pc-ink-500)" }}
-          >
-            Show fewer fonts
-          </button>
-        )}
-      </div>
+      <FontPicker value={font} onChange={(id: TextFontId) => onChangeFont(id)} />
 
       <div className="grid grid-cols-2 gap-3">
         <div className="flex flex-col gap-2">
