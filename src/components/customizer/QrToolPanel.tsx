@@ -50,11 +50,24 @@ export function QrToolPanel({
           // bare `<input type="url">` — with no enclosing <form> — as a
           // navigable address field and, on Enter, navigate the tab
           // straight to whatever's typed, which crashes the SPA state and
-          // loses the ?step= URL entirely. inputMode="url" alone still
-          // gives mobile keyboards the right layout (a ".com"/"go" key)
-          // without that navigation heuristic.
+          // loses the ?step= URL entirely.
+          //
+          // inputMode="url" was ALSO still here, and turned out to be its
+          // own separate trigger for the same symptom ("This page couldn't
+          // load") even with type="text": on Android (stock Chrome/Samsung
+          // Internet/in-app WebViews, and this app's own installed-PWA
+          // standalone window — see manifest.json's display:"standalone",
+          // which has no address bar to absorb a failed navigation),
+          // inputMode="url" maps the keyboard's enter key to the IME "Go"
+          // action, which a number of these browser shells handle as "open
+          // this URL" at the OS/browser-chrome level — entirely bypassing
+          // this component's onKeyDown/preventDefault, since no page-level
+          // Enter keydown ever fires on that path. enterKeyHint="done"
+          // overrides that action mapping to a plain "dismiss keyboard",
+          // closing the one path none of the JS-level guards here could
+          // reach.
           type="text"
-          inputMode="url"
+          enterKeyHint="done"
           // Some browsers show a native address-style autofill dropdown for
           // a URL-shaped text field and can navigate on Enter from that
           // dropdown's own suggestion, bypassing this component's handler
