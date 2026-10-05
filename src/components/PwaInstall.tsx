@@ -57,12 +57,14 @@ export function PwaInstall() {
           <p className="text-xs text-cream-light/70">Add it to your home screen for quick access.</p>
         </div>
         <button
+          type="button"
           onClick={handleInstall}
           className="px-3 py-2 rounded-full bg-cream-light text-dark text-xs font-medium shrink-0"
         >
           Install
         </button>
         <button
+          type="button"
           onClick={handleDismiss}
           aria-label="Dismiss"
           className="text-cream-light/60 text-lg leading-none shrink-0 px-1"

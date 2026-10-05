@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { formatUSD, applyMarkup } from "@/lib/format";
@@ -347,6 +347,17 @@ export function ProductConfigurator({
   // doesn't change what's printed).
   const [zoomPct, setZoomPct] = useState(100);
   const [canvasScrollRef, canvasScrollSize] = useElementSize<HTMLDivElement>();
+  // Direct DOM access for scroll manipulation — useElementSize's own ref is
+  // a callback (for its ResizeObserver), not an object with `.current`.
+  // Combined with it on the same element below (`setCanvasScrollEl`).
+  const canvasScrollElRef = useRef<HTMLDivElement | null>(null);
+  const setCanvasScrollEl = useCallback(
+    (el: HTMLDivElement | null) => {
+      canvasScrollRef(el);
+      canvasScrollElRef.current = el;
+    },
+    [canvasScrollRef]
+  );
   // "Fit" was hardcoded to 100% — the photo wrapper is width:zoomPct% with
   // a fixed aspect-[4/5], so at 100% its height is 1.25x the scroll area's
   // width. Whenever the scroll area is wider than it is tall (any normal
@@ -870,10 +881,28 @@ export function ProductConfigurator({
   );
 
   const elemBoxRefs = useRef<Partial<Record<ElemKey, HTMLDivElement>>>({});
+  // renderCanvas() below is called twice — once for the desktop layout, once
+  // for the mobile one (CSS hidden/md:hidden toggles which is visible, both
+  // stay mounted) — so this fires for BOTH copies of each element box.
+  // Without a visible-wins guard, whichever copy mounts/remounts LAST wins
+  // the single slot, even if it's the hidden one: a hidden box's
+  // getBoundingClientRect() is all zeros, so startElemAdjust/startDrag would
+  // compute a resize/rotate center of (0,0) and an empty footprint — exactly
+  // the intermittent "a veces no permite agrandar... rotar no funciona
+  // correctamente" reports, depending on which copy happened to mount last.
+  // Same fix pattern as useElementSize's boundWasVisible above.
+  const elemBoxVisible = useRef<Partial<Record<ElemKey, boolean>>>({});
   const setElemBoxRef = useCallback(
     (key: ElemKey) => (el: HTMLDivElement | null) => {
-      if (el) elemBoxRefs.current[key] = el;
-      else delete elemBoxRefs.current[key];
+      if (!el) {
+        delete elemBoxRefs.current[key];
+        delete elemBoxVisible.current[key];
+        return;
+      }
+      const isVisible = el.offsetWidth > 0 || el.offsetHeight > 0;
+      if (elemBoxVisible.current[key] && !isVisible) return;
+      elemBoxRefs.current[key] = el;
+      elemBoxVisible.current[key] = isVisible;
     },
     []
   );
@@ -952,6 +981,41 @@ export function ProductConfigurator({
       window.removeEventListener("pointerup", handleUp);
     };
   }, [photoPxToPos, setDesignCoalescing, commitGesture]);
+
+  // BUG report #7 ("el zoom... no se centra en un punto, va yendo a puntos
+  // distintos de la imagen cada vez"): setZoomPct only ever changed the
+  // wrapper's CSS width — the scroll container's own scrollLeft/scrollTop
+  // never moved, so whatever happened to be at the top-left of the
+  // viewport before the zoom change stayed at the top-left pixel-for-pixel
+  // after it, drifting the visible crop toward a different part of the
+  // photo every time. Anchor explicitly instead: recenter on the selected
+  // element when one is active, otherwise on the print area's own center,
+  // expressed as a 0-1 fraction of the (unzoomed) photo and reapplied
+  // against the new scrollWidth/scrollHeight. This only works because the
+  // width change above is now instant (no CSS transition) — scrollWidth/
+  // scrollHeight read here are already the final, post-zoom values.
+  const prevZoomPctRef = useRef(zoomPct);
+  useLayoutEffect(() => {
+    const container = canvasScrollElRef.current;
+    if (!container || !zoomInitialized || prevZoomPctRef.current === zoomPct) {
+      prevZoomPctRef.current = zoomPct;
+      return;
+    }
+    prevZoomPctRef.current = zoomPct;
+    if (!photoSize.width || !photoSize.height) return;
+    const anchorPx = activeElem ? posToPhotoPx(design.positions[activeElem]) : null;
+    const fallbackPx = zoneBox
+      ? {
+          x: ((zoneBox.left + zoneBox.width / 2) / 100) * photoSize.width,
+          y: ((zoneBox.top + zoneBox.height / 2) / 100) * photoSize.height,
+        }
+      : null;
+    const anchor = anchorPx ?? fallbackPx;
+    const fracX = anchor ? anchor.x / photoSize.width : 0.5;
+    const fracY = anchor ? anchor.y / photoSize.height : 0.5;
+    container.scrollLeft = fracX * container.scrollWidth - container.clientWidth / 2;
+    container.scrollTop = fracY * container.scrollHeight - container.clientHeight / 2;
+  }, [zoomPct, zoomInitialized, activeElem, design.positions, posToPhotoPx, zoneBox, photoSize.width, photoSize.height]);
 
   const mmPerPx = useMemo(() => {
     if (!zone?.width_mm || !zoneSize.width) return null;
@@ -1051,6 +1115,40 @@ export function ProductConfigurator({
     [design.frame, nameFontPx, logoNaturalSize]
   );
 
+  // stepElemScale (below) predicts the footprint a proposed scale would
+  // produce by linearly projecting the CURRENT live box measurement
+  // (elemFootprint) by proposedScale/currentScale. That's correct for
+  // logo/frame/monogram/qr, whose on-screen size is a plain linear function
+  // of elemScale — but "names"/"date" go through fitTextFontSize first,
+  // which is NOT linear: once the text's estimated width already exceeds
+  // its print-area allowance, fitTextFontSize returns a width-derived font
+  // size that ignores the requested size entirely (src/lib/textFit.ts).
+  // Projecting linearly from an already-capped live box overstates how
+  // much bigger the proposed scale would actually render, so
+  // maxOrientedBoxScale below sees a bogus containment violation and caps
+  // (sometimes even SHRINKS) elemScale even though the real rendered text
+  // was never going to grow that much — reported as the size stepper
+  // feeling "stuck" and the cm label not matching what's rendered. Compute
+  // the real font size fitTextFontSize would produce for the proposed
+  // scale instead of projecting the live box.
+  const proposedTextFootprint = useCallback(
+    (key: "names" | "date", scale: number): { halfW: number; halfH: number } => {
+      if (key === "date") {
+        const desiredPx = (pxPerMm ? Math.max(8, Math.min(14, pxPerMm * 2.4)) : 11) * scale;
+        const fontPx = fitTextFontSize("0000000000", desiredPx, textAvailableWidth("date"));
+        return { halfW: estimateTextWidth(formattedDate, fontPx) / 2, halfH: (fontPx * 1.2) / 2 };
+      }
+      const desiredPx = (pxPerMm ? Math.max(10, Math.min(28, pxPerMm * 5)) : 18) * scale;
+      const fontPx = fitTextFontSize(design.names, desiredPx, textAvailableWidth("names"));
+      const width = estimateTextWidth(design.names, fontPx);
+      const height = fontPx * lineHeightMultiplier(design.namesStyle.lineSpacing) * textLineCount(design.names);
+      const framePadX = design.frame ? fontPx * 1.4 : 0;
+      const framePadY = design.frame ? fontPx * 0.9 : 0;
+      return { halfW: (width + framePadX) / 2, halfH: (height + framePadY) / 2 };
+    },
+    [pxPerMm, textAvailableWidth, formattedDate, design.names, design.namesStyle.lineSpacing, design.frame]
+  );
+
   const startElemAdjust = useCallback(
     (key: ElemKey, mode: "resize" | "rotate") => (e: React.PointerEvent) => {
       if (design.locked[key]) return;
@@ -1104,15 +1202,25 @@ export function ProductConfigurator({
       const proposedScale = Math.max(0.3, Math.min(4, currentScale + dir * 0.05));
       const box = elemBoxRefs.current[key];
       const centerPhotoPx = posToPhotoPx(design.positions[key]);
-      if (box && quadCornersPx && centerPhotoPx && currentScale > 0) {
-        const ratio = proposedScale / currentScale;
-        const footprint = elemFootprint(key, box);
-        const halfW = footprint.halfW * ratio;
-        const halfH = footprint.halfH * ratio;
+      const isTextKey = key === "names" || key === "date";
+      if (quadCornersPx && centerPhotoPx && (box || isTextKey) && currentScale > 0) {
         const rotationRad = (elemRotationDeg[key] * Math.PI) / 180;
+        const { halfW, halfH } = isTextKey
+          ? proposedTextFootprint(key, proposedScale)
+          : (() => {
+              const ratio = proposedScale / currentScale;
+              const footprint = elemFootprint(key, box!);
+              return { halfW: footprint.halfW * ratio, halfH: footprint.halfH * ratio };
+            })();
         const fitScale = maxOrientedBoxScale(centerPhotoPx, quadCornersPx, halfW, halfH, rotationRad);
+        // For text keys, `fitScale` already describes room around the ACTUAL
+        // proposed footprint (not a linear projection), so growing further
+        // only needs capping once that real footprint would itself overflow
+        // (fitScale < 1) — never shrinks below the scale the user already had.
         if (Number.isFinite(fitScale) && fitScale < 1) {
-          const cappedScale = Math.max(0.3, proposedScale * fitScale * 0.98);
+          const cappedScale = isTextKey
+            ? Math.max(0.3, Math.min(proposedScale, currentScale))
+            : Math.max(0.3, proposedScale * fitScale * 0.98);
           setDesign((prev) => ({ ...prev, elemScale: { ...prev.elemScale, [key]: cappedScale } }));
           setElemNotice({ key, message: "Max size for this print area" });
           setTimeout(() => setElemNotice((prev) => (prev?.key === key ? null : prev)), 2000);
@@ -1121,8 +1229,52 @@ export function ProductConfigurator({
       }
       setDesign((prev) => ({ ...prev, elemScale: { ...prev.elemScale, [key]: proposedScale } }));
     },
-    [design.elemScale, design.positions, quadCornersPx, posToPhotoPx, elemRotationDeg, setDesign, elemFootprint]
+    [
+      design.elemScale,
+      design.positions,
+      quadCornersPx,
+      posToPhotoPx,
+      elemRotationDeg,
+      setDesign,
+      elemFootprint,
+      proposedTextFootprint,
+    ]
   );
+
+  // Picking a frame or monogram template (IconElementPanel's onSelect) sets
+  // `design.frame`/`design.monogram` with no containment check at all —
+  // unlike every other way an element's size/position can change (corner
+  // drag, the size stepper, rotation), which all already clamp to the print
+  // area. A frame/monogram's default on-screen size is a fixed fraction of
+  // the zone, independent of how physically small that zone actually is, so
+  // on a narrow print area the decorative frame could be bigger than the
+  // print area from the moment it's picked, with nothing ever having
+  // resolved it back inside — reported as "los elementos (ej. frames) no
+  // deben sobrepasar el área de impresión." Runs after the element's box
+  // has actually mounted (an effect, not inline in onSelect), since its
+  // real rendered size is what containment needs to measure.
+  useEffect(() => {
+    (["frame", "monogram"] as const).forEach((key) => {
+      if (!design[key]) return;
+      const box = elemBoxRefs.current[key];
+      const centerPhotoPx = posToPhotoPx(design.positions[key]);
+      if (!box || !quadCornersPx || !centerPhotoPx) return;
+      const { halfW, halfH } = elemFootprint(key, box);
+      if (halfW <= 0 || halfH <= 0) return;
+      const rotationRad = (elemRotationDeg[key] * Math.PI) / 180;
+      const resolved = resolveRotatedContainment(centerPhotoPx, quadCornersPx, halfW, halfH, rotationRad);
+      if (!resolved.resized) return;
+      const resolvedPos = photoPxToPos(resolved.center);
+      setDesign((prev) => ({
+        ...prev,
+        positions: resolvedPos ? { ...prev.positions, [key]: resolvedPos } : prev.positions,
+        elemScale: { ...prev.elemScale, [key]: (prev.elemScale[key] || 1) * resolved.scale },
+      }));
+    });
+    // Deliberately scoped to selection changes only — every other path that
+    // changes an element's size/position already clamps itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [design.frame, design.monogram]);
 
   const technique = product.techniques.find((t) => t.id === techniqueId);
   const variant = product.variants.find((v) => v.id === variantId);
@@ -1331,12 +1483,35 @@ export function ProductConfigurator({
   const quickQuantities = Array.from(new Set(baseQuickQuantities)).slice(0, 4);
   const popularQty = product.popularQty && product.popularQty >= product.minOrder ? product.popularQty : null;
 
-  const handleLogoUpload = async (file: File, dataUrl: string) => {
+  // A fresh upload used to store the raw file untouched, even though the
+  // "Remove white" picker already shows a mode selected (default "all").
+  // Since a radio button that's already checked doesn't fire onChange,
+  // clicking that same already-selected option did nothing — the customer
+  // had to click a DIFFERENT option first and then back to apply it
+  // ("te obliga a primero tocar... y despues sacar el blanco interno").
+  // Running the current mode immediately on upload makes what the picker
+  // already shows match what's actually been applied.
+  const applyUploadedLogo = async (file: File, dataUrl: string) => {
     setDesign((prev) => ({ ...prev, logoFile: file, logoPreview: dataUrl, logoOriginalPreview: dataUrl }));
+    if (design.logoRemoveWhiteMode === "never") return;
+    setRemovingBackground(true);
+    try {
+      const processed = await removeLogoBackgroundByMode(dataUrl, design.logoRemoveWhiteMode);
+      const blob = await dataUrlToBlob(processed);
+      setDesign((prev) =>
+        prev.logoOriginalPreview === dataUrl
+          ? { ...prev, logoPreview: processed, logoFile: new File([blob], file.name, { type: blob.type || "image/png" }) }
+          : prev
+      );
+    } catch {
+      // Keep the raw upload if processing fails — same fail-soft behavior
+      // as handleRemoveWhiteModeChange below.
+    } finally {
+      setRemovingBackground(false);
+    }
   };
-  const handleLogoReplace = async (file: File, dataUrl: string) => {
-    setDesign((prev) => ({ ...prev, logoFile: file, logoPreview: dataUrl, logoOriginalPreview: dataUrl }));
-  };
+  const handleLogoUpload = applyUploadedLogo;
+  const handleLogoReplace = applyUploadedLogo;
   const clearLogo = () => {
     setDesign((prev) => ({ ...prev, logoFile: null, logoPreview: null, logoOriginalPreview: null }));
   };
@@ -1787,8 +1962,19 @@ export function ProductConfigurator({
   // render pass itself.
   const [confirmationPreviewPhotos, setConfirmationPreviewPhotos] = useState<PreviewPhoto[]>([]);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setConfirmationPreviewPhotos(computePreviewPhotos());
+    // An uncaught throw here (e.g. a pre-migration saved draft/version
+    // missing a field this now reads) would leave confirmationPreviewPhotos
+    // stuck at its initial [] forever, since the effect never gets to call
+    // setConfirmationPreviewPhotos again — ConfirmationPreview then has no
+    // entries at all to show, rendering completely blank rather than
+    // falling back to the plain product photo the way every other failure
+    // in this preview path already does.
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setConfirmationPreviewPhotos(computePreviewPhotos());
+    } catch (err) {
+      console.error("computePreviewPhotos failed", err);
+    }
   }, [computePreviewPhotos]);
   const previewAiRenders: PreviewAiRender[] = aiRenders.flatMap((r, i) => [
     { label: `AI render ${i + 1} · Product`, url: r.imageDataUrl },
@@ -1802,13 +1988,21 @@ export function ProductConfigurator({
   // Options and Review steps (FLOW-03/FLOW-06).
   const renderCanvas = () => (
     <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-[var(--pc-ink-50)] relative overflow-hidden">
-      <div ref={canvasScrollRef} className="flex-1 overflow-auto">
+      <div ref={setCanvasScrollEl} className="flex-1 overflow-auto">
         <div
           className="mx-auto"
           style={{
             width: `${zoomPct}%`,
             maxWidth: zoomPct <= 100 ? "100%" : undefined,
-            transition: "width 120ms ease",
+            // Was a 120ms CSS transition — but that meant scrollWidth/
+            // scrollHeight briefly reported an in-between (animating) size
+            // right after a zoom change, which the re-centering effect
+            // below needs to read correctly and immediately. An instant
+            // size change keeps that measurement (and the resulting scroll
+            // position) exact, with no stale/mid-transition frame to land
+            // on wrong — a sharper jump cut, but zoom now reliably lands
+            // centered on the intended point instead of drifting to one of
+            // several wrong ones.
           }}
         >
           <div
@@ -2039,21 +2233,21 @@ export function ProductConfigurator({
                   (() => {
                     const toolbar = renderContextualToolbarFor(activeElem);
                     if (!toolbar) return null;
-                    // The fixed "-28px" gap here was measured from the
-                    // element's CENTER (design.positions is a center point),
-                    // not its actual top edge — for anything taller than
-                    // ~56px (a bigger logo, a scaled-up element) that isn't
-                    // enough clearance, so the toolbar rendered overlapping
-                    // the element/handles instead of floating clearly above
-                    // them. Use the element's real measured box (half its
-                    // diagonal, so it still clears at any rotation) plus the
-                    // rotate handle's own reach instead of a flat constant.
-                    const box = elemBoxRefs.current[activeElem];
-                    const halfExtentPx = box ? Math.hypot(box.offsetWidth, box.offsetHeight) / 2 : 40;
-                    const clearancePx = halfExtentPx + 56;
+                    // Used to float just above the selected element's own
+                    // measured box — for an element already near the top of
+                    // the print area (a logo on a skateboard deck's upper
+                    // band, say), there wasn't enough room above it within
+                    // the visible stage before hitting the stage's own top
+                    // edge, so the toolbar ended up overlapping the element
+                    // instead of clearing it ("hay que subirla arriba de
+                    // todo del área de trabajo"). Pinned to the top of the
+                    // stage instead — same fixed-within-the-canvas pattern
+                    // CanvasControls already uses at the bottom — so it
+                    // never overlaps whatever's selected, regardless of
+                    // that element's own position or size.
                     return (
                       <div
-                        className="absolute z-20 pointer-events-auto"
+                        className="absolute left-1/2 top-3 -translate-x-1/2 z-20 pointer-events-auto"
                         // Nothing here stopped a pointerdown from bubbling up
                         // to the canvas's own onPointerDown={() =>
                         // selectElem(null)} (it deselects on any background
@@ -2064,11 +2258,6 @@ export function ProductConfigurator({
                         // unmounted before focus ever landed, so typing (and
                         // Enter) appeared to do nothing.
                         onPointerDown={(e) => e.stopPropagation()}
-                        style={{
-                          left: `${design.positions[activeElem].x}%`,
-                          top: `${design.positions[activeElem].y}%`,
-                          transform: `translate(-50%, calc(-100% - ${clearancePx}px))`,
-                        }}
                       >
                         {toolbar}
                       </div>
