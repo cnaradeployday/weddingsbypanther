@@ -77,4 +77,48 @@ describe("vectorizeLogo", () => {
     const result = await vectorizeLogo(buf);
     expect(result.layers.length).toBeGreaterThanOrEqual(2);
   }, 20000);
+
+  // "aun le falta calar el interior de las letras... deberia llenar los
+  // puntos blancos con color pleno" — a textured/painterly source (not a
+  // flat vector originally) can have genuine partial-alpha noise speckled
+  // *inside* what's meant to read as solid fill, not just at the edges.
+  // Those single-pixel gaps shouldn't trace as real cutouts, but a large,
+  // deliberate hole (a letter's counter) must still come through.
+  it("closes small interior alpha-noise speckles while keeping a real hole open", async () => {
+    const size = 64;
+    const margin = 6;
+    const data = Buffer.alloc(size * size * 4);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const i = (y * size + x) * 4;
+        const inMargin = x < margin || x >= size - margin || y < margin || y >= size - margin;
+        if (inMargin) {
+          data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 255;
+          continue;
+        }
+        // A large, deliberate hole in the middle third — must stay open.
+        const inBigHole = x > size * 0.4 && x < size * 0.6 && y > size * 0.4 && y < size * 0.6;
+        // Scattered single-pixel speckles of near-zero alpha — noise from
+        // a textured source, not real cutouts, and must close up.
+        const isSpeckle = !inBigHole && (x + y * 3) % 11 === 0;
+        data[i] = 220;
+        data[i + 1] = 20;
+        data[i + 2] = 20;
+        data[i + 3] = inBigHole || isSpeckle ? 0 : 255;
+      }
+    }
+    const buf = await sharp(data, { raw: { width: size, height: size, channels: 4 } }).png().toBuffer();
+    const result = await vectorizeLogo(buf);
+    expect(result.layers.length).toBe(1);
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
+      `<path d="${result.layers[0].ds.join(" ")}" fill="${result.layers[0].color}" fill-rule="evenodd"/></svg>`;
+    const { data: raster, info } = await sharp(Buffer.from(svg)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const alphaAt = (x: number, y: number) => raster[(y * info.width + x) * 4 + 3];
+
+    // A point inside the speckled-but-meant-to-be-solid region is filled.
+    expect(alphaAt(10, 10)).toBeGreaterThan(200);
+    // The big, deliberate hole is still open.
+    expect(alphaAt(Math.floor(size / 2), Math.floor(size / 2))).toBeLessThan(50);
+  }, 20000);
 });
