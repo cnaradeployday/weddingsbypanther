@@ -26,7 +26,7 @@ export function recolorLogoToSolid(dataUrl: string, hex: string): Promise<string
       }
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      keyOutWhiteBackground(imageData.data);
+      keyOutWhiteBackground(imageData.data, canvas.width, canvas.height);
       ctx.putImageData(imageData, 0, 0);
       ctx.globalCompositeOperation = "source-in";
       ctx.fillStyle = hex;
@@ -72,7 +72,7 @@ export function removeLogoBackgroundByMode(dataUrl: string, mode: LogoRemoveWhit
       const changed =
         mode === "background"
           ? keyOutWhiteBackgroundConnectedToEdge(imageData.data, canvas.width, canvas.height)
-          : keyOutWhiteBackground(imageData.data);
+          : keyOutWhiteBackground(imageData.data, canvas.width, canvas.height);
       if (!changed) {
         resolve(dataUrl);
         return;

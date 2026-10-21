@@ -42,8 +42,10 @@ export type OutlineLayoutItem =
   | { kind: "text"; ds: string[]; color: string; cx: number; cy: number; rotationDeg: number }
   | {
       kind: "logo";
-      ds: string[];
-      color: string;
+      // One layer per real color in the logo for a full-color technique, or
+      // a single layer forced to the order's one ink color for a
+      // single-color-ink technique (see computeOutlineLayout below).
+      layers: { ds: string[]; color: string }[];
       cx: number;
       cy: number;
       rotationDeg: number;
@@ -53,11 +55,13 @@ export type OutlineLayoutItem =
     };
 
 // A logo traced into vector path data at upload time (see
-// src/lib/logoVectorize.ts) — only available for single-color-ink
-// techniques, where the print-ready outline needs the logo as true curves
-// rather than an embedded raster. `ds` are the traced path(s)' `d`
-// attributes in the traced bitmap's own pixel space (width x height).
-export type LogoVector = { ds: string[]; width: number; height: number };
+// src/lib/logoVectorize.ts). `ds` is a single flat silhouette (used for a
+// single-color-ink technique, forced to that order's one ink color);
+// `layers` is one traced path per real color in the logo (used for a
+// full-color technique, each kept in its own real color instead of being
+// collapsed to one ink). Both `ds` and the path data within `layers` are in
+// the traced bitmap's own pixel space (width x height).
+export type LogoVector = { ds: string[]; width: number; height: number; layers?: { ds: string[]; color: string }[] };
 
 export type OutlineLayoutParams = {
   canvasW: number;
@@ -72,7 +76,24 @@ export type OutlineLayoutParams = {
   frame?: string;
   textFont?: string;
   inkColor: string;
+  // Per-element colors, independent of `inkColor`, for a full-color
+  // technique where each element keeps its own chosen color instead of
+  // printing in one uniform ink — mirrors ProductConfigurator.tsx's
+  // effectiveNamesColor/effectiveDateColor/effectiveMonogramColor/
+  // effectiveFrameColor. Falls back to `inkColor` when omitted, so an
+  // existing single-color-ink caller that only ever sent `inkColor`
+  // behaves exactly as before.
+  namesColor?: string;
+  dateColor?: string;
+  monogramColor?: string;
+  frameColor?: string;
   logoVector?: LogoVector | null;
+  // True for a single-color-ink technique, where the whole order (logo
+  // included) prints in one uniform ink: the logo is forced to a flat
+  // silhouette in `inkColor` rather than its own real colors. False (the
+  // default) uses `logoVector.layers` instead, each kept in its own real
+  // color — what a full-color technique needs.
+  singleColorInk?: boolean;
   fontScale?: Partial<Record<ElemKey, number>>;
   rotations?: Partial<Record<ElemKey, number>>;
 };
@@ -93,7 +114,12 @@ export async function computeOutlineLayout({
   frame = "",
   textFont = "",
   inkColor,
+  namesColor,
+  dateColor,
+  monogramColor,
+  frameColor,
   logoVector,
+  singleColorInk = false,
   fontScale = {},
   rotations = {},
 }: OutlineLayoutParams): Promise<OutlineLayoutItem[]> {
@@ -127,7 +153,20 @@ export async function computeOutlineLayout({
 
   const items: OutlineLayoutItem[] = [];
 
-  if (logoVector && logoVector.ds.length) {
+  // A single-color-ink technique collapses the logo to one flat silhouette
+  // in the order's one ink color; a full-color technique keeps each of the
+  // logo's own real colors via its traced layers instead.
+  const logoLayers = singleColorInk
+    ? logoVector?.ds.length
+      ? [{ ds: logoVector.ds, color: inkColor }]
+      : []
+    : logoVector?.layers?.length
+      ? logoVector.layers
+      : logoVector?.ds.length
+        ? [{ ds: logoVector.ds, color: inkColor }]
+        : [];
+
+  if (logoVector && logoLayers.length) {
     const { x: cx, y: cy } = toCanvasPoint("logo", { x: 50, y: 35 });
     // Mirrors defaultLogoBoxSize() in personalizationComposite.ts: 45% of
     // the print area's smaller physical dimension, as a square bounding
@@ -137,8 +176,7 @@ export async function computeOutlineLayout({
     const scale = boxMm / Math.max(logoVector.width, logoVector.height, 1);
     items.push({
       kind: "logo",
-      ds: logoVector.ds,
-      color: inkColor,
+      layers: logoLayers,
       cx,
       cy,
       rotationDeg: rotations.logo ?? 0,
@@ -153,7 +191,7 @@ export async function computeOutlineLayout({
     const size = canvasH * 0.14 * (fontScale.monogram ?? 1);
     items.push({
       kind: "monogram",
-      markup: monogramSvgInner(monogram, inkColor),
+      markup: monogramSvgInner(monogram, monogramColor ?? inkColor),
       cx,
       cy,
       rotationDeg: rotations.monogram ?? 0,
@@ -186,7 +224,7 @@ export async function computeOutlineLayout({
       const boxH = textH + padY * 2;
       items.push({
         kind: "frame",
-        markup: frameSvgInner(frame.trim(), inkColor),
+        markup: frameSvgInner(frame.trim(), frameColor ?? inkColor),
         cx,
         cy,
         rotationDeg: rotations.names ?? 0,
@@ -200,7 +238,7 @@ export async function computeOutlineLayout({
     const pathsData = await textLinesToPathData(lines, textFont, fontSize, cx, centerYs);
     const ds = pathsData.filter(Boolean);
     if (ds.length) {
-      items.push({ kind: "text", ds, color: inkColor, cx, cy, rotationDeg: rotations.names ?? 0 });
+      items.push({ kind: "text", ds, color: namesColor ?? inkColor, cx, cy, rotationDeg: rotations.names ?? 0 });
     }
   }
 
@@ -213,7 +251,7 @@ export async function computeOutlineLayout({
     const fontSize = await fitFontSizeToWidth(trimmed, textFont, canvasH * 0.05 * (fontScale.date ?? 1), availableWidth, 0.08);
     const [d] = await textLinesToPathData([trimmed], textFont, fontSize, cx, [cy], fontSize * 0.08);
     if (d) {
-      items.push({ kind: "text", ds: [d], color: inkColor, cx, cy, rotationDeg: rotations.date ?? 0 });
+      items.push({ kind: "text", ds: [d], color: dateColor ?? inkColor, cx, cy, rotationDeg: rotations.date ?? 0 });
     }
   }
 
@@ -239,7 +277,9 @@ export async function buildOutlineArtworkSvg(params: OutlineLayoutParams): Promi
       return `<g transform="translate(${item.cx} ${item.cy}) rotate(${item.rotationDeg}) scale(${item.scaleX} ${item.scaleY}) translate(-100 -45)">${item.markup}</g>`;
     }
     if (item.kind === "logo") {
-      const paths = item.ds.map((d) => `<path d="${d}" fill="${item.color}" />`).join("");
+      const paths = item.layers
+        .flatMap((layer) => layer.ds.map((d) => `<path d="${d}" fill="${layer.color}" />`))
+        .join("");
       return `<g transform="translate(${item.cx} ${item.cy}) rotate(${item.rotationDeg}) scale(${item.scale}) translate(${-item.sourceWidth / 2} ${-item.sourceHeight / 2})">${paths}</g>`;
     }
     const paths = item.ds.map((d) => `<path d="${d}" fill="${item.color}" />`).join("");
