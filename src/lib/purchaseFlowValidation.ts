@@ -52,7 +52,12 @@ export function computeValidationIssues({
   const issues: ValidationIssue[] = [];
 
   if (!isNamesValid(names)) {
-    issues.push({ level: "blocking", elemKey: "names", message: "Add your names or event text before ordering." });
+    // Was blocking — "agregar texto tiene que ser opcional": names/event
+    // text is optional like every other personalization element (logo,
+    // monogram, frame, date), not a required field. Downgraded to an info
+    // note, matching the existing "no logo added" pattern below, so the
+    // customer is told it's missing but can still check out without it.
+    issues.push({ level: "info", elemKey: "names", message: "No names or event text added — this is optional." });
   }
   if (isQuantityBelowMinimum(quantityInput, minOrder)) {
     issues.push({ level: "blocking", message: `The minimum order is ${minOrder} units.` });

@@ -41,7 +41,6 @@ export function ConfirmationStep({
   checklist,
   onToggleChecklistItem,
   technique,
-  namesValid,
   addingToCart,
   justAdded,
   addingSample,
@@ -77,7 +76,6 @@ export function ConfirmationStep({
   checklist: { confirmed: boolean };
   onToggleChecklistItem: () => void;
   technique: string | null;
-  namesValid: boolean;
   addingToCart: boolean;
   justAdded: boolean;
   addingSample: boolean;
@@ -88,7 +86,7 @@ export function ConfirmationStep({
   const checklistConfirmed = checklist.confirmed;
   const blockingIssues = issues.filter((i) => i.level === "blocking");
   const otherIssues = issues.filter((i) => i.level !== "blocking");
-  const cartDisabled = addingToCart || !namesValid || quantityBelowMinimum || !checklistConfirmed;
+  const cartDisabled = addingToCart || quantityBelowMinimum || !checklistConfirmed;
 
   return (
     <div className="flex flex-col gap-6">
@@ -250,7 +248,7 @@ export function ConfirmationStep({
         <button
           type="button"
           onClick={onAddSample}
-          disabled={addingSample || !namesValid || !checklistConfirmed}
+          disabled={addingSample || !checklistConfirmed}
           className="px-6 py-3 rounded-full border border-line text-sm font-medium hover:border-terracotta hover:text-terracotta transition-colors disabled:opacity-50"
         >
           {addingSample ? "Adding…" : sampleAdded ? "Sample added ✓" : `Buy 1 sample — +${formatUSD(sampleFee)}`}

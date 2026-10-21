@@ -12,7 +12,6 @@ import { FRAME_TEMPLATES, frameSvgInner } from "@/lib/frameTemplates";
 import { DEFAULT_TEXT_FONT, textFontStyle } from "@/lib/textFonts";
 import { fitTextFontSize, estimateTextWidth, textLineCount } from "@/lib/textFit";
 import { consumePersonalizationHandoff } from "@/lib/personalizationHandoff";
-import { isNamesValid } from "@/lib/personalizationValidation";
 import { computeDefaultPositions } from "@/lib/defaultDesignLayout";
 import { designStorage, type SavedDesign, type SavedDesignSummary } from "@/lib/designStorage";
 import { formatPrintDate } from "@/lib/printDate";
@@ -606,6 +605,16 @@ export function ProductConfigurator({
     },
     [applyVersion, product.id]
   );
+  // "se tiene que poder eliminar los draft con un boton, hoy se acumulan" —
+  // deletes the underlying saved version and refreshes the list in place so
+  // the modal reflects the removal immediately instead of needing a reopen.
+  const handleDeleteDraft = useCallback(
+    async (deletedVersionId: string) => {
+      await designStorage.remove(product.id, deletedVersionId);
+      setDraftsVersions((prev) => prev.filter((v) => v.versionId !== deletedVersionId));
+    },
+    [product.id]
+  );
   const handleStartNewFromDrafts = useCallback(() => {
     setVersionId(crypto.randomUUID());
     setShowDraftsModal(false);
@@ -644,6 +653,13 @@ export function ProductConfigurator({
   const [savingDraft, setSavingDraft] = useState(false);
   const handleSaveDraft = useCallback(
     async (draftName: string) => {
+      // "duplica el draft cuando se le coloca Logo name y se aprieta el
+      // botón Save draft" — the disabled={saving} on the modal's submit
+      // button closes this same race only after React re-renders; an
+      // explicit guard here closes it immediately, in case the form's
+      // native Enter-to-submit and a near-simultaneous button click both
+      // reach this handler before that re-render commits.
+      if (savingDraft) return;
       setSavingDraft(true);
       try {
         await designStorage.save({
@@ -663,7 +679,7 @@ export function ProductConfigurator({
         setSavingDraft(false);
       }
     },
-    [product.id, activeZoneId, selectedExtraZoneIds, techniqueId, variantId, quantity, design, logoThumbnail]
+    [product.id, activeZoneId, selectedExtraZoneIds, techniqueId, variantId, quantity, design, logoThumbnail, savingDraft]
   );
 
   // BUG-01 + FLOW-02: on mount, list every saved version for this product.
@@ -1521,7 +1537,6 @@ export function ProductConfigurator({
     setDesign((prev) => ({ ...prev, logoFile: null, logoPreview: null, logoOriginalPreview: null }));
   };
 
-  const namesValid = !product.personalizable || isNamesValid(design.names);
   const quantityErrorId = "quantity-minimum-error";
 
   const handleAddToCart = () => submitToCart(false);
@@ -2513,6 +2528,7 @@ export function ProductConfigurator({
           onContinue={handleContinueFromDrafts}
           onStartNew={handleStartNewFromDrafts}
           onClose={() => setShowDraftsModal(false)}
+          onDelete={handleDeleteDraft}
           title="My Drafts"
           continueLabel="Open"
           startNewLabel="New design"
@@ -2825,7 +2841,6 @@ export function ProductConfigurator({
                   checklist={{ confirmed: checklistCurrent.confirmed }}
                   onToggleChecklistItem={toggleChecklistItem}
                   technique={technique?.technique ?? null}
-                  namesValid={namesValid}
                   addingToCart={addingToCart}
                   justAdded={justAdded}
                   addingSample={addingSample}

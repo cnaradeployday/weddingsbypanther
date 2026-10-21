@@ -19,9 +19,9 @@ describe("computeValidationIssues", () => {
     expect(computeValidationIssues(baseInput())).toEqual([]);
   });
 
-  it("blocks on empty names, tagged to the names element", () => {
+  it("shows an info note on empty names, tagged to the names element, not a block", () => {
     const issues = computeValidationIssues(baseInput({ names: "" }));
-    expect(issues).toContainEqual({ level: "blocking", elemKey: "names", message: expect.any(String) });
+    expect(issues).toContainEqual({ level: "info", elemKey: "names", message: expect.any(String) });
   });
 
   it("blocks on a quantity below the minimum", () => {
