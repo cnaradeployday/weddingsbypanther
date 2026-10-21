@@ -18,7 +18,7 @@
 // one needs real subject/background segmentation, which is a different,
 // much harder problem (see LogoToolPanel's note on why that isn't available
 // here).
-function detectBackgroundColor(
+export function detectBackgroundColor(
   data: Uint8ClampedArray | Uint8Array,
   width: number,
   height: number

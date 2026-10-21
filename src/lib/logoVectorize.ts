@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import potrace from "potrace";
-import { keyOutWhiteBackground } from "./backgroundKey";
+import { keyOutWhiteBackground, detectBackgroundColor } from "./backgroundKey";
 
 export type VectorizedLogoLayer = { ds: string[]; color: string };
 
@@ -49,9 +49,24 @@ function dominantColors(
   data: Uint8Array | Buffer,
   channels: number,
   maxColors: number,
+  bg: { r: number; g: number; b: number } | null,
   minShare = 0.02
 ): { r: number; g: number; b: number; count: number }[] {
   const STEP = 24;
+  // How far a pixel can be from the detected background color before it's
+  // allowed to count toward a dominant-color bucket. Resizing up to
+  // TRACE_SIZE blends the background into every border/internal-edge
+  // pixel (bilinear interpolation), producing fully-opaque pixels whose
+  // color sits partway between background and real ink — too far from
+  // pure background to get keyed out by backgroundKey's own (tighter)
+  // tolerance, but still not a genuine ink color. Left uncounted here,
+  // these never formed their own bucket; once the `alpha === 0` fix below
+  // stopped also dropping them by opacity, a logo with enough edge
+  // perimeter (fine text) had enough of them to pass `minShare` and
+  // surface as a spurious near-background "color" layer of its own. They
+  // still get classified normally in buildColorMasks's nearest-bucket
+  // pass — this only keeps them from seeding a fake bucket here.
+  const BG_EXCLUDE_TOLERANCE = 60;
   const buckets = new Map<string, { r: number; g: number; b: number; count: number }>();
   let opaqueCount = 0;
   for (let i = 0; i < data.length; i += channels) {
@@ -65,10 +80,18 @@ function dominantColors(
     // already *is* its true ink color regardless of alpha — only a fully
     // keyed-out (alpha === 0) pixel is actually background.
     if (data[i + 3] === 0) continue;
-    opaqueCount++;
     const r = data[i];
     const g = data[i + 1];
     const b = data[i + 2];
+    if (
+      bg &&
+      Math.abs(r - bg.r) <= BG_EXCLUDE_TOLERANCE &&
+      Math.abs(g - bg.g) <= BG_EXCLUDE_TOLERANCE &&
+      Math.abs(b - bg.b) <= BG_EXCLUDE_TOLERANCE
+    ) {
+      continue;
+    }
+    opaqueCount++;
     const key = `${Math.round(r / STEP)}-${Math.round(g / STEP)}-${Math.round(b / STEP)}`;
     const bucket = buckets.get(key);
     if (bucket) {
@@ -163,7 +186,19 @@ function buildColorMasks(
     // speckled, sketchy edge.
     masks[bestIdx][p] = 255 - alpha;
   }
-  return masks.map((mask) => sharp(mask, { raw: { width, height, channels: 1 } }).png().toBuffer());
+  // A logo with a deliberately textured/painterly edge (not a flat vector
+  // originally) has genuine partial-alpha noise scattered *inside* what's
+  // meant to read as a solid fill, not just along the outer boundary — at
+  // TRACE_SIZE resolution that shows up as a scatter of near-full-alpha
+  // "holes" a pixel or two wide. Left alone, each one traces as a real
+  // cutout ("deberia llenar los puntos blancos con color pleno"). A small
+  // blur is a morphological closing: it averages each speck with its
+  // solid neighbors and pulls it back below the trace threshold, while a
+  // genuine letter counter (the inside of an "a" or "o", tens of pixels
+  // across) is far larger than the blur radius and stays correctly open.
+  return masks.map((mask) =>
+    sharp(mask, { raw: { width, height, channels: 1 } }).blur(1.5).png().toBuffer()
+  );
 }
 
 // Traces an uploaded logo into true vector curves — both as a single flat
@@ -186,6 +221,9 @@ export async function vectorizeLogo(imageBuffer: Buffer): Promise<VectorizedLogo
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
+  // Captured before key-out mutates the border to alpha 0 — detection
+  // samples the image's own edge, which key-out would otherwise erase.
+  const bg = detectBackgroundColor(data, info.width, info.height);
   keyOutWhiteBackground(data, info.width, info.height);
   const { width, height, channels } = info;
 
@@ -213,7 +251,7 @@ export async function vectorizeLogo(imageBuffer: Buffer): Promise<VectorizedLogo
     background: "transparent",
   });
 
-  const buckets = dominantColors(data, channels, 6);
+  const buckets = dominantColors(data, channels, 6, bg);
   const maskPngs = await Promise.all(buildColorMasks(data, channels, width, height, buckets));
   const layers: VectorizedLogoLayer[] = [];
   for (let i = 0; i < buckets.length; i++) {
