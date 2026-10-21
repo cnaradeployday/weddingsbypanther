@@ -26,6 +26,11 @@ export function RecoveryModal({
   onContinue,
   onStartNew,
   onClose,
+  // Permanent — "hoy se acumulan [los drafts]" — only wired up for the
+  // on-demand "My Drafts" list (see ProductConfigurator.tsx), not FLOW-02's
+  // auto-shown recovery modal, where deleting the one draft being recovered
+  // would be an odd/risky action to offer.
+  onDelete,
   // Reused as-is for the on-demand "My Drafts" button (see
   // ProductConfigurator.tsx) — only the copy differs from FLOW-02's
   // auto-shown "pick up where you left off" case.
@@ -40,6 +45,7 @@ export function RecoveryModal({
   onContinue: (versionId: string) => void;
   onStartNew: () => void;
   onClose: () => void;
+  onDelete?: (versionId: string) => void;
   title?: string;
   continueLabel?: string;
   startNewLabel?: string;
@@ -49,7 +55,13 @@ export function RecoveryModal({
   const [selected, setSelected] = useState(versions[0]?.versionId ?? "");
 
   return (
-    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    // z-[200], not z-50 — matches every other full-screen overlay in this
+    // editor (LogoCropModal, SaveDraftModal, FontPicker, PreviewModal): the
+    // live canvas's selected element sets zIndex:100 on its own wrapper
+    // while active, which would otherwise paint its resize/rotate handles
+    // on top of a z-50 modal if "My Drafts" is opened with an element still
+    // selected.
+    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl overflow-hidden max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-line">
           <h2 className="font-serif text-2xl">{title}</h2>
@@ -103,6 +115,28 @@ export function RecoveryModal({
                     {technique?.technique ?? "—"} · {v.quantity} units
                   </p>
                 </div>
+                {onDelete && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (window.confirm(`Delete "${v.draftName || v.names || "Untitled design"}"? This can't be undone.`)) {
+                        onDelete(v.versionId);
+                      }
+                    }}
+                    aria-label="Delete draft"
+                    title="Delete draft"
+                    className="shrink-0 h-9 w-9 rounded-full flex items-center justify-center text-muted hover:text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M3 6h18" />
+                      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6M14 11v6" />
+                    </svg>
+                  </button>
+                )}
               </label>
             );
           })}

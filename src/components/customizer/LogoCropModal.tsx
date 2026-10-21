@@ -3,10 +3,12 @@
 import { useCallback, useRef, useState } from "react";
 import { clampCropRect, cropImageDataUrl, type CropRect } from "@/lib/cropImage";
 
+type Corner = "tl" | "tr" | "bl" | "br";
+
 // EDIT-11's "Crop": a crop frame with drag handles over the logo. Kept
 // intentionally simple — move the frame by dragging inside it, resize from
-// the corner handle — rather than a full-featured cropper library, since
-// the only requirement is "crop frame with handles."
+// a corner handle — rather than a full-featured cropper library, since the
+// only requirement is "crop frame with handles."
 export function LogoCropModal({
   preview,
   onCancel,
@@ -19,15 +21,19 @@ export function LogoCropModal({
   const [rect, setRect] = useState<CropRect>({ x: 0.1, y: 0.1, width: 0.8, height: 0.8 });
   const [busy, setBusy] = useState(false);
   const frameRef = useRef<HTMLDivElement>(null);
-  const dragState = useRef<{ mode: "move" | "resize"; startX: number; startY: number; startRect: CropRect } | null>(
-    null
-  );
+  const dragState = useRef<{ mode: "move"; startX: number; startY: number; startRect: CropRect } | null>(null);
+  // Only the bottom-right corner had a handle at all — "la herramienta
+  // Crop tiene que permitir cropear desde los 4 ángulos." Each corner now
+  // drags that corner specifically while the OPPOSITE corner stays put as
+  // an anchor, so the selection can be resized from (and flipped across)
+  // any edge, the standard cropper convention.
+  const resizeState = useRef<{ anchor: { x: number; y: number } } | null>(null);
 
-  const startDrag = useCallback(
-    (mode: "move" | "resize") => (e: React.PointerEvent) => {
+  const startMove = useCallback(
+    (e: React.PointerEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      dragState.current = { mode, startX: e.clientX, startY: e.clientY, startRect: rect };
+      dragState.current = { mode: "move", startX: e.clientX, startY: e.clientY, startRect: rect };
       const onMove = (ev: PointerEvent) => {
         const state = dragState.current;
         const frame = frameRef.current;
@@ -35,20 +41,46 @@ export function LogoCropModal({
         const box = frame.getBoundingClientRect();
         const dxFrac = (ev.clientX - state.startX) / box.width;
         const dyFrac = (ev.clientY - state.startY) / box.height;
-        if (state.mode === "move") {
-          setRect(clampCropRect({ ...state.startRect, x: state.startRect.x + dxFrac, y: state.startRect.y + dyFrac }));
-        } else {
-          setRect(
-            clampCropRect({
-              ...state.startRect,
-              width: state.startRect.width + dxFrac,
-              height: state.startRect.height + dyFrac,
-            })
-          );
-        }
+        setRect(clampCropRect({ ...state.startRect, x: state.startRect.x + dxFrac, y: state.startRect.y + dyFrac }));
       };
       const onUp = () => {
         dragState.current = null;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [rect]
+  );
+
+  const startResize = useCallback(
+    (corner: Corner) => (e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const anchor = {
+        x: corner === "tl" || corner === "bl" ? rect.x + rect.width : rect.x,
+        y: corner === "tl" || corner === "tr" ? rect.y + rect.height : rect.y,
+      };
+      resizeState.current = { anchor };
+      const onMove = (ev: PointerEvent) => {
+        const state = resizeState.current;
+        const frame = frameRef.current;
+        if (!state || !frame) return;
+        const box = frame.getBoundingClientRect();
+        const pointerFracX = (ev.clientX - box.left) / box.width;
+        const pointerFracY = (ev.clientY - box.top) / box.height;
+        setRect(
+          clampCropRect({
+            x: Math.min(pointerFracX, state.anchor.x),
+            y: Math.min(pointerFracY, state.anchor.y),
+            width: Math.abs(pointerFracX - state.anchor.x),
+            height: Math.abs(pointerFracY - state.anchor.y),
+          })
+        );
+      };
+      const onUp = () => {
+        resizeState.current = null;
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
       };
@@ -89,7 +121,7 @@ export function LogoCropModal({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={preview} alt="" className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
           <div
-            onPointerDown={startDrag("move")}
+            onPointerDown={startMove}
             className="absolute border-2 border-terracotta cursor-move touch-none"
             style={{
               left: `${rect.x * 100}%`,
@@ -107,8 +139,29 @@ export function LogoCropModal({
             }}
           >
             <div
-              onPointerDown={startDrag("resize")}
-              aria-label="Resize crop area"
+              onPointerDown={startResize("tl")}
+              aria-label="Resize crop area from top-left"
+              role="button"
+              tabIndex={0}
+              className="absolute -left-2.5 -top-2.5 h-5 w-5 rounded-full bg-white border-2 border-terracotta cursor-nwse-resize touch-none"
+            />
+            <div
+              onPointerDown={startResize("tr")}
+              aria-label="Resize crop area from top-right"
+              role="button"
+              tabIndex={0}
+              className="absolute -right-2.5 -top-2.5 h-5 w-5 rounded-full bg-white border-2 border-terracotta cursor-nesw-resize touch-none"
+            />
+            <div
+              onPointerDown={startResize("bl")}
+              aria-label="Resize crop area from bottom-left"
+              role="button"
+              tabIndex={0}
+              className="absolute -left-2.5 -bottom-2.5 h-5 w-5 rounded-full bg-white border-2 border-terracotta cursor-nesw-resize touch-none"
+            />
+            <div
+              onPointerDown={startResize("br")}
+              aria-label="Resize crop area from bottom-right"
               role="button"
               tabIndex={0}
               className="absolute -right-2.5 -bottom-2.5 h-5 w-5 rounded-full bg-white border-2 border-terracotta cursor-nwse-resize touch-none"

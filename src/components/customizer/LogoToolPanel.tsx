@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { fileToDataUrl } from "@/lib/dataUrl";
 import { nearestPantone } from "@/lib/pantoneMatch";
+import { isPdfLikeFile, renderPdfFirstPageToDataUrl } from "@/lib/pdfToImage";
 import type { LogoRemoveWhiteMode } from "./types";
 
 // A generous technical safety cap, not a business rule — no maximum upload
@@ -94,8 +95,14 @@ export function LogoToolPanel({
 
   const handleFile = async (file: File, mode: "upload" | "replace") => {
     setError(null);
-    if (!file.type.startsWith("image/")) {
-      setError("That file isn't an image. Upload a PNG, JPG, SVG, or similar image file.");
+    // PDF (and a modern Illustrator .ai file, which Illustrator saves as
+    // PDF-compatible by default) is rasterized client-side first — nothing
+    // downstream of this point needs to know the original wasn't a plain
+    // image. A real PostScript .eps isn't PDF-compatible and isn't
+    // supported by this path yet.
+    const isPdfLike = isPdfLikeFile(file);
+    if (!file.type.startsWith("image/") && !isPdfLike) {
+      setError("That file isn't a supported type. Upload a PNG, JPG, SVG, PDF, or AI file.");
       return;
     }
     if (file.size > MAX_UPLOAD_BYTES) {
@@ -104,11 +111,15 @@ export function LogoToolPanel({
     }
     setUploading(true);
     try {
-      const dataUrl = await fileToDataUrl(file);
+      const dataUrl = isPdfLike ? await renderPdfFirstPageToDataUrl(file) : await fileToDataUrl(file);
       if (mode === "upload") onUpload(file, dataUrl);
       else onReplace(file, dataUrl);
     } catch {
-      setError("Couldn't read that file. Try a different one.");
+      setError(
+        isPdfLike
+          ? "Couldn't open that file as a PDF. A pre-PDF .ai file or a real .eps isn't supported yet — try exporting a PNG or JPG instead."
+          : "Couldn't read that file. Try a different one."
+      );
     } finally {
       setUploading(false);
     }
@@ -137,11 +148,11 @@ export function LogoToolPanel({
           </svg>
           {uploading ? "Uploading…" : "Upload a logo"}
           <span className="text-xs" style={{ color: "var(--pc-ink-400)" }}>
-            Drag here or click · PNG, JPG, SVG · max {Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB
+            Drag here or click · PNG, JPG, SVG, PDF, AI · max {Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB
           </span>
           <input
             type="file"
-            accept="image/*"
+            accept="image/*,.pdf,.ai,application/pdf"
             className="hidden"
             disabled={uploading}
             onChange={(e) => {
@@ -169,7 +180,7 @@ export function LogoToolPanel({
                 {uploading ? "Uploading…" : "Replace"}
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,.pdf,.ai,application/pdf"
                   className="hidden"
                   disabled={uploading}
                   onChange={(e) => {

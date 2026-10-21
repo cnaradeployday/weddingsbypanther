@@ -21,7 +21,18 @@ export type VectorizedLogo = {
   layers: VectorizedLogoLayer[];
 };
 
-const TRACE_SIZE = 512;
+// Was 512 — "en el render se ve bien, y cuando lo genera en svg sale mal."
+// The raster composite just displays the source pixels (blur and all) at a
+// forgiving on-screen size; a vector trace has zero tolerance for
+// ambiguity; it has to commit to a hard edge from every soft/aliased
+// pixel, so thin strokes (a script font's connecting flourishes, a small
+// subtitle's fine serifs) need real working resolution to come out as
+// recognizable letterforms instead of fused blobs. Doubling this gives
+// potrace meaningfully more detail to work from for any upload that has
+// it; `withoutEnlargement` below means a genuinely low-res source (as
+// LogoToolPanel's own low-res warning would flag) is unaffected either way
+// — this can't manufacture detail that was never captured.
+const TRACE_SIZE = 1024;
 
 function rgbToHex(r: number, g: number, b: number): string {
   return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
@@ -83,29 +94,49 @@ function traceSvgPaths(imagePngOrBuffer: Buffer, options: potrace.PotraceOptions
   });
 }
 
-// Builds a binary mask (as a PNG potrace can trace) isolating just the
-// pixels close to one dominant color bucket — black where that color is,
-// white everywhere else (potrace's own luminance threshold then traces the
-// black region as one shape).
-function buildColorMaskPng(
+// Builds one binary mask per dominant color bucket (as PNGs potrace can
+// trace) — black where a pixel belongs to that bucket, white everywhere
+// else. Every opaque pixel is assigned to its single NEAREST bucket by
+// color distance, rather than tested against one bucket's own tolerance in
+// isolation: a per-bucket tolerance test leaves anti-aliased edge pixels
+// (which blend partway between a stroke's color and the background) too
+// far from *either* color to match, excluding them from every mask — for
+// an already-thin stroke (a script font's connecting flourish, a small
+// subtitle's serif) that 1-2px antialiased border is a large fraction of
+// its total width, so this was eroding thin strokes until they
+// disconnected or vanished entirely ("en svg sale mal": "Te hace brillar"
+// was visibly missing characters, not just rough). Nearest-bucket
+// assignment guarantees full coverage instead — no pixel falls into a gap
+// between tolerances.
+function buildColorMasks(
   data: Uint8Array | Buffer,
   channels: number,
   width: number,
   height: number,
-  bucket: { r: number; g: number; b: number },
-  tolerance = 24
-): Promise<Buffer> {
-  const mask = Buffer.alloc(width * height, 255);
+  buckets: { r: number; g: number; b: number }[]
+): Promise<Buffer>[] {
+  const masks = buckets.map(() => Buffer.alloc(width * height, 255));
   for (let i = 0, p = 0; i < data.length; i += channels, p++) {
-    const opaque = data[i + 3] >= 200;
-    const close =
-      opaque &&
-      Math.abs(data[i] - bucket.r) <= tolerance &&
-      Math.abs(data[i + 1] - bucket.g) <= tolerance &&
-      Math.abs(data[i + 2] - bucket.b) <= tolerance;
-    mask[p] = close ? 0 : 255;
+    if (data[i + 3] < 200) continue;
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    for (let bi = 0; bi < buckets.length; bi++) {
+      const bucket = buckets[bi];
+      const dr = r - bucket.r;
+      const dg = g - bucket.g;
+      const db = b - bucket.b;
+      const dist = dr * dr + dg * dg + db * db;
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = bi;
+      }
+    }
+    masks[bestIdx][p] = 0;
   }
-  return sharp(mask, { raw: { width, height, channels: 1 } }).png().toBuffer();
+  return masks.map((mask) => sharp(mask, { raw: { width, height, channels: 1 } }).png().toBuffer());
 }
 
 // Traces an uploaded logo into true vector curves — both as a single flat
@@ -138,23 +169,32 @@ export async function vectorizeLogo(imageBuffer: Buffer): Promise<VectorizedLogo
     .flatten({ background: "#ffffff" })
     .png()
     .toBuffer();
+  // turdSize was 4 (px² below which potrace discards a shape as a
+  // "speckle") and optTolerance 0.3 — both tuned for clean flat-color
+  // logos, but too aggressive for fine text: a thin stroke or a small
+  // subtitle's serifs can easily measure under 4px² even at this higher
+  // TRACE_SIZE, and were being discarded outright (not just simplified —
+  // the "Te hace brillar" subtitle was visibly missing characters, not
+  // just rough ones). potrace's own documented defaults (turdSize 2,
+  // optTolerance 0.2) preserve that fine detail instead of trading it away
+  // for a simpler/smaller path.
   const ds = await traceSvgPaths(flattened, {
     threshold: 180,
-    turdSize: 4,
-    optTolerance: 0.3,
+    turdSize: 2,
+    optTolerance: 0.2,
     color: "#000000",
     background: "transparent",
   });
 
   const buckets = dominantColors(data, channels, 6);
+  const maskPngs = await Promise.all(buildColorMasks(data, channels, width, height, buckets));
   const layers: VectorizedLogoLayer[] = [];
-  for (const bucket of buckets) {
-    const color = rgbToHex(bucket.r, bucket.g, bucket.b);
-    const maskPng = await buildColorMaskPng(data, channels, width, height, bucket);
-    const layerDs = await traceSvgPaths(maskPng, {
+  for (let i = 0; i < buckets.length; i++) {
+    const color = rgbToHex(buckets[i].r, buckets[i].g, buckets[i].b);
+    const layerDs = await traceSvgPaths(maskPngs[i], {
       threshold: 128,
-      turdSize: 4,
-      optTolerance: 0.3,
+      turdSize: 2,
+      optTolerance: 0.2,
       color,
       background: "transparent",
     });

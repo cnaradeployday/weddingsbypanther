@@ -71,22 +71,90 @@ export function PreviewModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const [downloading, setDownloading] = useState(false);
+
   if (!active) return null;
   const isAi = active.key.startsWith("ai-");
   const src = isAi ? active.fallbackUrl : composited[active.key] ?? active.fallbackUrl;
 
+  // "El render se muestra en muy mala calidad, no la tiene que comprimir...
+  // necesitamos un botón para poder descargar ese render en buena calidad."
+  // `src` is already the full, uncompressed PNG the server composited (see
+  // personalizationComposite.ts — it never downscales the reference photo,
+  // only supersamples/downscales the logo+text artwork layered on top) —
+  // what's shown on screen is just that same file scaled down to fit this
+  // dialog by the browser. A data: URL downloads natively via `download`;
+  // a remote fallbackUrl needs fetching as a blob first since the
+  // `download` attribute is ignored for cross-origin links in most
+  // browsers.
+  const handleDownload = async () => {
+    const filename = `${active.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`;
+    if (src.startsWith("data:")) {
+      const a = document.createElement("a");
+      a.href = src;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    }
+    setDownloading(true);
+    try {
+      const res = await fetch(src);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
-    <div role="dialog" aria-modal="true" aria-label="Preview" className="fixed inset-0 z-50 flex flex-col bg-black/70">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Preview"
+      // Was z-50 — the live canvas's selected element sets zIndex:100 on
+      // its own wrapper while active (ProductConfigurator.tsx), which sits
+      // above z-50 regardless of this modal's own backdrop, letting that
+      // element's resize/rotate handles paint on top of the preview as a
+      // "second logo" ("aparece un logo adicional... con los tiradores de
+      // transformación"). Same fix as LogoCropModal's z-[200] for the
+      // identical bug.
+      className="fixed inset-0 z-[200] flex flex-col bg-black/70"
+    >
       <div className="flex items-center justify-between px-4 md:px-6 h-16 shrink-0">
         <span className="text-cream-light font-serif text-lg">Preview</span>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close preview"
-          className="h-11 w-11 flex items-center justify-center rounded-full text-cream-light hover:bg-white/10 text-xl"
-        >
-          ×
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={downloading}
+            aria-label="Download this render"
+            title="Download this render"
+            className="h-11 w-11 flex items-center justify-center rounded-full text-cream-light hover:enabled:bg-white/10 disabled:opacity-50"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 3v12" />
+              <path d="m7 10 5 5 5-5" />
+              <path d="M5 21h14" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close preview"
+            className="h-11 w-11 flex items-center justify-center rounded-full text-cream-light hover:bg-white/10 text-xl"
+          >
+            ×
+          </button>
+        </div>
       </div>
       <div className="flex-1 min-h-0 flex items-center justify-center px-4">
         <div className="relative w-full max-w-2xl aspect-[4/5]">
