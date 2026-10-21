@@ -11,10 +11,14 @@ import type { LogoRemoveWhiteMode } from "./types";
 // freezing the tab while it's read/decoded, not a configured limit.
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
+// Labels kept generic ("background color," not "white") since the
+// underlying detection now samples the logo's own border to find whatever
+// flat color its background actually is — white, black, or anything else
+// — instead of assuming white.
 const REMOVE_WHITE_OPTIONS: { id: LogoRemoveWhiteMode; label: string; hint: string }[] = [
   { id: "never", label: "Never", hint: "Keep the logo exactly as uploaded." },
-  { id: "background", label: "Background only", hint: "Removes white around the edges, keeps white details inside the logo." },
-  { id: "all", label: "All white", hint: "Removes every near-white area, including inside letters." },
+  { id: "background", label: "Background only", hint: "Removes the detected background color around the edges, keeps that color where it appears inside the logo." },
+  { id: "all", label: "All background color", hint: "Removes every area matching the detected background color, including inside letters." },
 ];
 
 export function LogoToolPanel({
@@ -197,7 +201,7 @@ export function LogoToolPanel({
 
           <div className="flex flex-col gap-2">
             <span className="text-[11px] tracking-[0.14em] uppercase" style={{ color: "var(--pc-ink-500)" }}>
-              Remove white{processing ? " · Processing…" : ""}
+              Remove background{processing ? " · Processing…" : ""}
             </span>
             <div className="flex flex-col gap-1.5">
               {REMOVE_WHITE_OPTIONS.map((opt) => (
@@ -297,9 +301,10 @@ export function LogoToolPanel({
 
           <div className="pt-3" style={{ borderTop: "1px solid var(--pc-ink-100)" }}>
             <p className="text-xs" style={{ color: "var(--pc-ink-400)" }}>
-              Automatic background removal (for photos, not just flat white) isn&apos;t available yet — the
-              in-browser library considered for it (@imgly/background-removal) is AGPL-licensed, which isn&apos;t
-              compatible with this app, and no adequately free, production-quality alternative was found.
+              The options above detect and remove a flat background color (white, black, or any other solid
+              color). Removing a photographic background isn&apos;t available yet — the in-browser library
+              considered for it (@imgly/background-removal) is AGPL-licensed, which isn&apos;t compatible with
+              this app, and no adequately free, production-quality alternative was found.
             </p>
           </div>
         </>

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import type { LogoVector } from "@/lib/personalizationOutline";
 
 export type CartItem = {
   key: string; // unique per configuration (productId + personalization)
@@ -78,10 +79,11 @@ export type CartItem = {
     // Front-to-back stacking order of every element.
     elemOrder?: string[];
     // The logo traced into vector path data at upload time (see
-    // src/lib/logoVectorize.ts) — only present for single-color-ink
-    // techniques, so the print-ready outline file can include the logo as
-    // true curves instead of an embedded raster.
-    logoVector?: { ds: string[]; width: number; height: number } | null;
+    // src/lib/logoVectorize.ts), so the print-ready outline file can
+    // include the logo as true curves instead of an embedded raster — a
+    // flat silhouette (`ds`) for a single-color-ink technique, or real-
+    // color layers (`layers`) for a full-color one.
+    logoVector?: LogoVector | null;
     // Secondary/tertiary print areas the shopper added on top of the
     // primary one above — each carries its own independent design (it's
     // usually a different logo/text sized for a differently-shaped area)
@@ -124,7 +126,7 @@ export type AreaPersonalization = {
   dateCurve?: number;
   dateAlign?: "left" | "center" | "right";
   elemOrder?: string[];
-  logoVector?: { ds: string[]; width: number; height: number } | null;
+  logoVector?: LogoVector | null;
 };
 
 type CartContextValue = {

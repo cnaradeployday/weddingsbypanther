@@ -14,6 +14,14 @@ type AreaPersonalization = {
   frame?: string;
   textFont?: string;
   inkColorHex?: string;
+  // Per-element colors stored alongside inkColorHex (see cart.tsx) — only
+  // meaningfully different from inkColor under a full-color technique,
+  // where ProductConfigurator.tsx leaves inkColorHex unset entirely and
+  // stores each element's own chosen color here instead.
+  namesColor?: string;
+  dateColor?: string;
+  monogramColor?: string;
+  frameColor?: string;
   logoVector?: LogoVector | null;
   elemScale?: Partial<Record<ElemKey, number>>;
   elemRotationOffset?: Partial<Record<ElemKey, number>>;
@@ -81,7 +89,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     frame: area.frame ?? "",
     textFont: area.textFont ?? "",
     inkColor: area.inkColorHex ?? techniqueInkColor(p?.technique),
+    namesColor: area.namesColor,
+    dateColor: area.dateColor,
+    monogramColor: area.monogramColor,
+    frameColor: area.frameColor,
     logoVector: area.logoVector ?? null,
+    // inkColorHex is only ever stored for a single-color-ink technique
+    // (ProductConfigurator.tsx leaves it undefined for a full-color one) —
+    // its presence is this order's own record of which kind it is, with no
+    // extra DB lookup needed.
+    singleColorInk: !!area.inkColorHex,
     fontScale: area.elemScale,
     rotations: area.elemRotationOffset,
   };

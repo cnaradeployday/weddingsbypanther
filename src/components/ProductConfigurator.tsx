@@ -38,6 +38,7 @@ import {
   type Point,
 } from "@/lib/quadGeometry";
 import type { RelatedProduct } from "@/lib/queries";
+import type { LogoVector } from "@/lib/personalizationOutline";
 import { RelatedProductsRail } from "./RelatedProductsRail";
 import { QuoteRequestForm } from "./QuoteRequestForm";
 import { useDesignReducer } from "./customizer/useDesignReducer";
@@ -315,7 +316,7 @@ export function ProductConfigurator({
   }, [handoff]);
 
   const [logoSilhouetteUrl, setLogoSilhouetteUrl] = useState<string | null>(null);
-  const [logoVector, setLogoVector] = useState<{ ds: string[]; width: number; height: number } | null>(null);
+  const [logoVector, setLogoVector] = useState<LogoVector | null>(null);
   const [removingBackground, setRemovingBackground] = useState(false);
   const [logoNaturalSize, setLogoNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [detectedColors, setDetectedColors] = useState<DetectedColor[]>([]);
@@ -1540,7 +1541,7 @@ export function ProductConfigurator({
     uploadBase: string,
     zoneId: string,
     areaDesign: Design,
-    precomputedLogoVector?: { ds: string[]; width: number; height: number } | null
+    precomputedLogoVector?: LogoVector | null
   ) => {
     let renderUrl: string | undefined;
     let renderContextUrl: string | undefined;
@@ -1966,6 +1967,79 @@ export function ProductConfigurator({
     setPreviewPhotos(computePreviewPhotos());
     setShowPreviewModal(true);
   }, [computePreviewPhotos]);
+
+  // "Necesitamos poder descargar el archivo en vectores con un botón en
+  // esta pantalla" — a client-reachable twin of /api/order-items/[id]/
+  // print-file (which needs an order that doesn't exist yet during
+  // Design). Posts the live design state to /api/personalization-outline
+  // and downloads whatever it returns, same print-ready SVG/PDF a
+  // supplier would get after checkout, built from the current print area
+  // (not just the logo — every element on the canvas).
+  const [downloadingOutline, setDownloadingOutline] = useState(false);
+  const [outlineError, setOutlineError] = useState<string | null>(null);
+  const handleDownloadOutline = useCallback(
+    async (format: "svg" | "pdf") => {
+      setOutlineError(null);
+      setDownloadingOutline(true);
+      try {
+        const res = await fetch("/api/personalization-outline", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            productId: product.id,
+            zoneId: activeZoneId,
+            format,
+            names: design.hidden.names ? "" : design.names,
+            date: design.hidden.date ? "" : design.date,
+            monogram: design.hidden.monogram ? "" : design.monogram,
+            frame: design.hidden.frame ? "" : design.frame,
+            textFont: design.textFont,
+            positions: design.positions,
+            elemScale: design.elemScale,
+            elemRotationOffset: design.elemRotationOffset,
+            inkColor: effectiveInkColor,
+            namesColor: effectiveNamesColor,
+            dateColor: effectiveDateColor,
+            monogramColor: effectiveMonogramColor,
+            frameColor: effectiveFrameColor,
+            logoVector: design.hidden.logo ? null : logoVector,
+            singleColorInk: !!technique?.singleColorInk,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error(body?.error || "Could not generate the vector file.");
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `design-outline.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Could not generate the vector file.";
+        setOutlineError(message);
+        setTimeout(() => setOutlineError((prev) => (prev === message ? null : prev)), 4000);
+      } finally {
+        setDownloadingOutline(false);
+      }
+    },
+    [
+      product.id,
+      activeZoneId,
+      design,
+      effectiveInkColor,
+      effectiveNamesColor,
+      effectiveDateColor,
+      effectiveMonogramColor,
+      effectiveFrameColor,
+      logoVector,
+      technique,
+    ]
+  );
   // computePreviewPhotos reads zoneDesignsRef (a ref), which is only safe
   // outside of render — an effect, not useMemo, so it can't run during the
   // render pass itself.
@@ -2549,6 +2623,21 @@ export function ProductConfigurator({
                       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
                     </svg>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadOutline("svg")}
+                    disabled={downloadingOutline}
+                    aria-label="Download vector file"
+                    title="Download vector file (SVG)"
+                    className="h-8 w-8 rounded-full flex items-center justify-center transition-colors hover:enabled:bg-[var(--pc-ink-50)] disabled:opacity-40"
+                    style={{ color: "var(--pc-ink-600)" }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M12 3v12" />
+                      <path d="m7 10 5 5 5-5" />
+                      <path d="M5 21h14" />
+                    </svg>
+                  </button>
                 </>
               )}
               <button
@@ -2565,6 +2654,12 @@ export function ProductConfigurator({
               </button>
             </div>
           </header>
+
+          {outlineError && (
+            <div className="px-4 py-2 text-xs text-center" style={{ background: "var(--pc-danger)", color: "#fff" }} role="alert">
+              {outlineError}
+            </div>
+          )}
 
           {step === "design" && (
             <>

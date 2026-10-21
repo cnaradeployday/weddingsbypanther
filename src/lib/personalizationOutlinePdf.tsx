@@ -50,9 +50,9 @@ export async function buildOutlinePdfDocument(params: OutlineLayoutParams) {
                   key={i}
                   transform={`translate(${item.cx} ${item.cy}) rotate(${item.rotationDeg}) scale(${item.scale}) translate(${-item.sourceWidth / 2} ${-item.sourceHeight / 2})`}
                 >
-                  {item.ds.map((d, j) => (
-                    <Path key={j} d={d} fill={item.color} />
-                  ))}
+                  {item.layers.flatMap((layer, li) =>
+                    layer.ds.map((d, j) => <Path key={`${li}-${j}`} d={d} fill={layer.color} />)
+                  )}
                 </G>
               );
             }
