@@ -6,7 +6,7 @@ import { vectorizeLogo } from "./logoVectorize";
 // background) around either one or two solid-color blocks, so the tests
 // below can exercise real sharp/potrace tracing without needing a real
 // uploaded file.
-async function makeLogo(colors: { r: number; g: number; b: number }[]): Promise<Buffer> {
+async function makeLogo(colors: { r: number; g: number; b: number; a?: number }[]): Promise<Buffer> {
   const size = 64;
   const margin = 6;
   const data = Buffer.alloc(size * size * 4);
@@ -27,7 +27,7 @@ async function makeLogo(colors: { r: number; g: number; b: number }[]): Promise<
       data[i] = c.r;
       data[i + 1] = c.g;
       data[i + 2] = c.b;
-      data[i + 3] = 255;
+      data[i + 3] = c.a ?? 255;
     }
   }
   return sharp(data, { raw: { width: size, height: size, channels: 4 } }).png().toBuffer();
@@ -61,5 +61,20 @@ describe("vectorizeLogo", () => {
     const result = await vectorizeLogo(buf);
     expect(result.layers.length).toBe(1);
     expect(result.layers[0].color).toBe("#0a0a0a");
+  }, 20000);
+
+  // "fijate que en el render se ve bien, y cuando lo genera en svg sale
+  // mal" — a deliberately semi-transparent band (standing in for a muted
+  // tagline set to reduced opacity, a common design choice) used to be
+  // discarded outright by the old `alpha < 200` cutoff: it never got its
+  // own color bucket and was skipped by every mask, vanishing from the
+  // vector output while still rendering fine as a raster composite.
+  it("still traces a deliberately semi-transparent element into its own layer", async () => {
+    const buf = await makeLogo([
+      { r: 220, g: 20, b: 20, a: 255 },
+      { r: 120, g: 120, b: 120, a: 150 },
+    ]);
+    const result = await vectorizeLogo(buf);
+    expect(result.layers.length).toBeGreaterThanOrEqual(2);
   }, 20000);
 });

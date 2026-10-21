@@ -55,7 +55,16 @@ function dominantColors(
   const buckets = new Map<string, { r: number; g: number; b: number; count: number }>();
   let opaqueCount = 0;
   for (let i = 0; i < data.length; i += channels) {
-    if (data[i + 3] < 200) continue;
+    // Was `< 200` — treated any pixel short of near-fully-opaque as "not
+    // real artwork," same as background. That silently dropped any
+    // deliberately semi-transparent design element (e.g. a tagline set to
+    // ~60% opacity for a softer look) from dominant-color detection
+    // entirely — it never got its own bucket, so it had no color to be
+    // assigned to later ("no caló las letras de abajo"). PNG alpha is
+    // straight, not premultiplied, so a semi-transparent pixel's r/g/b
+    // already *is* its true ink color regardless of alpha — only a fully
+    // keyed-out (alpha === 0) pixel is actually background.
+    if (data[i + 3] === 0) continue;
     opaqueCount++;
     const r = data[i];
     const g = data[i + 1];
@@ -117,7 +126,17 @@ function buildColorMasks(
 ): Promise<Buffer>[] {
   const masks = buckets.map(() => Buffer.alloc(width * height, 255));
   for (let i = 0, p = 0; i < data.length; i += channels, p++) {
-    if (data[i + 3] < 200) continue;
+    // Same straight-alpha reasoning as dominantColors above: only a fully
+    // keyed-out pixel (alpha === 0) is really background. The old `< 200`
+    // cutoff didn't just miss semi-transparent content wholesale — for a
+    // thin script-font stroke, most of its pixels never reach full
+    // opacity in the first place (there's barely a "core," it's mostly
+    // antialiased edge), so the cutoff left only a sparse, disconnected
+    // scatter of fully-opaque pixels to trace, which potrace rendered as
+    // a jagged, hand-drawn scribble instead of a solid stroke
+    // ("el rojo no lo hizo solido").
+    const alpha = data[i + 3];
+    if (alpha === 0) continue;
     const r = data[i];
     const g = data[i + 1];
     const b = data[i + 2];
@@ -134,7 +153,15 @@ function buildColorMasks(
         bestIdx = bi;
       }
     }
-    masks[bestIdx][p] = 0;
+    // Graded by this pixel's own opacity instead of a hard 0 — a fully
+    // opaque pixel reads as solid foreground (0), a faint antialiased one
+    // reads as nearly background (near 255), and everything in between
+    // gets a real gray value. potrace's own threshold/curve-fit then
+    // smooths that gradient into one clean, solid boundary the way it
+    // already does for the flat `ds` silhouette, instead of us forcing a
+    // per-pixel binary decision that amplified alpha noise into a
+    // speckled, sketchy edge.
+    masks[bestIdx][p] = 255 - alpha;
   }
   return masks.map((mask) => sharp(mask, { raw: { width, height, channels: 1 } }).png().toBuffer());
 }
@@ -192,7 +219,12 @@ export async function vectorizeLogo(imageBuffer: Buffer): Promise<VectorizedLogo
   for (let i = 0; i < buckets.length; i++) {
     const color = rgbToHex(buckets[i].r, buckets[i].g, buckets[i].b);
     const layerDs = await traceSvgPaths(maskPngs[i], {
-      threshold: 128,
+      // Was 128 — now that mask values are graded by alpha instead of hard
+      // 0/255, this is the opacity cutoff for "counts as solid ink": 180
+      // matches the flat `ds` silhouette's own threshold, so a deliberately
+      // semi-transparent element (down to ~30% opacity) still traces solid
+      // rather than fading out below a stricter 50% cutoff.
+      threshold: 180,
       turdSize: 2,
       optTolerance: 0.2,
       color,
