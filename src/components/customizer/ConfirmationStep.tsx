@@ -1,6 +1,6 @@
 "use client";
 
-import { formatUSD, applyMarkup } from "@/lib/format";
+import { formatUSD } from "@/lib/format";
 import type { ValidationIssue } from "@/lib/purchaseFlowValidation";
 
 // Confirmación — Options and Review merged into one step per request:
@@ -20,10 +20,7 @@ export function ConfirmationStep({
   unitPrice,
   minOrder,
   productionTime,
-  variants,
-  variantId,
-  onChangeVariant,
-  markupPct,
+  selectedVariantLabel,
   quantity,
   quantityInput,
   onChangeQuantityInput,
@@ -53,10 +50,11 @@ export function ConfirmationStep({
   unitPrice: number;
   minOrder: number;
   productionTime: string | null;
-  variants: { id: string; label: string; price_delta: number; sku?: string | null }[];
-  variantId: string;
-  onChangeVariant: (id: string) => void;
-  markupPct: number;
+  // The variant/color is now chosen up front, on the pre-builder product
+  // screen (ProductLanding) — fixed for the rest of the flow, so this step
+  // only displays it as read-only text instead of letting it be changed
+  // again here.
+  selectedVariantLabel?: string | null;
   quantity: number;
   quantityInput: string;
   onChangeQuantityInput: (v: string) => void;
@@ -95,6 +93,7 @@ export function ConfirmationStep({
         <p className="text-xl mb-1">
           {formatUSD(unitPrice)} <span className="text-sm text-muted font-normal">per piece · min {minOrder}</span>
         </p>
+        {selectedVariantLabel && <p className="text-sm text-muted mb-1">Color: {selectedVariantLabel}</p>}
         {technique && <p className="text-sm text-muted mb-1">Technique: {technique}</p>}
         {productionTime && <p className="text-sm text-muted mb-3">Production time: {productionTime}</p>}
         <p className="text-muted">{productDescription}</p>
@@ -112,32 +111,6 @@ export function ConfirmationStep({
               )}
             </div>
           ))}
-        </div>
-      )}
-
-      {variants.length > 0 && (
-        <div>
-          <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-            {variants[0]?.sku ? "Option" : "Variant"}
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {variants.map((v) => (
-              <button
-                key={v.id}
-                type="button"
-                onClick={() => onChangeVariant(v.id)}
-                className={`px-4 py-2 rounded-lg text-sm border text-left ${variantId === v.id ? "border-dark bg-cream" : "border-line"}`}
-              >
-                <span className="block font-medium">{v.label}</span>
-                {v.price_delta !== 0 && (
-                  <span className="text-xs text-muted">
-                    {v.price_delta > 0 ? "+" : ""}
-                    {formatUSD(applyMarkup(v.price_delta, markupPct))}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
         </div>
       )}
 

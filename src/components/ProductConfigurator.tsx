@@ -209,36 +209,47 @@ function makeDefaultDesign(isMerchandise: boolean, zoneForDefaults?: Zone): Desi
   };
 }
 
+// Exported so ProductLanding (the pre-builder product/variant screen) can
+// type its own `product` prop against exactly what this component expects,
+// instead of duplicating or loosely re-typing this shape.
+export type ProductConfiguratorProduct = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  categoryName: string;
+  supplierName: string;
+  factoryPrice: number;
+  markupPct: number;
+  unitPrice: number;
+  minOrder: number;
+  popularQty: number | null;
+  allowSample: boolean;
+  leadTimeMin: number;
+  leadTimeMax: number;
+  personalizable: boolean;
+  images: ProductImage[];
+  techniques: Technique[];
+  zones: Zone[];
+  variants: Variant[];
+  plannerSlug: string;
+  plannerId: string;
+  businessType: BusinessType;
+  aiRenderEnabled: boolean;
+};
+
 export function ProductConfigurator({
   product,
   relatedProducts = [],
+  initialVariantId,
 }: {
   relatedProducts?: RelatedProduct[];
-  product: {
-    id: string;
-    slug: string;
-    name: string;
-    description: string | null;
-    categoryName: string;
-    supplierName: string;
-    factoryPrice: number;
-    markupPct: number;
-    unitPrice: number;
-    minOrder: number;
-    popularQty: number | null;
-    allowSample: boolean;
-    leadTimeMin: number;
-    leadTimeMax: number;
-    personalizable: boolean;
-    images: ProductImage[];
-    techniques: Technique[];
-    zones: Zone[];
-    variants: Variant[];
-    plannerSlug: string;
-    plannerId: string;
-    businessType: BusinessType;
-    aiRenderEnabled: boolean;
-  };
+  product: ProductConfiguratorProduct;
+  // Set by ProductLanding once the customer picks a color/variant on the
+  // product screen, before the builder ever mounts — without this, the
+  // builder always defaulted to product.variants[0], silently discarding
+  // whatever the customer had just chosen.
+  initialVariantId?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -444,7 +455,7 @@ export function ProductConfigurator({
   const [techniqueId, setTechniqueId] = useState(
     product.techniques.find((t) => t.is_default)?.id ?? product.techniques[0]?.id ?? ""
   );
-  const [variantId, setVariantId] = useState(product.variants[0]?.id ?? "");
+  const [variantId, setVariantId] = useState(initialVariantId ?? product.variants[0]?.id ?? "");
   const [quantity, setQuantity] = useState(
     product.popularQty && product.popularQty >= product.minOrder ? product.popularQty : product.minOrder
   );
@@ -2820,10 +2831,7 @@ export function ProductConfigurator({
                   unitPrice={unitPriceWithTechnique}
                   minOrder={product.minOrder}
                   productionTime={productionTime}
-                  variants={product.variants}
-                  variantId={variantId}
-                  onChangeVariant={setVariantId}
-                  markupPct={product.markupPct}
+                  selectedVariantLabel={product.variants.length > 1 ? variant?.label : null}
                   quantity={quantity}
                   quantityInput={quantityInput}
                   onChangeQuantityInput={setQuantityInput}

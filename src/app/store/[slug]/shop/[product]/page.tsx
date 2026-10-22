@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { getStorefrontProduct, getRelatedProducts } from "@/lib/queries";
-import { ProductConfigurator } from "@/components/ProductConfigurator";
+import { ProductLanding } from "@/components/ProductLanding";
 import { isBusinessType } from "@/lib/businessType";
 
 export default async function ProductPage({
@@ -21,7 +21,7 @@ export default async function ProductPage({
     // recommends wrapping in Suspense so a static build of this route
     // doesn't fail — see node_modules/next/dist/docs/.../use-search-params.md.
     <Suspense fallback={null}>
-      <ProductConfigurator
+      <ProductLanding
         product={{
           id: product.id,
           slug: product.slug,

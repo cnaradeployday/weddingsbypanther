@@ -192,6 +192,7 @@ export async function buildArtworkImage({
   frameColor,
   fontScale = {},
   rotations = {},
+  pxPerMm = null,
 }: {
   canvasW: number;
   canvasH: number;
@@ -217,6 +218,19 @@ export async function buildArtworkImage({
   frameColor?: string;
   fontScale?: Partial<Record<Exclude<ElemKey, "logo">, number>>;
   rotations?: Partial<Record<ElemKey, number>>;
+  // Real-photo pixels per physical mm of the print zone (canvasW/zone.
+  // width_mm — same ratio the live Design canvas computes from its own
+  // CSS pixel width, just in this buffer's own pixel space). When known,
+  // names/monogram/frame/date are sized from the exact same physical mm
+  // targets the live canvas uses (5mm/6mm/6mm/2.4mm respectively) instead
+  // of a flat fraction of canvasH — that flat fraction only happened to
+  // match the live canvas by coincidence, and diverged badly (way too big
+  // or way too small) whenever the photo's real pixel resolution and its
+  // on-screen CSS display size weren't in the same rough ratio ("en
+  // Design se ve bien... en el previsualizador empieza a hacer
+  // transformaciones extrañas"). Falls back to the previous flat-canvasH
+  // formula when the zone has no mm dimensions on file, same as before.
+  pxPerMm?: number | null;
 }): Promise<Buffer> {
   await ensureFontConfig();
   const fontFamily = personalizationFontFamily(textFont);
@@ -258,7 +272,7 @@ export async function buildArtworkImage({
     const p = pos("monogram", { x: 50, y: 15 });
     const cx = (p.x / 100) * canvasW;
     const cy = (p.y / 100) * canvasH;
-    const size = canvasH * 0.14 * (fontScale.monogram ?? 1);
+    const size = (pxPerMm ? pxPerMm * 6 : canvasH * 0.14) * (fontScale.monogram ?? 1);
     const inner = monogramSvgInner(monogram, monogramColor ?? inkColor);
     const monogramDeg = rotations.monogram ?? 0;
     textElements.push(
@@ -273,14 +287,12 @@ export async function buildArtworkImage({
     // element to. That only looked right by coincidence when both started
     // at their shared default position; moving either one independently
     // (frame and names are separate draggable elements, same as monogram)
-    // made the snapshot diverge from the live canvas. Uses the same
-    // canvasH-relative scale monogram already uses as its own font-size
-    // equivalent, since there's no real mm measurement available here the
-    // way the live canvas's pxPerMm-based frameFontPx has.
+    // made the snapshot diverge from the live canvas. Same pxPerMm-based
+    // size as the live canvas's own frameFontPx when the zone has mm data.
     const p = pos("frame", { x: 50, y: 65 });
     const cx = (p.x / 100) * canvasW;
     const cy = (p.y / 100) * canvasH;
-    const unit = canvasH * 0.14 * (fontScale.frame ?? 1);
+    const unit = (pxPerMm ? pxPerMm * 6 : canvasH * 0.14) * (fontScale.frame ?? 1);
     const boxW = unit * 5;
     const boxH = unit * 2.2;
     const frameDeg = rotations.frame ?? 0;
@@ -298,7 +310,11 @@ export async function buildArtworkImage({
     const trimmed = names.trim();
     const lines = trimmed.split("\n").map((l) => l.trim());
     const lineCount = textLineCount(trimmed);
-    const fontSize = fitTextFontSize(trimmed, canvasH * 0.11 * (fontScale.names ?? 1), canvasW * 0.92);
+    const fontSize = fitTextFontSize(
+      trimmed,
+      (pxPerMm ? pxPerMm * 5 : canvasH * 0.11) * (fontScale.names ?? 1),
+      canvasW * 0.92
+    );
     const lineHeight = fontSize * 1.25;
     // dominant-baseline="central" on the outer <text> centers the whole
     // multi-line block vertically — each tspan just needs to be offset
@@ -316,7 +332,11 @@ export async function buildArtworkImage({
     const cx = (p.x / 100) * canvasW;
     const cy = (p.y / 100) * canvasH;
     const trimmed = date.trim();
-    const fontSize = fitTextFontSize(trimmed, canvasH * 0.05 * (fontScale.date ?? 1), canvasW * 0.92);
+    const fontSize = fitTextFontSize(
+      trimmed,
+      (pxPerMm ? pxPerMm * 2.4 : canvasH * 0.05) * (fontScale.date ?? 1),
+      canvasW * 0.92
+    );
     textElements.push(
       `<text x="${cx}" y="${cy}" font-size="${fontSize}" font-family="${fontFamily}" letter-spacing="1" fill="${dateColor ?? inkColor}" text-anchor="middle" dominant-baseline="central"${rotateAttr(cx, cy, "date")}>${escapeXml(trimmed)}</text>`
     );
@@ -458,6 +478,10 @@ export async function composeProductPersonalization({
     date: baseRotationDeg + (elemRotationOffsetDeg.date ?? 0),
   };
   const logoBoxSize = defaultLogoBoxSize(renderW, renderH, zone) * (elemScale.logo ?? 1);
+  // Real (supersampled) pixels per mm of the zone's physical width — the
+  // same ratio the live canvas's own pxPerMm uses, just in this buffer's
+  // pixel space (renderW) instead of the live canvas's CSS zoneSize.width.
+  const pxPerMm = zone?.width_mm ? renderW / zone.width_mm : null;
 
   const artworkBuffer = await buildArtworkImage({
     canvasW: renderW,
@@ -477,6 +501,7 @@ export async function composeProductPersonalization({
     frameColor,
     fontScale: { monogram: elemScale.monogram ?? 1, frame: elemScale.frame ?? 1, names: elemScale.names ?? 1, date: elemScale.date ?? 1 },
     rotations,
+    pxPerMm,
   });
 
   const finalArtwork =
