@@ -19,6 +19,15 @@ export function toPreviewEntries(photos: PreviewPhoto[], aiRenders: PreviewAiRen
 export function useCompositedPreview(entries: PreviewEntry[], activeKey: string) {
   const [composited, setComposited] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  // Was swallowed entirely ("fails soft — the plain reference photo still
+  // shows") — a real server failure (a thrown exception, a timeout, a bad
+  // response) looked identical to "nothing to render," which made a design
+  // that genuinely failed to composite (e.g. a logo) indistinguishable from
+  // one that composited correctly with no logo. Still falls back to the
+  // plain photo either way, but now the failure itself is visible (a small
+  // banner, see PreviewModal/ConfirmationPreview) and logged to the
+  // console, instead of silently looking like a different bug.
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const active = entries.find((e) => e.key === activeKey) ?? entries[0];
 
   useEffect(() => {
@@ -54,12 +63,17 @@ export function useCompositedPreview(entries: PreviewEntry[], activeKey: string)
         frameColor: req.frameColor,
       }),
     })
-      .then((res) => (res.ok ? res.json() : null))
+      .then(async (res) => {
+        if (res.ok) return res.json();
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ? `${res.status}: ${body.error}` : `Request failed with ${res.status}`);
+      })
       .then((json) => {
         if (json?.imageDataUrl) setComposited((prev) => ({ ...prev, [active.key]: json.imageDataUrl }));
       })
-      .catch(() => {
-        // Fails soft — the plain reference photo (fallbackUrl) still shows.
+      .catch((err) => {
+        console.error("personalization-snapshot failed", active.key, err);
+        setErrors((prev) => ({ ...prev, [active.key]: err instanceof Error ? err.message : "Unknown error" }));
       })
       .finally(() => setLoading((prev) => ({ ...prev, [active.key]: false })));
     // Re-runs only when the selected entry changes — each entry is fetched
@@ -67,5 +81,5 @@ export function useCompositedPreview(entries: PreviewEntry[], activeKey: string)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.key]);
 
-  return { active, composited, loading };
+  return { active, composited, loading, errors };
 }

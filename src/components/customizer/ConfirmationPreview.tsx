@@ -20,7 +20,7 @@ export function ConfirmationPreview({
 }) {
   const entries = toPreviewEntries(photos, aiRenders);
   const [activeKey, setActiveKey] = useState(entries[0]?.key ?? "");
-  const { active, composited, loading } = useCompositedPreview(entries, activeKey);
+  const { active, composited, loading, errors } = useCompositedPreview(entries, activeKey);
 
   if (!active) return null;
   const isAi = active.key.startsWith("ai-");
@@ -41,6 +41,11 @@ export function ConfirmationPreview({
         {isAi && (
           <span className="absolute bottom-3 left-3 text-[11px] bg-white/90 px-3 py-1 rounded-full" style={{ color: "var(--pc-ink-700)" }}>
             AI-generated — not a guaranteed final result
+          </span>
+        )}
+        {!isAi && errors[active.key] && (
+          <span className="absolute bottom-3 left-3 right-3 text-[11px] bg-red-50 text-red-800 px-3 py-2 rounded-lg text-center">
+            Couldn&apos;t render your design on this photo — showing the plain reference photo instead.
           </span>
         )}
         <span
