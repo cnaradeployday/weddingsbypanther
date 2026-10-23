@@ -36,6 +36,7 @@ export function useCompositedPreview(entries: PreviewEntry[], activeKey: string)
         productId: req.productId,
         zoneId: req.zoneId,
         imageId: req.imageId,
+        referenceImageUrl: req.referenceImageUrl,
         technique: req.technique,
         names: req.names,
         date: req.date,
