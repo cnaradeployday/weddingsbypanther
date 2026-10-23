@@ -200,4 +200,37 @@ describe("vectorizeLogo", () => {
       expect(covered / total).toBeLessThan(0.05);
     }
   }, 20000);
+
+  // "seguimos sin lograr el degrade, podemos aumentar la cantidad de
+  // colores?" — raising maxColors alone (6→10→24 in earlier rounds) wasn't
+  // the bottleneck for a genuine continuous gradient (not the earlier
+  // flat-banded "MOMENT" wordmark, but a real radial highlight on a glossy
+  // icon): dominantColors' own color-space quantization grid (`STEP`) caps
+  // how many distinct buckets a smooth gradient can ever produce before
+  // maxColors gets a say. This asserts a real gradient actually produces
+  // meaningfully more bands than the old STEP value allowed, not just that
+  // maxColors is numerically bigger.
+  it("produces meaningfully more bands for a genuine continuous gradient, not just a higher maxColors ceiling", async () => {
+    const size = 64;
+    const margin = 6;
+    const data = Buffer.alloc(size * size * 4);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const i = (y * size + x) * 4;
+        const inMargin = x < margin || x >= size - margin || y < margin || y >= size - margin;
+        if (inMargin) {
+          data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 255;
+          continue;
+        }
+        const t = (x - margin) / (size - margin * 2);
+        data[i] = Math.round(220 + (255 - 220) * (1 - t));
+        data[i + 1] = Math.round(20 + (255 - 20) * (1 - t));
+        data[i + 2] = Math.round(20 + (255 - 20) * (1 - t));
+        data[i + 3] = 255;
+      }
+    }
+    const buf = await sharp(data, { raw: { width: size, height: size, channels: 4 } }).png().toBuffer();
+    const result = await vectorizeLogo(buf);
+    expect(result.layers.length).toBeGreaterThanOrEqual(8);
+  }, 20000);
 });

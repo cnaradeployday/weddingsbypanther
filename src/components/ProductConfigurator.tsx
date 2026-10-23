@@ -179,7 +179,14 @@ function useElementSize<T extends HTMLElement>() {
 
 function makeDefaultDesign(isMerchandise: boolean, zoneForDefaults?: Zone): Design {
   return {
-    names: isMerchandise ? "Your Company" : "Amelia & Ravi",
+    // Was "Your Company" for merchandise — a placeholder pre-filled into a
+    // field the customer might never touch gets exported as if it were
+    // their real text (the "Arrow County Supplies" logo's downloaded
+    // print-ready SVG/PDF showed "Your Company" baked in on a design nobody
+    // had personalized yet). Same reasoning as `date` below: default to
+    // empty so nothing unintended ships unless the customer actually types
+    // something.
+    names: isMerchandise ? "" : "Amelia & Ravi",
     namesStyle: { ...DEFAULT_TEXT_STYLE },
     textFont: isMerchandise ? "montserrat" : DEFAULT_TEXT_FONT,
     // Was "2026-06-14" for wedding products — with the Date tool removed

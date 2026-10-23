@@ -52,7 +52,17 @@ function dominantColors(
   bg: { r: number; g: number; b: number } | null,
   minShare = 0.02
 ): { r: number; g: number; b: number; count: number }[] {
-  const STEP = 24;
+  // "seguimos sin lograr el degrade, podemos aumentar la cantidad de
+  // colores?" — raising `maxColors` (below, at the call site) turned out
+  // not to be the actual bottleneck for a genuine continuous gradient (a
+  // glossy icon's radial highlight, say): STEP is the quantization grid
+  // this function seeds buckets from, so it caps how many genuinely
+  // distinct colors a smooth gradient can ever produce *before* maxColors
+  // or minShare get a say — a gradient quantized at STEP=24 (≈11 steps per
+  // channel) only ever yields a handful of buckets along its own color
+  // path, however high maxColors is raised. Halved to 12 so a real
+  // gradient gets roughly twice as many bands to approximate it with.
+  const STEP = 12;
   // How far a pixel can be from the detected background color before it's
   // allowed to count toward a dominant-color bucket. Resizing up to
   // TRACE_SIZE blends the background into every border/internal-edge
@@ -217,8 +227,22 @@ function buildColorMasks(
   // solid neighbors and pulls it back below the trace threshold, while a
   // genuine letter counter (the inside of an "a" or "o", tens of pixels
   // across) is far larger than the blur radius and stays correctly open.
+  // Was 1.5 — "los bordes en el svg quedan serruchados": each bucket's
+  // boundary is a per-pixel nearest-color decision, which on a photographic
+  // or gradient source can flip between buckets in a locally noisy,
+  // non-monotonic way; potrace then faithfully traces that noisy boundary
+  // as real geometry (a jagged "sawtooth" edge), not as a tracing-quality
+  // problem it can smooth away on its own. A slightly wider blur smooths
+  // more of that classification noise out before potrace ever sees it.
+  // Benchmarked against a synthetic gradient: a further jump to 5+ starts
+  // making edges rougher again (over-blurring shifts the threshold
+  // crossing unevenly) and reintroduces the interior-hole/speckle tests'
+  // failures, so this is the largest safe step, not an arbitrarily chosen
+  // one. It does not fully eliminate jaggedness on a genuine photographic
+  // gradient — that would need real SVG gradient fills instead of flat
+  // per-bucket shapes, a larger change than this tracing pipeline does today.
   return masks.map((mask) =>
-    sharp(mask, { raw: { width, height, channels: 1 } }).blur(1.5).png().toBuffer()
+    sharp(mask, { raw: { width, height, channels: 1 } }).blur(3).png().toBuffer()
   );
 }
 
@@ -291,7 +315,10 @@ export async function vectorizeLogo(imageBuffer: Buffer): Promise<VectorizedLogo
   // more *genuinely large* distinct colors — it can't make a tiny
   // icon-sized bucket lose to the gradient the way a too-small maxColors
   // did.
-  const buckets = dominantColors(data, channels, 24, bg);
+  // 32, not 24 — with STEP halved (above), a real gradient can now
+  // genuinely produce more distinct buckets than before, so the cap itself
+  // needs headroom to not become the new bottleneck in its place.
+  const buckets = dominantColors(data, channels, 32, bg);
   const maskPngs = await Promise.all(buildColorMasks(data, channels, width, height, buckets, bg));
   const layers: VectorizedLogoLayer[] = [];
   for (let i = 0; i < buckets.length; i++) {
