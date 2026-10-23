@@ -145,7 +145,8 @@ function buildColorMasks(
   channels: number,
   width: number,
   height: number,
-  buckets: { r: number; g: number; b: number }[]
+  buckets: { r: number; g: number; b: number }[],
+  bg: { r: number; g: number; b: number } | null
 ): Promise<Buffer>[] {
   const masks = buckets.map(() => Buffer.alloc(width * height, 255));
   for (let i = 0, p = 0; i < data.length; i += channels, p++) {
@@ -175,6 +176,26 @@ function buildColorMasks(
         bestDist = dist;
         bestIdx = bi;
       }
+    }
+    // "no esta calando las letras adentro" follow-up: a soft/blurred drop
+    // shadow's visible "spill" (the bit of it that extends past the shape
+    // it's cast from, onto bare background) fades from its own real color
+    // down to fully transparent — i.e. *faint* pixels there are genuinely
+    // closer in color to the background than to any real ink bucket, often
+    // too small an area on their own to have earned their own bucket in
+    // dominantColors (which already excludes near-background pixels when
+    // *seeding* buckets, via BG_EXCLUDE_TOLERANCE — see above). Without this
+    // check, classification had no "closer to background" option to match
+    // that exclusion: every opaque pixel was forced into whichever real ink
+    // bucket happened to be nearest, however far away, scattering those
+    // fading shadow-edge pixels into the wrong color (commonly a nearby
+    // letter's own ink color) as visible speckle instead of fading away
+    // cleanly like the rest of the shadow already does via its own alpha.
+    if (bg) {
+      const dr = r - bg.r;
+      const dg = g - bg.g;
+      const db = b - bg.b;
+      if (dr * dr + dg * dg + db * db < bestDist) continue;
     }
     // Graded by this pixel's own opacity instead of a hard 0 — a fully
     // opaque pixel reads as solid foreground (0), a faint antialiased one
@@ -271,7 +292,7 @@ export async function vectorizeLogo(imageBuffer: Buffer): Promise<VectorizedLogo
   // icon-sized bucket lose to the gradient the way a too-small maxColors
   // did.
   const buckets = dominantColors(data, channels, 24, bg);
-  const maskPngs = await Promise.all(buildColorMasks(data, channels, width, height, buckets));
+  const maskPngs = await Promise.all(buildColorMasks(data, channels, width, height, buckets, bg));
   const layers: VectorizedLogoLayer[] = [];
   for (let i = 0; i < buckets.length; i++) {
     const color = rgbToHex(buckets[i].r, buckets[i].g, buckets[i].b);
