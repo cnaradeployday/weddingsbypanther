@@ -277,8 +277,22 @@ export async function buildOutlineArtworkSvg(params: OutlineLayoutParams): Promi
       return `<g transform="translate(${item.cx} ${item.cy}) rotate(${item.rotationDeg}) scale(${item.scaleX} ${item.scaleY}) translate(-100 -45)">${item.markup}</g>`;
     }
     if (item.kind === "logo") {
+      // fill-rule="evenodd" is required here, not optional styling —
+      // potrace's traced contours (logoVectorize.ts) wind a letter's outer
+      // boundary and its inner counter (the hole in an "A", "O", "P"...) the
+      // *same* direction, relying on evenodd to alternate fill on/off
+      // between them. Left at the SVG default (nonzero), both contours fill
+      // solid and every letter's counter disappears ("no esta calando las
+      // letras adentro cuando descargo el svg") — even though the exact
+      // same ds/layers render correctly everywhere else, because nowhere
+      // else re-renders them as an SVG path at all (the live Design canvas
+      // shows the original raster upload, not this vector trace). Text
+      // items (below) come from opentype.js glyph outlines instead, which
+      // already wind correctly for nonzero and must NOT get evenodd here —
+      // that would punch a false hole wherever two letters' paths overlap
+      // (a script font's connecting flourish).
       const paths = item.layers
-        .flatMap((layer) => layer.ds.map((d) => `<path d="${d}" fill="${layer.color}" />`))
+        .flatMap((layer) => layer.ds.map((d) => `<path d="${d}" fill="${layer.color}" fill-rule="evenodd" />`))
         .join("");
       return `<g transform="translate(${item.cx} ${item.cy}) rotate(${item.rotationDeg}) scale(${item.scale}) translate(${-item.sourceWidth / 2} ${-item.sourceHeight / 2})">${paths}</g>`;
     }

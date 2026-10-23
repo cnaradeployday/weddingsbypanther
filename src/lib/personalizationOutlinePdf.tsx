@@ -50,8 +50,14 @@ export async function buildOutlinePdfDocument(params: OutlineLayoutParams) {
                   key={i}
                   transform={`translate(${item.cx} ${item.cy}) rotate(${item.rotationDeg}) scale(${item.scale}) translate(${-item.sourceWidth / 2} ${-item.sourceHeight / 2})`}
                 >
+                  {/* Same evenodd requirement as buildOutlineArtworkSvg's "logo"
+                      branch (personalizationOutline.ts) — potrace's traced
+                      contours need it to render a letter's counter as a hole
+                      instead of solid fill; the default nonzero rule (used for
+                      the "text" branch's opentype.js glyph paths, correctly,
+                      below) would fill every counter in. */}
                   {item.layers.flatMap((layer, li) =>
-                    layer.ds.map((d, j) => <Path key={`${li}-${j}`} d={d} fill={layer.color} />)
+                    layer.ds.map((d, j) => <Path key={`${li}-${j}`} d={d} fill={layer.color} fillRule="evenodd" />)
                   )}
                 </G>
               );

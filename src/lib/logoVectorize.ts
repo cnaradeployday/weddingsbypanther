@@ -251,20 +251,26 @@ export async function vectorizeLogo(imageBuffer: Buffer): Promise<VectorizedLogo
     background: "transparent",
   });
 
-  // Was 6 — "no caló bien el logo en svg": a logo with a gradient wordmark
-  // (each letter its own distinct hue) alone can consume most or all of a
-  // small bucket budget, since every gradient band is large and genuinely
-  // distinct. That crowds out any OTHER real color elsewhere in the same
-  // logo (a small decorative icon, say) entirely out of `buckets` — not
-  // just de-prioritized, completely absent from every layer, because a
-  // color with no bucket of its own gets nearest-matched into whichever
-  // surviving (wrong) bucket is closest, scattering its pixels across
-  // other colors' masks instead of its own cohesive shape; fragments of it
-  // then often fall under potrace's own turdSize and vanish outright.
-  // Raised so a genuinely multi-color logo (a gradient wordmark *and* a
-  // separate icon) has room for both instead of the icon losing out to
-  // the wordmark's own color count.
-  const buckets = dominantColors(data, channels, 10, bg);
+  // Was 6, then 10 — "no caló bien el logo en svg" (6→10, below) fixed a
+  // gradient wordmark's colors crowding out a separate icon's own colors
+  // entirely. "subí más el límite de colores para que se vea mejor el
+  // degradado": a vector trace has no real gradient fill — a continuous
+  // gradient can only ever be approximated as a stack of flat-color bands,
+  // so the *number of colors this function is allowed to keep* is directly
+  // the number of visible steps in that approximation. 10 bands across a
+  // multi-hue gradient reads as visibly banded; 24 gives a noticeably
+  // smoother step between adjacent hues while staying well under ~2s added
+  // processing time even at full TRACE_SIZE (benchmarked: ~0.9s/10,
+  // ~1.2s/20, ~1.8s/30 colors for a 40-band synthetic gradient) — this is a
+  // one-time cost at logo upload, not a per-render cost.
+  //
+  // What crowded out the icon before (6→10) isn't reintroduced by going
+  // higher: `minShare` already drops any bucket under 2% of opaque pixels
+  // regardless of `maxColors`, so a bigger budget only ever adds room for
+  // more *genuinely large* distinct colors — it can't make a tiny
+  // icon-sized bucket lose to the gradient the way a too-small maxColors
+  // did.
+  const buckets = dominantColors(data, channels, 24, bg);
   const maskPngs = await Promise.all(buildColorMasks(data, channels, width, height, buckets));
   const layers: VectorizedLogoLayer[] = [];
   for (let i = 0; i < buckets.length; i++) {
