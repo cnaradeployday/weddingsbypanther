@@ -10,6 +10,21 @@ export const runtime = "nodejs";
 // item is personalized) so suppliers and admins always have a visual record
 // of the order, even if the customer never used the optional AI preview.
 export async function POST(req: NextRequest) {
+  try {
+    return await handlePost(req);
+  } catch (err) {
+    // Was unhandled — any thrown exception (a bad logo payload, a sharp
+    // processing failure, anything) produced an opaque 500 with no body,
+    // which the client's "fails soft" fallback made look identical to a
+    // perfectly normal "nothing to composite" response — silently showing
+    // the plain reference photo with no indication anything had failed.
+    console.error("personalization-snapshot failed", err);
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: `Failed to render preview: ${message}` }, { status: 500 });
+  }
+}
+
+async function handlePost(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const productId: string | undefined = body?.productId;
   const names: string = body?.names ?? "";

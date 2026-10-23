@@ -121,4 +121,24 @@ describe("vectorizeLogo", () => {
     // The big, deliberate hole is still open.
     expect(alphaAt(Math.floor(size / 2), Math.floor(size / 2))).toBeLessThan(50);
   }, 20000);
+
+  // "no caló bien el logo en svg" — a gradient wordmark (several large,
+  // genuinely distinct colors) can by itself fill most or all of a small
+  // color-bucket budget, crowding out any other real color in the same
+  // logo (a small separate icon, say) out of every layer entirely, not
+  // just de-prioritized.
+  it("keeps every real color of a logo with more than 6 distinct colors", async () => {
+    const colors = [
+      { r: 220, g: 20, b: 20 },
+      { r: 220, g: 120, b: 20 },
+      { r: 220, g: 200, b: 20 },
+      { r: 20, g: 180, b: 20 },
+      { r: 20, g: 120, b: 220 },
+      { r: 100, g: 20, b: 220 },
+      { r: 200, g: 20, b: 180 },
+    ];
+    const buf = await makeLogo(colors);
+    const result = await vectorizeLogo(buf);
+    expect(result.layers.length).toBe(colors.length);
+  }, 20000);
 });
