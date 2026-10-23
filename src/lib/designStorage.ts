@@ -88,6 +88,11 @@ export type SavedDesignSummary = {
   versionId: string;
   updatedAt: number;
   techniqueId: string;
+  // So the recovery/drafts list's thumbnail can resolve THIS draft's own
+  // variant photo (a draft saved under one color shouldn't suddenly show
+  // another color's photo just because that's the currently selected
+  // variant) — see RecoveryModal's photoUrl computation.
+  variantId: string;
   quantity: number;
   names: string;
   activeZoneId: string;
@@ -122,6 +127,7 @@ function toSummary(design: SavedDesign): SavedDesignSummary {
     versionId: design.versionId,
     updatedAt: design.updatedAt,
     techniqueId: design.techniqueId,
+    variantId: design.variantId,
     quantity: design.quantity,
     names: primary?.names ?? "",
     activeZoneId: design.activeZoneId,

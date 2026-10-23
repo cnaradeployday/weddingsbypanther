@@ -2527,6 +2527,7 @@ export function ProductConfigurator({
           versions={recoveryVersions}
           zones={product.zones}
           images={product.images}
+          variants={product.variants}
           techniques={product.techniques}
           onContinue={handleContinueVersion}
           onStartNew={handleStartNewVersion}
@@ -2543,6 +2544,7 @@ export function ProductConfigurator({
           versions={draftsVersions}
           zones={product.zones}
           images={product.images}
+          variants={product.variants}
           techniques={product.techniques}
           onContinue={handleContinueFromDrafts}
           onStartNew={handleStartNewFromDrafts}
@@ -2736,7 +2738,7 @@ export function ProductConfigurator({
                         }}
                       >
                         <span className="relative flex-1 w-full block">
-                          <Image src={img.url} alt="" fill className="object-contain rounded-[10px]" />
+                          <Image src={variant?.image_url ?? img.url} alt="" fill className="object-contain rounded-[10px]" />
                         </span>
                         {i === 0 ? "Front" : `View ${i + 1}`}
                       </button>
@@ -2886,7 +2888,7 @@ export function ProductConfigurator({
         <div className="flex gap-3 mt-4 justify-center">
           {product.images.map((img, i) => (
             <button key={img.id} onClick={() => setActiveImage(i)} className={`relative h-16 w-16 rounded-lg overflow-hidden border ${i === activeImage ? "border-dark" : "border-line"}`}>
-              <Image src={img.url} alt="" fill className="object-cover" />
+              <Image src={variant?.image_url ?? img.url} alt="" fill className="object-cover" />
             </button>
           ))}
         </div>

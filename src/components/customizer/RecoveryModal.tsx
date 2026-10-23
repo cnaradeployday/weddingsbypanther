@@ -22,6 +22,7 @@ export function RecoveryModal({
   versions,
   zones,
   images,
+  variants = [],
   techniques,
   onContinue,
   onStartNew,
@@ -41,6 +42,13 @@ export function RecoveryModal({
   versions: SavedDesignSummary[];
   zones: { id: string; corners_pct: { x: number; y: number }[]; image_id: string | null }[];
   images: { id: string; url: string }[];
+  // A variant with its own photo (chosen on ProductLanding, before the
+  // builder) overrides the product's generic photo entirely for designs
+  // saved under it — same as the live canvas's own displayImage. Without
+  // this, every draft's thumbnail fell back to the product's generic
+  // photo regardless of which color it was actually designed on ("la
+  // miniatura no respeta el color real del cuaderno").
+  variants?: { id: string; image_url: string | null }[];
   techniques: { id: string; technique: string }[];
   onContinue: (versionId: string) => void;
   onStartNew: () => void;
@@ -79,6 +87,7 @@ export function RecoveryModal({
           {versions.map((v) => {
             const zone = zones.find((z) => z.id === v.activeZoneId) ?? zones[0];
             const photoUrl =
+              variants.find((variant) => variant.id === v.variantId)?.image_url ??
               (zone?.image_id ? images.find((i) => i.id === zone.image_id)?.url : undefined) ??
               images[0]?.url ??
               null;
