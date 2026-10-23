@@ -1949,6 +1949,13 @@ export function ProductConfigurator({
   // same per-image snapshot-request mapping, just one populates state on
   // click and the other stays live via useMemo.
   const computePreviewPhotos = useCallback((): PreviewPhoto[] => {
+    // The live canvas's own `displayImage` always prefers the selected
+    // variant's photo over the product's generic one — a variant chosen on
+    // ProductLanding represents one specific colorway/photo, not a
+    // secondary option layered on the generic gallery. Preview/Confirmation
+    // need the exact same photo, not whatever the server would otherwise
+    // look up by imageId alone.
+    const photoUrl = variant?.image_url ?? undefined;
     return product.images.map((img) => {
       // A zone with no image_id (the common case — one photo, one print
       // area) applies to whichever image doesn't have a more specific
@@ -1959,17 +1966,18 @@ export function ProductConfigurator({
       // with nothing composited on it at all — "the preview doesn't
       // match what I see before" for the most common single-zone case.
       const mappedZone = product.zones.find((z) => z.image_id === img.id) ?? product.zones.find((z) => !z.image_id);
-      if (!mappedZone) return { id: img.id, url: img.url, snapshotRequest: null };
+      if (!mappedZone) return { id: img.id, url: photoUrl ?? img.url, snapshotRequest: null };
       const zoneDesign =
         mappedZone.id === activeZoneId ? design : zoneDesignsRef.current[mappedZone.id] ?? makeDefaultDesign(isMerchandise, mappedZone);
       const colors = effectiveColorsFor(zoneDesign);
       return {
         id: img.id,
-        url: img.url,
+        url: photoUrl ?? img.url,
         snapshotRequest: {
           productId: product.id,
           zoneId: mappedZone.id,
           imageId: img.id,
+          referenceImageUrl: photoUrl,
           technique: technique?.technique,
           names: zoneDesign.names,
           date: zoneDesign.date,
@@ -1988,7 +1996,7 @@ export function ProductConfigurator({
         },
       };
     });
-  }, [product.images, product.zones, product.id, activeZoneId, design, isMerchandise, technique, effectiveColorsFor]);
+  }, [product.images, product.zones, product.id, activeZoneId, design, isMerchandise, technique, effectiveColorsFor, variant]);
   const openPreviewModal = useCallback(() => {
     setPreviewPhotos(computePreviewPhotos());
     setShowPreviewModal(true);

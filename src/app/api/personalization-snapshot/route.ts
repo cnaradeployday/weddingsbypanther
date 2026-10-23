@@ -23,6 +23,15 @@ export async function POST(req: NextRequest) {
   const elemRotationOffsetDeg: Partial<Record<ElemKey, number>> = body?.elemRotationOffsetDeg ?? {};
   const requestedImageId: string | undefined = body?.imageId;
   const requestedZoneId: string | undefined = body?.zoneId;
+  // Set when the customer's selected variant/color has its own photo
+  // (chosen on ProductLanding, before the builder) — the live Design
+  // canvas always renders against that photo instead of the product's
+  // generic one. Without this, this route had no way to know a
+  // variant-specific photo even exists (it only ever looks up the
+  // product's own generic photos table by imageId), so the preview
+  // rendered on a completely different reference photo than what the
+  // customer was actually designing against.
+  const overrideImageUrl: string | undefined = body?.referenceImageUrl;
   // Which technique the customer actually has selected right now — without
   // this the route always fell back to the product's DB-default technique,
   // which can silently differ from what's live on the customer's screen.
@@ -69,7 +78,8 @@ export async function POST(req: NextRequest) {
     : undefined;
   const referenceImage =
     images.find((i) => i.id === requestedImageId) ?? images.find((i) => i.id === rawZone?.image_id) ?? images[0];
-  if (!referenceImage) {
+  const referenceImageUrl = overrideImageUrl ?? referenceImage?.url;
+  if (!referenceImageUrl) {
     return NextResponse.json({ error: "This product has no photo to render on." }, { status: 400 });
   }
   // Prefer the technique the customer actually has selected right now
@@ -101,7 +111,7 @@ export async function POST(req: NextRequest) {
   const inkColor = clientInkColor ?? techniqueInkColor(technique?.technique);
 
   const result = await composeProductPersonalization({
-    referenceImageUrl: referenceImage.url,
+    referenceImageUrl,
     zone,
     logoImage,
     positions,

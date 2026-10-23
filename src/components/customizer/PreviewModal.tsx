@@ -32,6 +32,17 @@ export type PreviewPhoto = {
     frame: string;
     textFont: string;
     logoDataUrl?: string;
+    // Set when the selected variant/color has its own photo (chosen on
+    // ProductLanding, before the builder) — the live Design canvas always
+    // shows that photo instead of the product's generic one
+    // (`displayImage = variant?.image_url ?? ...`). Without this, the
+    // compositor fell back to looking the photo up by `imageId` alone,
+    // which only ever resolves to the product's own generic photos table —
+    // it has no way to know a variant-specific photo exists at all, so the
+    // preview rendered on a completely different reference photo than what
+    // the customer was actually designing against ("fijate las diferencias
+    // entre lo que se ve en el render y el previsualizador").
+    referenceImageUrl?: string;
     positions: Record<string, { x: number; y: number }>;
     elemScale: Record<string, number>;
     elemRotationOffsetDeg: Record<string, number>;
