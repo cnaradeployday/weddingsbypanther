@@ -251,7 +251,20 @@ export async function vectorizeLogo(imageBuffer: Buffer): Promise<VectorizedLogo
     background: "transparent",
   });
 
-  const buckets = dominantColors(data, channels, 6, bg);
+  // Was 6 — "no caló bien el logo en svg": a logo with a gradient wordmark
+  // (each letter its own distinct hue) alone can consume most or all of a
+  // small bucket budget, since every gradient band is large and genuinely
+  // distinct. That crowds out any OTHER real color elsewhere in the same
+  // logo (a small decorative icon, say) entirely out of `buckets` — not
+  // just de-prioritized, completely absent from every layer, because a
+  // color with no bucket of its own gets nearest-matched into whichever
+  // surviving (wrong) bucket is closest, scattering its pixels across
+  // other colors' masks instead of its own cohesive shape; fragments of it
+  // then often fall under potrace's own turdSize and vanish outright.
+  // Raised so a genuinely multi-color logo (a gradient wordmark *and* a
+  // separate icon) has room for both instead of the icon losing out to
+  // the wordmark's own color count.
+  const buckets = dominantColors(data, channels, 10, bg);
   const maskPngs = await Promise.all(buildColorMasks(data, channels, width, height, buckets));
   const layers: VectorizedLogoLayer[] = [];
   for (let i = 0; i < buckets.length; i++) {
