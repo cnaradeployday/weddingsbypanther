@@ -2135,6 +2135,31 @@ export function ProductConfigurator({
             onPointerDown={() => selectElem(null)}
           >
             {displayImage && <Image src={displayImage} alt={product.name} fill className="object-cover" priority />}
+            {removingBackground && (
+              // "pone el mensaje de REMOVE BACKGROUND PROCESING en el centro
+              // de la pantalla mas grande para que el usuario sepa que tiene
+              // que esperar" — the old indicator was a small text suffix
+              // tucked into the Logo panel's "Remove background" label, easy
+              // to miss entirely. This sits right over the work area the
+              // customer is actually looking at, impossible to miss, and
+              // doubles as a visible reason the Preview/Next buttons are
+              // disabled right now.
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 pointer-events-none">
+                <div className="flex flex-col items-center gap-3 px-6 py-5 rounded-2xl bg-white/95 shadow-lg text-center">
+                  <span
+                    className="h-8 w-8 rounded-full border-[3px] border-t-transparent animate-spin"
+                    style={{ borderColor: "var(--color-terracotta)", borderTopColor: "transparent" }}
+                    aria-hidden="true"
+                  />
+                  <span className="font-serif text-base" style={{ color: "var(--pc-ink-950)" }}>
+                    Removing background…
+                  </span>
+                  <span className="text-xs max-w-[220px]" style={{ color: "var(--pc-ink-500)" }}>
+                    One moment — Preview and Confirmation will be ready right after.
+                  </span>
+                </div>
+              </div>
+            )}
             {gridOn && (
               <div
                 className="absolute inset-0 pointer-events-none opacity-30"
@@ -2687,8 +2712,21 @@ export function ProductConfigurator({
               <button
                 type="button"
                 onClick={openPreviewModal}
+                disabled={removingBackground}
                 aria-label="Preview"
-                className="h-8 w-8 rounded-full flex items-center justify-center transition-colors hover:bg-[var(--pc-ink-50)]"
+                // "funciona bien con el color WHITE... como que se arregló
+                // para un solo color?" — opening Preview while background
+                // removal was still running sent the server the RAW,
+                // not-yet-keyed-out logo (design.logoPreview only swaps to
+                // the processed version once that async call resolves). Its
+                // original flat background then rendered as an opaque box,
+                // multiply-composited onto the photo — invisible when that
+                // box happened to be white (white * anything = unchanged)
+                // but a visible dark smear on any other product color.
+                // Disabling the button for that one short window removes
+                // the race instead of just telling the customer to wait.
+                title={removingBackground ? "Removing the logo's background — one moment…" : "Preview"}
+                className="h-8 w-8 rounded-full flex items-center justify-center transition-colors hover:enabled:bg-[var(--pc-ink-50)] disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ color: "var(--pc-ink-600)" }}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2798,7 +2836,9 @@ export function ProductConfigurator({
                       <button
                         type="button"
                         onClick={() => goToStep("confirmation")}
-                        className="px-6 h-[46px] rounded-full text-sm font-medium bg-terracotta text-cream-light hover:bg-terracotta-dark transition-colors"
+                        disabled={removingBackground}
+                        title={removingBackground ? "Removing the logo's background — one moment…" : undefined}
+                        className="px-6 h-[46px] rounded-full text-sm font-medium bg-terracotta text-cream-light hover:enabled:bg-terracotta-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         Next: Confirmation
                       </button>
@@ -2824,7 +2864,9 @@ export function ProductConfigurator({
                 <button
                   type="button"
                   onClick={() => goToStep("confirmation")}
-                  className="px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors"
+                  disabled={removingBackground}
+                  title={removingBackground ? "Removing the logo's background — one moment…" : undefined}
+                  className="px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:enabled:bg-terracotta-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Next: Confirmation
                 </button>
