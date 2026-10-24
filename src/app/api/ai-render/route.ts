@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
       )
       .eq("id", productId)
       .maybeSingle(),
-    supabase.from("print_techniques").select("name, finish_description, color_mode_description, strip_source_color"),
+    supabase.from("print_techniques").select("name, finish_description, color_mode_description, strip_source_color, single_color_ink"),
   ]);
 
   if (!product) {
@@ -198,6 +198,8 @@ export async function POST(req: NextRequest) {
     inkColor,
     elemScale,
     elemRotationOffsetDeg,
+    // Same fix as personalization-snapshot's own route — see its comment.
+    singleColorInk: !!techniqueMeta?.single_color_ink,
   });
   if (!productResultImage) {
     return NextResponse.json({ error: "Could not load the product photo." }, { status: 502 });
