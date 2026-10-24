@@ -75,7 +75,7 @@ async function handlePost(req: NextRequest) {
       )
       .eq("id", productId)
       .maybeSingle(),
-    supabase.from("print_techniques").select("name, strip_source_color"),
+    supabase.from("print_techniques").select("name, strip_source_color, single_color_ink"),
   ]);
 
   if (!product) {
@@ -142,6 +142,13 @@ async function handlePost(req: NextRequest) {
     frameColor: clientFrameColor,
     elemScale,
     elemRotationOffsetDeg,
+    // "funciona bien con el color WHITE... se arregló para un solo color?"
+    // — multiply-blending a full-color/opaque-ink design (UV print,
+    // foil...) onto the real photo darkens every printed color by exactly
+    // how dark the product is, invisible only on a white product. Resolved
+    // from the DB catalog, not trusted from the client, same as
+    // strip_source_color just above.
+    singleColorInk: !!techniqueMeta?.single_color_ink,
   });
   if (!result) {
     return NextResponse.json({ error: "Could not load the product photo." }, { status: 502 });

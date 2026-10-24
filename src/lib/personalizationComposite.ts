@@ -193,6 +193,7 @@ export async function buildArtworkImage({
   fontScale = {},
   rotations = {},
   pxPerMm = null,
+  transparentBg = false,
 }: {
   canvasW: number;
   canvasH: number;
@@ -218,6 +219,15 @@ export async function buildArtworkImage({
   frameColor?: string;
   fontScale?: Partial<Record<Exclude<ElemKey, "logo">, number>>;
   rotations?: Partial<Record<ElemKey, number>>;
+  // True for a full-color technique (compositePersonalization then uses
+  // normal "over" blend, not multiply — see that function's own comment for
+  // why). An opaque white canvas only reads as "invisible" under multiply
+  // (white * anything = unchanged); under "over" it would paste a solid
+  // white box over the product photo. This renders a genuinely transparent
+  // canvas instead, so only the real ink pixels (logo, text) land on the
+  // photo and everything else shows the product underneath, same as the
+  // opaque-white canvas does today under multiply.
+  transparentBg?: boolean;
   // Real-photo pixels per physical mm of the print zone (canvasW/zone.
   // width_mm — same ratio the live Design canvas computes from its own
   // CSS pixel width, just in this buffer's own pixel space). When known,
@@ -250,7 +260,10 @@ export async function buildArtworkImage({
   if (logoImage) {
     const boxSize = Math.max(1, Math.round(logoBoxSize ?? canvasW * 0.45));
     const fitted = await sharp(Buffer.from(logoImage.data, "base64"))
-      .resize(boxSize, boxSize, { fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 1 } })
+      .resize(boxSize, boxSize, {
+        fit: "contain",
+        background: transparentBg ? { r: 0, g: 0, b: 0, alpha: 0 } : { r: 255, g: 255, b: 255, alpha: 1 },
+      })
       .png()
       .toBuffer();
     const p = pos("logo", { x: 50, y: 35 });
@@ -343,7 +356,7 @@ export async function buildArtworkImage({
   }
 
   const svg = `<svg width="${canvasW}" height="${canvasH}" xmlns="http://www.w3.org/2000/svg">
-    <rect x="0" y="0" width="${canvasW}" height="${canvasH}" fill="white" />
+    ${transparentBg ? "" : `<rect x="0" y="0" width="${canvasW}" height="${canvasH}" fill="white" />`}
     ${logoElement}
     ${textElements.join("\n")}
   </svg>`;
@@ -351,10 +364,24 @@ export async function buildArtworkImage({
   return sharp(Buffer.from(svg)).png().toBuffer();
 }
 
-// Multiply-blends the artwork onto the real product photo at the exact
-// print-area location — the same trick mockup generators use so the
-// product's own lighting/texture shows through the "ink", and white stays
-// invisible. This is deterministic pixel math, not a model guessing.
+// Blends the artwork onto the real product photo at the exact print-area
+// location — deterministic pixel math, not a model guessing.
+//
+// "funciona bien con el color WHITE del cuaderno... como que se arregló
+// para un solo color?" — multiply (the mockup-generator trick where white
+// stays invisible and the product's own lighting/texture shows through the
+// "ink") only makes sense for a single-ink technique whose mark genuinely
+// lets the material underneath influence what the customer sees (an
+// engraving's burn, a deboss's shadow). For a full-color/opaque-ink
+// technique (UV print, foil, embroidery…), the printed design is opaque —
+// it shows its own real colors regardless of the product's color, same as
+// a sticker. Multiplying it against anything but a white product darkens
+// and hue-shifts every printed color by exactly how dark the product is:
+// invisible on white (multiply by white is the identity), a visible dark
+// smear on anything else. `blend: "over"` (plain opaque compositing) is
+// correct there instead — the artwork canvas must be genuinely transparent
+// outside the real ink for that to work (see buildArtworkImage's own
+// `transparentBg`), not opaque white as multiply relies on.
 //
 // The artwork buffer must already be rendered at (targetW x targetH) — do
 // not resize it here. Rendering the SVG text/logo directly at final size
@@ -366,7 +393,8 @@ export async function compositePersonalization(
   artwork: Buffer,
   box: { left: number; top: number; width: number; height: number },
   targetW: number,
-  targetH: number
+  targetH: number,
+  blend: "multiply" | "over" = "multiply"
 ): Promise<ImagePayload> {
   const buffer = Buffer.from(base.data, "base64");
   const image = sharp(buffer);
@@ -380,7 +408,7 @@ export async function compositePersonalization(
   const top = clampInt(cy - targetH / 2, 0, Math.max(0, height - targetH));
 
   const composited = await image
-    .composite([{ input: artwork, left, top, blend: "multiply" }])
+    .composite([{ input: artwork, left, top, blend }])
     .png()
     .toBuffer();
 
@@ -424,6 +452,14 @@ export async function composeProductPersonalization({
   frameColor,
   elemScale = {},
   elemRotationOffsetDeg = {},
+  // True for a single-color-ink technique (laser engrave, single-ink screen
+  // print...) — keeps the previous multiply-onto-white-canvas trick, which
+  // only reads correctly for that kind of mark. Defaults to the old
+  // universal-multiply behavior (true) for safety if a caller forgets to
+  // pass it; both real callers (the snapshot and AI-render routes) resolve
+  // this from the product's own technique catalog and always pass it
+  // explicitly.
+  singleColorInk = true,
 }: {
   referenceImageUrl: string;
   zone: PrintZone | undefined;
@@ -441,6 +477,7 @@ export async function composeProductPersonalization({
   frameColor?: string;
   elemScale?: Partial<Record<ElemKey, number>>;
   elemRotationOffsetDeg?: Partial<Record<ElemKey, number>>;
+  singleColorInk?: boolean;
 }): Promise<ImagePayload | null> {
   const baseImage = await loadImageAsBase64(referenceImageUrl);
   if (!baseImage) return null;
@@ -502,6 +539,7 @@ export async function composeProductPersonalization({
     fontScale: { monogram: elemScale.monogram ?? 1, frame: elemScale.frame ?? 1, names: elemScale.names ?? 1, date: elemScale.date ?? 1 },
     rotations,
     pxPerMm,
+    transparentBg: !singleColorInk,
   });
 
   const finalArtwork =
@@ -509,5 +547,5 @@ export async function composeProductPersonalization({
       ? await sharp(artworkBuffer).resize(canvasW, canvasH, { fit: "fill", kernel: "mitchell" }).png().toBuffer()
       : artworkBuffer;
 
-  return compositePersonalization(croppedBase, finalArtwork, box, canvasW, canvasH);
+  return compositePersonalization(croppedBase, finalArtwork, box, canvasW, canvasH, singleColorInk ? "multiply" : "over");
 }
