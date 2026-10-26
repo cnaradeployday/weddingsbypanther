@@ -20,6 +20,23 @@ export function LogoCropModal({
 }) {
   const [rect, setRect] = useState<CropRect>({ x: 0.1, y: 0.1, width: 0.8, height: 0.8 });
   const [busy, setBusy] = useState(false);
+  // "mira como mande a cropear y como quedo, hay bug" — the frame below
+  // used to be a hardcoded square (aspectRatio: "1") no matter the logo's
+  // own shape, with the image fit inside it via object-contain. For
+  // anything but a literally square logo, object-contain letterboxes —
+  // leaves empty bands on one axis — so the frame's own 0-1 fractions (what
+  // the drag handles above read/write) stop lining up with the same
+  // fraction of the actual image content once you account for that empty
+  // space. cropRectToPixels (cropImage.ts) maps those fractions straight
+  // onto the source image's real pixel bounds with no knowledge of any
+  // letterbox, so a selection drawn against the square frame crops a
+  // shifted/wrong-scale slice of a non-square logo (here, a wide banner —
+  // the selection looked centered on the text, but the actual crop reached
+  // outside the image's real displayed bounds on the letterboxed axis).
+  // Sizing the frame to the image's own aspect ratio means object-contain
+  // never letterboxes it — frame fractions and image fractions become the
+  // same thing again, for any logo shape.
+  const [naturalAspect, setNaturalAspect] = useState(1);
   const frameRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ mode: "move"; startX: number; startY: number; startRect: CropRect } | null>(null);
   // Only the bottom-right corner had a handle at all — "la herramienta
@@ -117,9 +134,23 @@ export function LogoCropModal({
     >
       <div className="bg-white rounded-2xl p-6 flex flex-col gap-4 max-w-lg w-full">
         <h2 className="font-serif text-2xl">Crop logo</h2>
-        <div ref={frameRef} className="relative bg-cream rounded-lg overflow-hidden" style={{ aspectRatio: "1" }}>
+        <div
+          ref={frameRef}
+          className="relative bg-cream rounded-lg overflow-hidden"
+          style={{ aspectRatio: String(naturalAspect) }}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={preview} alt="" className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
+          <img
+            src={preview}
+            alt=""
+            className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+            onLoad={(e) => {
+              const img = e.currentTarget;
+              if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                setNaturalAspect(img.naturalWidth / img.naturalHeight);
+              }
+            }}
+          />
           <div
             onPointerDown={startMove}
             className="absolute border-2 border-terracotta cursor-move touch-none"
