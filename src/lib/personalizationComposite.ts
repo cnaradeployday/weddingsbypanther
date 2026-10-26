@@ -424,6 +424,16 @@ export async function buildArtworkImage({
 // outside the real ink for that to work (see buildArtworkImage's own
 // `transparentBg`), not opaque white as multiply relies on.
 //
+// "fijate como cambia el color entre el preview y el render" — the app has
+// no catalog flag distinguishing an actual material-show-through mark from
+// an opaque single-color ink (screen print, embroidery, vinyl, pad print —
+// the PrintTechniqueForm copy groups all of these under "single ink
+// color"), and the live Design canvas never multiplies for any technique.
+// composeProductPersonalization below always passes "over" now, for every
+// technique, to stay a true preview of the canvas. `multiply` is kept here
+// as a generic primitive (and its own test coverage) for any future
+// caller that resolves a real show-through mark explicitly.
+//
 // The artwork buffer must already be rendered at (targetW x targetH) — do
 // not resize it here. Rendering the SVG text/logo directly at final size
 // (rather than rendering big and downscaling with Lanczos) avoids the
@@ -493,14 +503,6 @@ export async function composeProductPersonalization({
   frameColor,
   elemScale = {},
   elemRotationOffsetDeg = {},
-  // True for a single-color-ink technique (laser engrave, single-ink screen
-  // print...) — keeps the previous multiply-onto-white-canvas trick, which
-  // only reads correctly for that kind of mark. Defaults to the old
-  // universal-multiply behavior (true) for safety if a caller forgets to
-  // pass it; both real callers (the snapshot and AI-render routes) resolve
-  // this from the product's own technique catalog and always pass it
-  // explicitly.
-  singleColorInk = true,
 }: {
   referenceImageUrl: string;
   zone: PrintZone | undefined;
@@ -518,7 +520,6 @@ export async function composeProductPersonalization({
   frameColor?: string;
   elemScale?: Partial<Record<ElemKey, number>>;
   elemRotationOffsetDeg?: Partial<Record<ElemKey, number>>;
-  singleColorInk?: boolean;
 }): Promise<ImagePayload | null> {
   const baseImage = await loadImageAsBase64(referenceImageUrl);
   if (!baseImage) return null;
@@ -580,7 +581,18 @@ export async function composeProductPersonalization({
     fontScale: { monogram: elemScale.monogram ?? 1, frame: elemScale.frame ?? 1, names: elemScale.names ?? 1, date: elemScale.date ?? 1 },
     rotations,
     pxPerMm,
-    transparentBg: !singleColorInk,
+    // "fijate como cambia el color entre el preview y el render... es el
+    // problema del velo" — single-color-ink techniques (screen print,
+    // embroidery, vinyl...) kept the old multiply-onto-white-canvas trick
+    // here, same bug as the full-color case this was already fixed for:
+    // the live Design canvas never multiplies ink against the product
+    // photo for ANY technique (logoRecolor.ts flattens to a solid color
+    // via plain source-in, then it's just stacked on top) — so multiplying
+    // server-side tints/darkens the ink by the product's own color, a
+    // visible shift away from the flat ink color the customer actually
+    // designed against on anything but a white product. Always transparent
+    // + "over" now, matching the canvas for every technique.
+    transparentBg: true,
   });
 
   const finalArtwork =
@@ -588,5 +600,5 @@ export async function composeProductPersonalization({
       ? await sharp(artworkBuffer).resize(canvasW, canvasH, { fit: "fill", kernel: "mitchell" }).png().toBuffer()
       : artworkBuffer;
 
-  return compositePersonalization(croppedBase, finalArtwork, box, canvasW, canvasH, singleColorInk ? "multiply" : "over");
+  return compositePersonalization(croppedBase, finalArtwork, box, canvasW, canvasH, "over");
 }

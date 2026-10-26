@@ -206,8 +206,6 @@ export async function POST(req: NextRequest) {
     inkColor,
     elemScale,
     elemRotationOffsetDeg,
-    // Same fix as personalization-snapshot's own route — see its comment.
-    singleColorInk: !!techniqueMeta?.single_color_ink,
   });
   if (!productResultImage) {
     return NextResponse.json({ error: "Could not load the product photo." }, { status: 502 });
