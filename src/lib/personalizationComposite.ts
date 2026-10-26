@@ -6,6 +6,7 @@ import { monogramSvgInner } from "./monograms";
 import { frameSvgInner } from "./frameTemplates";
 import { fitTextFontSize, textLineCount } from "./textFit";
 import { textFontServerFamily } from "./textFonts";
+import { keyOutWhiteBackground } from "./backgroundKey";
 
 // Deterministic (non-AI) compositing of a customer's personalization onto
 // the real product photo. Shared by the AI-render route (which layers a
@@ -79,6 +80,46 @@ export async function toGrayscale(image: ImagePayload): Promise<ImagePayload> {
     const buffer = Buffer.from(image.data, "base64");
     const gray = await sharp(buffer).grayscale().png().toBuffer();
     return { data: gray.toString("base64"), mimeType: "image/png" };
+  } catch {
+    return image;
+  }
+}
+
+// "ojo que cuando hace preview de tecnicas a 1 solo color, el preview se
+// ve full color" — a single-color-ink technique's "silhouette" fill mode
+// (the default — see PrintTechniqueForm's own explanation: "flatten it
+// into a solid silhouette filled with the chosen ink color, matches how a
+// one-color print/engrave/embroider actually reproduces it") was only ever
+// applied client-side, as `recolorLogoToSolid` (logoRecolor.ts) for the
+// live Design canvas's own display — purely a rendering convenience, never
+// written back into the logo data the client actually sends the server.
+// The server's only logo-color transform was `strip_source_color`'s plain
+// grayscale, which many single-color-ink techniques (this product's Screen
+// print) don't set, so their logo reached the compositor still in its
+// original full color — invisible under the old always-multiply blend's
+// muddying, but fully exposed once #61 made opaque-ink techniques composite
+// with "over" instead. This is the server-side equivalent of
+// recolorLogoToSolid: key out a flat (opaque) background the same way, then
+// replace every remaining opaque pixel's color with the chosen ink color,
+// keeping its own alpha (so soft/antialiased edges stay soft).
+export async function recolorLogoToSolid(image: ImagePayload, hex: string): Promise<ImagePayload> {
+  try {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    const buffer = Buffer.from(image.data, "base64");
+    const { data, info } = await sharp(buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    keyOutWhiteBackground(data, info.width, info.height);
+    for (let i = 0; i < data.length; i += info.channels) {
+      if (data[i + 3] === 0) continue;
+      data[i] = r;
+      data[i + 1] = g;
+      data[i + 2] = b;
+    }
+    const recolored = await sharp(data, { raw: { width: info.width, height: info.height, channels: info.channels } })
+      .png()
+      .toBuffer();
+    return { data: recolored.toString("base64"), mimeType: "image/png" };
   } catch {
     return image;
   }

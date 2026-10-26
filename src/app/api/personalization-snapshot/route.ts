@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { techniqueInkColor } from "@/lib/printTechniqueColors";
-import { type Corner, type ImagePayload, type PrintZone, type ElemKey, toGrayscale, composeProductPersonalization } from "@/lib/personalizationComposite";
+import { type Corner, type ImagePayload, type PrintZone, type ElemKey, toGrayscale, recolorLogoToSolid, composeProductPersonalization } from "@/lib/personalizationComposite";
 
 export const runtime = "nodejs";
 
@@ -75,7 +75,7 @@ async function handlePost(req: NextRequest) {
       )
       .eq("id", productId)
       .maybeSingle(),
-    supabase.from("print_techniques").select("name, strip_source_color, single_color_ink"),
+    supabase.from("print_techniques").select("name, strip_source_color, single_color_ink, single_color_fill_mode"),
   ]);
 
   if (!product) {
@@ -108,15 +108,6 @@ async function handlePost(req: NextRequest) {
     product.techniques?.[0];
   const techniqueMeta = technique ? (techniqueCatalog ?? []).find((t) => t.name === technique.technique) : undefined;
 
-  let logoImage: ImagePayload | null = null;
-  if (logoDataUrl?.startsWith("data:")) {
-    const match = /^data:(.+);base64,(.*)$/.exec(logoDataUrl);
-    if (match) logoImage = { mimeType: match[1], data: match[2] };
-  }
-  if (logoImage && techniqueMeta?.strip_source_color) {
-    logoImage = await toGrayscale(logoImage);
-  }
-
   // The client already resolves the customer's real effective colors the
   // same way the live Design canvas does (see effectiveColorsFor in
   // ProductConfigurator.tsx) — using those directly instead of re-deriving
@@ -124,6 +115,27 @@ async function handlePost(req: NextRequest) {
   // sync with the canvas again. The technique-derived color is kept only
   // as a fallback for any caller that doesn't send one.
   const inkColor = clientInkColor ?? techniqueInkColor(technique?.technique);
+
+  let logoImage: ImagePayload | null = null;
+  if (logoDataUrl?.startsWith("data:")) {
+    const match = /^data:(.+);base64,(.*)$/.exec(logoDataUrl);
+    if (match) logoImage = { mimeType: match[1], data: match[2] };
+  }
+  if (logoImage) {
+    // "ojo que cuando hace preview de tecnicas a 1 solo color, el preview
+    // se ve full color" — a single-color-ink technique's "silhouette" fill
+    // mode (the default) must flatten the logo into the one chosen ink
+    // color server-side too; recolorLogoToSolid's own comment explains why
+    // this was missing. "reference" mode deliberately keeps the logo's
+    // real colors (only the color swatch is a label there), so it's
+    // excluded. strip_source_color's plainer grayscale only applies when
+    // neither of those already decided the logo's color.
+    if (techniqueMeta?.single_color_ink && techniqueMeta?.single_color_fill_mode !== "reference") {
+      logoImage = await recolorLogoToSolid(logoImage, inkColor);
+    } else if (techniqueMeta?.strip_source_color) {
+      logoImage = await toGrayscale(logoImage);
+    }
+  }
 
   const result = await composeProductPersonalization({
     referenceImageUrl,

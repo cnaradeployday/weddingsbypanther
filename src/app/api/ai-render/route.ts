@@ -8,6 +8,7 @@ import {
   type ImagePayload,
   type ElemKey,
   toGrayscale,
+  recolorLogoToSolid,
   composeProductPersonalization,
 } from "@/lib/personalizationComposite";
 
@@ -143,7 +144,9 @@ export async function POST(req: NextRequest) {
       )
       .eq("id", productId)
       .maybeSingle(),
-    supabase.from("print_techniques").select("name, finish_description, color_mode_description, strip_source_color, single_color_ink"),
+    supabase
+      .from("print_techniques")
+      .select("name, finish_description, color_mode_description, strip_source_color, single_color_ink, single_color_fill_mode"),
   ]);
 
   if (!product) {
@@ -175,10 +178,15 @@ export async function POST(req: NextRequest) {
     ? (techniqueCatalog ?? []).find((t) => t.name === technique.technique)
     : undefined;
 
-  if (logoImage && techniqueMeta?.strip_source_color) {
-    logoImage = await toGrayscale(logoImage);
-  }
   const inkColor = techniqueInkColor(technique?.technique);
+  if (logoImage) {
+    // Same fix as personalization-snapshot's own route — see its comment.
+    if (techniqueMeta?.single_color_ink && techniqueMeta?.single_color_fill_mode !== "reference") {
+      logoImage = await recolorLogoToSolid(logoImage, inkColor);
+    } else if (techniqueMeta?.strip_source_color) {
+      logoImage = await toGrayscale(logoImage);
+    }
+  }
 
   // The logo is composited exactly as uploaded (grayscaled above when the
   // technique calls for it) — no generative "redraw it in this finish"
