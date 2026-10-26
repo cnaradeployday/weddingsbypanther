@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import sharp from "sharp";
-import { buildArtworkImage, compositePersonalization, type ImagePayload } from "./personalizationComposite";
+import { buildArtworkImage, compositePersonalization, recolorLogoToSolid, type ImagePayload } from "./personalizationComposite";
 
 async function solidPhoto(r: number, g: number, b: number, w = 200, h = 250): Promise<ImagePayload> {
   const buf = await sharp({ create: { width: w, height: h, channels: 3, background: { r, g, b } } })
@@ -95,5 +95,53 @@ describe("compositePersonalization blend mode", () => {
     // unchanged (white is the identity) — same as before this fix.
     const blank = await pixelAt(result, 55, 55);
     expect(blank).toEqual({ r: 20, g: 20, b: 22 });
+  });
+});
+
+// "ojo que cuando hace preview de tecnicas a 1 solo color, el preview se
+// ve full color" — a single-color-ink technique's "silhouette" fill mode
+// must flatten an uploaded multi-color logo into the one chosen ink color
+// server-side (recolorLogoToSolid), the same way the live Design canvas
+// already does client-side for display only (logoRecolor.ts's own
+// recolorLogoToSolid) — that client-side version never changed what's
+// actually sent to the server.
+describe("recolorLogoToSolid", () => {
+  it("flattens a multi-color logo into the one chosen ink color, keeping its silhouette", async () => {
+    const size = 60;
+    const data = Buffer.alloc(size * size * 4);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const i = (y * size + x) * 4;
+        const inMargin = x < 5 || x >= size - 5 || y < 5 || y >= size - 5;
+        if (inMargin) {
+          data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 255; // white bg
+          continue;
+        }
+        // Left half red, right half blue — a genuinely multi-color logo.
+        const isLeft = x < size / 2;
+        data[i] = isLeft ? 220 : 20;
+        data[i + 1] = 20;
+        data[i + 2] = isLeft ? 20 : 220;
+        data[i + 3] = 255;
+      }
+    }
+    const buf = await sharp(data, { raw: { width: size, height: size, channels: 4 } }).png().toBuffer();
+    const logo: ImagePayload = { data: buf.toString("base64"), mimeType: "image/png" };
+
+    const recolored = await recolorLogoToSolid(logo, "#1a1a1a");
+    const { data: out, info } = await sharp(Buffer.from(recolored.data, "base64"))
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const px = (x: number, y: number) => {
+      const i = (y * info.width + x) * info.channels;
+      return { r: out[i], g: out[i + 1], b: out[i + 2], a: out[i + 3] };
+    };
+    // Both the formerly-red and formerly-blue regions are now the same
+    // chosen ink color.
+    expect(px(15, 30)).toEqual({ r: 0x1a, g: 0x1a, b: 0x1a, a: 255 });
+    expect(px(45, 30)).toEqual({ r: 0x1a, g: 0x1a, b: 0x1a, a: 255 });
+    // The white background is keyed out to transparent, not recolored.
+    expect(px(2, 2).a).toBe(0);
   });
 });
