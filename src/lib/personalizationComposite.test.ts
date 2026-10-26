@@ -76,7 +76,7 @@ describe("compositePersonalization blend mode", () => {
     expect(ink.r).toBeLessThan(100);
   });
 
-  it("still multiplies (darkens) for a single-color-ink technique (singleColorInk: true, the default)", async () => {
+  it("multiply (the primitive) still darkens a white canvas's blank area the old way", async () => {
     const darkPhoto = await solidPhoto(20, 20, 22);
     const artwork = await buildArtworkImage({
       canvasW,
@@ -95,6 +95,34 @@ describe("compositePersonalization blend mode", () => {
     // unchanged (white is the identity) — same as before this fix.
     const blank = await pixelAt(result, 55, 55);
     expect(blank).toEqual({ r: 20, g: 20, b: 22 });
+  });
+
+  // "fijate como cambia el color entre el preview y el render, me parece
+  // que es el problema ese del velo" — composeProductPersonalization used
+  // to multiply single-color-ink techniques (screen print, embroidery...)
+  // too, so their ink read true on the live Design canvas (which never
+  // multiplies for any technique) but tinted/darkened by the product's own
+  // color in Preview. It now always uses "over", same as the full-color
+  // case above, so a single flat ink color reads true here too.
+  it("keeps a single-color-ink design's true ink color on a dark product ('over', not multiplied)", async () => {
+    const darkPhoto = await solidPhoto(20, 20, 22);
+    const artwork = await buildArtworkImage({
+      canvasW,
+      canvasH,
+      logoImage: null,
+      positions: { names: { x: 50, y: 50 } },
+      names: "Hi",
+      date: "",
+      monogram: "",
+      inkColor: "#00ff00",
+      transparentBg: true,
+    });
+    const result = await compositePersonalization(darkPhoto, artwork, box, canvasW, canvasH, "over");
+    const blank = await pixelAt(result, 55, 55);
+    expect(blank).toEqual({ r: 20, g: 20, b: 22 });
+    const ink = await mostGreenNear(result, box.left + 50, box.top + 50);
+    expect(ink.g).toBeGreaterThan(150);
+    expect(ink.r).toBeLessThan(100);
   });
 });
 
