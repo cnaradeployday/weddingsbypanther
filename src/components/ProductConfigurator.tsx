@@ -2378,40 +2378,6 @@ export function ProductConfigurator({
                     {badgeElem === "qr" && <ElementBadge />}
                   </div>
                 )}
-                {activeElem &&
-                  (() => {
-                    const toolbar = renderContextualToolbarFor(activeElem);
-                    if (!toolbar) return null;
-                    // Used to float just above the selected element's own
-                    // measured box — for an element already near the top of
-                    // the print area (a logo on a skateboard deck's upper
-                    // band, say), there wasn't enough room above it within
-                    // the visible stage before hitting the stage's own top
-                    // edge, so the toolbar ended up overlapping the element
-                    // instead of clearing it ("hay que subirla arriba de
-                    // todo del área de trabajo"). Pinned to the top of the
-                    // stage instead — same fixed-within-the-canvas pattern
-                    // CanvasControls already uses at the bottom — so it
-                    // never overlaps whatever's selected, regardless of
-                    // that element's own position or size.
-                    return (
-                      <div
-                        className="absolute left-1/2 top-3 -translate-x-1/2 z-20 pointer-events-auto"
-                        // Nothing here stopped a pointerdown from bubbling up
-                        // to the canvas's own onPointerDown={() =>
-                        // selectElem(null)} (it deselects on any background
-                        // click). Clicking into the toolbar's rotation-degree
-                        // number field triggered exactly that: the element
-                        // deselected and the whole toolbar — including the
-                        // input the customer was about to type into —
-                        // unmounted before focus ever landed, so typing (and
-                        // Enter) appeared to do nothing.
-                        onPointerDown={(e) => e.stopPropagation()}
-                      >
-                        {toolbar}
-                      </div>
-                    );
-                  })()}
               </div>
             )}
             <span className="absolute bottom-3 left-3 text-[11px] bg-cream-light/90 px-3 py-1 rounded-full flex items-center gap-1.5">
@@ -2420,6 +2386,40 @@ export function ProductConfigurator({
           </div>
         </div>
       </div>
+      {activeElem &&
+        (() => {
+          const toolbar = renderContextualToolbarFor(activeElem);
+          if (!toolbar) return null;
+          // "muevas esa barra para arriba para que no moleste" — this used
+          // to be rendered inside zoneRef (the print zone's own box), so
+          // "top-3" pinned it to the top of the ZONE, not the canvas. On a
+          // tall zoomed-in product the zone can sit mid-photo (a label
+          // partway down a bottle, say), so the toolbar still landed right
+          // on top of the selected element instead of clearing it.
+          // Rendered here instead — a sibling of the size badge below and
+          // of CanvasControls further down, outside the scrollable/
+          // zoomable canvas entirely — it now pins to the top of the
+          // actual visible stage, the same way CanvasControls already
+          // pins to the bottom and the size badge pins to the top-right,
+          // regardless of zoom, scroll, or the selected element's own
+          // position.
+          return (
+            <div
+              className="absolute left-1/2 top-3 -translate-x-1/2 z-20 pointer-events-auto"
+              // Nothing here stopped a pointerdown from bubbling up to the
+              // canvas's own onPointerDown={() => selectElem(null)} (it
+              // deselects on any background click). Clicking into the
+              // toolbar's rotation-degree number field triggered exactly
+              // that: the element deselected and the whole toolbar —
+              // including the input the customer was about to type into —
+              // unmounted before focus ever landed, so typing (and Enter)
+              // appeared to do nothing.
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              {toolbar}
+            </div>
+          );
+        })()}
       {activeElem && mmPerPx && (
         <div className="absolute top-3 right-3 text-[11px] bg-dark text-cream-light px-2.5 py-1 rounded-full pointer-events-none">
           {activeElem === "names" && sizeLabelWH(estimateTextWidth(design.names, nameFontPx), nameHeightPx)}
@@ -3217,43 +3217,43 @@ function AdjustHandles({
 }) {
   const expandX = expandBy?.x ?? 0;
   const expandY = expandBy?.y ?? 0;
-  // Was h-5 w-5 (20px) — a short text box (e.g. a single line of "names")
-  // leaves very little room around its edges to grab a 20px circle
-  // precisely, unlike a large logo image where the same handle has lots of
-  // surrounding clearance. Bumped to 28px and the centering offset (half
-  // the handle size) updated to match, so the handle still centers exactly
-  // on the corner.
+  // Was h-5 w-5 (20px), then bumped to h-7 w-7 (28px) for easier grabbing —
+  // "achicar a la mitad el tamaño de los tiradores (los 4 círculos rojos)"
+  // called that too big on mobile, covering the element itself. Halved
+  // back down to 14px (h-3.5 w-3.5); the centering offset (half the handle
+  // size) is updated to match, so each handle still centers exactly on its
+  // corner.
   const corner =
-    "absolute h-7 w-7 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-nwse-resize touch-none pointer-events-auto";
-  const cornerOffset = 14 + expandX;
-  const cornerOffsetY = 14 + expandY;
+    "absolute h-3.5 w-3.5 flex items-center justify-center rounded-full bg-white border-2 border-terracotta text-terracotta-dark cursor-nwse-resize touch-none pointer-events-auto";
+  const cornerOffset = 7 + expandX;
+  const cornerOffsetY = 7 + expandY;
   const rotateOffset = 36 + expandY;
   return (
     <>
       <div className="absolute rounded-sm border border-dashed border-terracotta pointer-events-none" style={{ inset: `${-expandY}px ${-expandX}px` }} />
       <div onPointerDown={onResizeStart} className={corner} style={{ left: -cornerOffset, top: -cornerOffsetY }} aria-label="Resize">
-        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M3 13 L13 3" />
           <path d="M8.5 3 H13 V7.5" />
           <path d="M7.5 13 H3 V8.5" />
         </svg>
       </div>
       <div onPointerDown={onResizeStart} className={corner} style={{ right: -cornerOffset, top: -cornerOffsetY }} aria-label="Resize">
-        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M3 13 L13 3" />
           <path d="M8.5 3 H13 V7.5" />
           <path d="M7.5 13 H3 V8.5" />
         </svg>
       </div>
       <div onPointerDown={onResizeStart} className={corner} style={{ left: -cornerOffset, bottom: -cornerOffsetY }} aria-label="Resize">
-        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M3 13 L13 3" />
           <path d="M8.5 3 H13 V7.5" />
           <path d="M7.5 13 H3 V8.5" />
         </svg>
       </div>
       <div onPointerDown={onResizeStart} className={corner} style={{ right: -cornerOffset, bottom: -cornerOffsetY }} aria-label="Resize">
-        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M3 13 L13 3" />
           <path d="M8.5 3 H13 V7.5" />
           <path d="M7.5 13 H3 V8.5" />
