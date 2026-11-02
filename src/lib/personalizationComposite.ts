@@ -235,6 +235,7 @@ export async function buildArtworkImage({
   rotations = {},
   pxPerMm = null,
   transparentBg = false,
+  opacity = 1,
 }: {
   canvasW: number;
   canvasH: number;
@@ -282,6 +283,12 @@ export async function buildArtworkImage({
   // transformaciones extrañas"). Falls back to the previous flat-canvasH
   // formula when the zone has no mm dimensions on file, same as before.
   pxPerMm?: number | null;
+  // "en preview, los diseños deben tener una transparencia del 30%. SOLO
+  // EN LASER ENGRAVE" — laser doesn't lay down ink at all (it's a burn
+  // into the material), so a fully opaque mark always overstated it.
+  // Applies uniformly to the logo and every text element; 1 (fully
+  // opaque) for every other technique.
+  opacity?: number;
 }): Promise<Buffer> {
   await ensureFontConfig();
   const fontFamily = personalizationFontFamily(textFont);
@@ -398,8 +405,10 @@ export async function buildArtworkImage({
 
   const svg = `<svg width="${canvasW}" height="${canvasH}" xmlns="http://www.w3.org/2000/svg">
     ${transparentBg ? "" : `<rect x="0" y="0" width="${canvasW}" height="${canvasH}" fill="white" />`}
-    ${logoElement}
-    ${textElements.join("\n")}
+    <g opacity="${opacity}">
+      ${logoElement}
+      ${textElements.join("\n")}
+    </g>
   </svg>`;
 
   return sharp(Buffer.from(svg)).png().toBuffer();
@@ -503,6 +512,7 @@ export async function composeProductPersonalization({
   frameColor,
   elemScale = {},
   elemRotationOffsetDeg = {},
+  opacity = 1,
 }: {
   referenceImageUrl: string;
   zone: PrintZone | undefined;
@@ -520,6 +530,10 @@ export async function composeProductPersonalization({
   frameColor?: string;
   elemScale?: Partial<Record<ElemKey, number>>;
   elemRotationOffsetDeg?: Partial<Record<ElemKey, number>>;
+  // Forwarded straight to buildArtworkImage — see its own comment. 1 for
+  // every real caller except the Laser Engrave override in the snapshot
+  // route.
+  opacity?: number;
 }): Promise<ImagePayload | null> {
   const baseImage = await loadImageAsBase64(referenceImageUrl);
   if (!baseImage) return null;
@@ -593,6 +607,7 @@ export async function composeProductPersonalization({
     // designed against on anything but a white product. Always transparent
     // + "over" now, matching the canvas for every technique.
     transparentBg: true,
+    opacity,
   });
 
   const finalArtwork =

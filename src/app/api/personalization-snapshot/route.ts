@@ -115,6 +115,16 @@ async function handlePost(req: NextRequest) {
   // sync with the canvas again. The technique-derived color is kept only
   // as a fallback for any caller that doesn't send one.
   const inkColor = clientInkColor ?? techniqueInkColor(technique?.technique);
+  // "en preview, los diseños deben tener una transparencia del 30%. SOLO
+  // EN LASER ENGRAVE... pasalo a negro pero con transparencia del 30%" —
+  // laser doesn't lay down ink at all (it's a burn into the material), so
+  // a fully opaque colored mark always overstated it. Scoped to this
+  // preview route only — the live Design canvas (no color picker is even
+  // offered for this technique, see canChooseInkColor in
+  // ProductConfigurator.tsx), the AI render and the production print file
+  // are unaffected.
+  const isLaserEngrave = technique?.technique === "Laser engrave";
+  const previewInkColor = isLaserEngrave ? "#000000" : inkColor;
 
   let logoImage: ImagePayload | null = null;
   if (logoDataUrl?.startsWith("data:")) {
@@ -131,7 +141,7 @@ async function handlePost(req: NextRequest) {
     // excluded. strip_source_color's plainer grayscale only applies when
     // neither of those already decided the logo's color.
     if (techniqueMeta?.single_color_ink && techniqueMeta?.single_color_fill_mode !== "reference") {
-      logoImage = await recolorLogoToSolid(logoImage, inkColor);
+      logoImage = await recolorLogoToSolid(logoImage, previewInkColor);
     } else if (techniqueMeta?.strip_source_color) {
       logoImage = await toGrayscale(logoImage);
     }
@@ -147,13 +157,18 @@ async function handlePost(req: NextRequest) {
     monogram,
     frame,
     textFont,
-    inkColor,
-    namesColor: clientNamesColor,
-    dateColor: clientDateColor,
-    monogramColor: clientMonogramColor,
-    frameColor: clientFrameColor,
+    inkColor: previewInkColor,
+    // Per-element overrides fall back to inkColor (now previewInkColor)
+    // when omitted — dropping them for laser keeps every element the same
+    // faint black rather than whatever per-element color the customer may
+    // have picked under a different, multi-color technique.
+    namesColor: isLaserEngrave ? undefined : clientNamesColor,
+    dateColor: isLaserEngrave ? undefined : clientDateColor,
+    monogramColor: isLaserEngrave ? undefined : clientMonogramColor,
+    frameColor: isLaserEngrave ? undefined : clientFrameColor,
     elemScale,
     elemRotationOffsetDeg,
+    opacity: isLaserEngrave ? 0.3 : 1,
   });
   if (!result) {
     return NextResponse.json({ error: "Could not load the product photo." }, { status: 502 });
