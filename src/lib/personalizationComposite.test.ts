@@ -126,6 +126,44 @@ describe("compositePersonalization blend mode", () => {
   });
 });
 
+// "en preview, los diseños deben tener una transparencia del 30%. SOLO EN
+// LASER ENGRAVE... pasalo a negro pero con transparencia del 30%" — laser
+// doesn't lay down ink, so the preview route renders it as a faint black
+// mark (opacity 0.3) rather than a fully opaque one.
+describe("buildArtworkImage opacity", () => {
+  it("renders a faint (30% opaque) mark that darkens the photo without going solid black", async () => {
+    const midPhoto = await solidPhoto(150, 150, 150, 100, 100);
+    const artwork = await buildArtworkImage({
+      canvasW: 100,
+      canvasH: 100,
+      logoImage: null,
+      positions: { names: { x: 50, y: 50 } },
+      names: "Hi",
+      date: "",
+      monogram: "",
+      inkColor: "#000000",
+      transparentBg: true,
+      opacity: 0.3,
+    });
+    const result = await compositePersonalization(midPhoto, artwork, { left: 0, top: 0, width: 100, height: 100 }, 100, 100, "over");
+    const { data, info } = await sharp(Buffer.from(result.data, "base64"))
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    let darkest = 255;
+    for (let y = 35; y <= 65; y++) {
+      for (let x = 35; x <= 65; x++) {
+        const i = (y * info.width + x) * info.channels;
+        darkest = Math.min(darkest, data[i]);
+      }
+    }
+    // ~150 * (1 - 0.3) = 105 at full glyph coverage — visibly darker than
+    // the 150 photo, but nowhere near solid black (0).
+    expect(darkest).toBeLessThan(150);
+    expect(darkest).toBeGreaterThan(60);
+  });
+});
+
 // "ojo que cuando hace preview de tecnicas a 1 solo color, el preview se
 // ve full color" — a single-color-ink technique's "silhouette" fill mode
 // must flatten an uploaded multi-color logo into the one chosen ink color
