@@ -183,8 +183,8 @@ export function ConfirmationStep({
         <label className="flex items-start gap-3 rounded-lg border border-line p-3 cursor-pointer">
           <input type="checkbox" checked={checklist.confirmed} onChange={onToggleChecklistItem} className="mt-0.5 h-5 w-5" />
           <span className="text-sm">
-            Names and date are spelled correctly, the logo is the right one and looks correct, and everything is
-            inside the print area
+            Design: logo, text, colors, technique, and placement are appropriate and look good; everything is
+            within the print area.
           </span>
         </label>
         {!checklistConfirmed && <p className="text-xs text-muted mt-2">Confirm before adding to cart.</p>}

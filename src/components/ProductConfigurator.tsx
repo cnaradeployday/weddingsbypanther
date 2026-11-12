@@ -2380,8 +2380,21 @@ export function ProductConfigurator({
                       transform: `translate(-50%, -50%) rotate(${elemRotationDeg.qr}deg)`,
                       background: "#fff",
                     }}
-                    dangerouslySetInnerHTML={{ __html: qrSvg }}
                   >
+                    {/* "no funciona, no genera el código y te saca de la
+                        página" — this div used to set BOTH
+                        dangerouslySetInnerHTML AND render JSX children
+                        (AdjustHandles/ElementBadge below) on the same
+                        element. React treats that as a hard invariant
+                        violation ("Can only set one of children or
+                        props.dangerouslySetInnerHTML") and throws the
+                        instant a QR code actually had something to render
+                        — crashing the whole page with no error boundary to
+                        catch it, exactly matching "it kicks me out of the
+                        page I'm working on". The SVG markup now lives in
+                        its own inner div that has nothing else inside it;
+                        the outer div goes back to plain children. */}
+                    <div className="w-full h-full pointer-events-none" dangerouslySetInnerHTML={{ __html: qrSvg }} />
                     {activeElem === "qr" && !design.locked.qr && (
                       <AdjustHandles onResizeStart={startElemAdjust("qr", "resize")} onRotateStart={startElemAdjust("qr", "rotate")} notice={elemNotice?.key === "qr" ? elemNotice.message : undefined} />
                     )}
