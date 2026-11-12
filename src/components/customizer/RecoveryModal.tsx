@@ -27,10 +27,10 @@ export function RecoveryModal({
   onContinue,
   onStartNew,
   onClose,
-  // Permanent — "hoy se acumulan [los drafts]" — only wired up for the
-  // on-demand "My Drafts" list (see ProductConfigurator.tsx), not FLOW-02's
-  // auto-shown recovery modal, where deleting the one draft being recovered
-  // would be an odd/risky action to offer.
+  // Permanent — "permitir eliminar diseños... que no los recuerde mas" —
+  // wired up for both the on-demand "My Drafts" list and FLOW-02's
+  // auto-shown recovery modal (see ProductConfigurator.tsx for each one's
+  // own delete handler).
   onDelete,
   // Reused as-is for the on-demand "My Drafts" button (see
   // ProductConfigurator.tsx) — only the copy differs from FLOW-02's

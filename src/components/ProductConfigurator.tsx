@@ -613,6 +613,19 @@ export function ProductConfigurator({
     if (recoveryVersions[0]) handleContinueVersion(recoveryVersions[0].versionId);
     else handleStartNewVersion();
   }, [recoveryVersions, handleContinueVersion, handleStartNewVersion]);
+  // "permitir eliminar diseños. Desde aca poder eliminarlos con un tachito
+  // y que no los recuerde mas" — the trash icon already existed on this
+  // exact modal (RecoveryModal's own `onDelete` prop) but was deliberately
+  // left unwired here, only for the separate on-demand "My Drafts" list.
+  // Wired up the same way (handleDeleteDraft's own twin) now that it's
+  // been asked for on this "Pick up where you left off?" modal directly.
+  const handleDeleteRecoveryVersion = useCallback(
+    async (deletedVersionId: string) => {
+      await designStorage.remove(product.id, deletedVersionId);
+      setRecoveryVersions((prev) => prev.filter((v) => v.versionId !== deletedVersionId));
+    },
+    [product.id]
+  );
 
   // On-demand "My Drafts" — the same saved-versions list FLOW-02's recovery
   // modal shows automatically on load, but reachable any time from the
@@ -2121,7 +2134,18 @@ export function ProductConfigurator({
   // interaction-gated, as the "design always visible" preview on the
   // Options and Review steps (FLOW-03/FLOW-06).
   const renderCanvas = () => (
-    <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-[var(--pc-ink-50)] relative overflow-hidden">
+    // "las barras de herramientas tienen que quedar por fuera del área
+    // blanca a donde está el producto" — the toolbars (this bar's own top
+    // rotate/degree bar, the size badge, CanvasControls' bottom zoom bar)
+    // were never actually overlapping the product — they already render
+    // outside the scrollable area — but this whole wrapper shared the same
+    // near-white background (--pc-ink-50) as the product photo itself, so
+    // there was no visible boundary between "the product's own white area"
+    // and the chrome around it: it all read as one continuous white
+    // expanse. A visibly different (light gray) chrome background here,
+    // with the product photo itself getting a card-like shadow below, now
+    // makes that boundary actually visible.
+    <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-[var(--pc-ink-100)] relative overflow-hidden">
       <div ref={setCanvasScrollEl} className="flex-1 overflow-auto">
         <div
           className="mx-auto"
@@ -2141,7 +2165,8 @@ export function ProductConfigurator({
         >
           <div
             ref={photoRef}
-            className="relative aspect-[4/5] w-full overflow-hidden"
+            className="relative aspect-[4/5] w-full overflow-hidden rounded-xl"
+            style={{ boxShadow: "var(--pc-shadow-sm)" }}
             onPointerDown={() => selectElem(null)}
           >
             {displayImage && <Image src={displayImage} alt={product.name} fill className="object-cover" priority />}
@@ -2587,6 +2612,7 @@ export function ProductConfigurator({
           onContinue={handleContinueVersion}
           onStartNew={handleStartNewVersion}
           onClose={handleCloseRecoveryModal}
+          onDelete={handleDeleteRecoveryVersion}
         />
       )}
 
