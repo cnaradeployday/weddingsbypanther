@@ -59,9 +59,14 @@ function CartLineItem({
           />
         )}
       </div>
-      <div className="flex-1">
-        <div className="flex justify-between">
-          <p className="font-medium">
+      <div className="flex-1 min-w-0">
+        {/* "no queda claro el precio unitario" — only the line total (unit
+            price × quantity) was shown, so a customer had to do their own
+            division to see what each piece actually costs. The unit price
+            now sits right above the total, in its own smaller/muted line,
+            in the same right-aligned price column. */}
+        <div className="flex justify-between items-start gap-4">
+          <p className="font-medium min-w-0 break-words">
             {item.name}
             {item.isSample && (
               <span className="ml-2 text-[10px] uppercase tracking-wide text-terracotta align-middle">
@@ -69,7 +74,10 @@ function CartLineItem({
               </span>
             )}
           </p>
-          <p className="font-medium">{formatUSD(item.unitPrice * item.quantity)}</p>
+          <div className="text-right shrink-0">
+            <p className="text-xs text-muted whitespace-nowrap">{formatUSD(item.unitPrice)} / unit + VAT</p>
+            <p className="font-medium whitespace-nowrap">{formatUSD(item.unitPrice * item.quantity)}</p>
+          </div>
         </div>
         {item.personalization && (
           <p className="text-sm text-muted mt-1">
@@ -101,7 +109,10 @@ function CartLineItem({
           </p>
         ))}
         {delivery && <p className="text-xs text-muted mt-1">{delivery}</p>}
-        <div className="flex items-center gap-4 mt-3">
+        {/* Edit/Remove used to crowd the stepper on the same left-hand
+            side — spread across the full line width instead, stepper on
+            one side and the two actions grouped on the other. */}
+        <div className="flex items-center justify-between gap-4 mt-3">
           <div className="flex items-center gap-2 rounded-full border border-line px-3 py-1">
             <button onClick={() => step(-item.minOrder)} className="text-muted">
               −
@@ -123,18 +134,20 @@ function CartLineItem({
               +
             </button>
           </div>
-          <button
-            onClick={() => onEdit(item)}
-            className="text-sm text-muted hover:text-terracotta"
-          >
-            Edit
-          </button>
-          <button
-            onClick={() => onRemove(item.key)}
-            className="text-sm text-muted hover:text-terracotta"
-          >
-            Remove
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => onEdit(item)}
+              className="text-sm text-muted hover:text-terracotta"
+            >
+              Edit
+            </button>
+            <button
+              onClick={() => onRemove(item.key)}
+              className="text-sm text-muted hover:text-terracotta"
+            >
+              Remove
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -226,10 +239,11 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
             <span className="text-muted">At checkout</span>
           </div>
         </div>
-        <div className="flex justify-between items-baseline border-t border-line pt-4 mb-6">
+        <div className="flex justify-between items-baseline border-t border-line pt-4 mb-1">
           <span className="font-serif text-lg">Total</span>
           <span className="font-serif text-2xl">{formatUSD(total)}</span>
         </div>
+        <p className="text-xs text-muted mb-6">+ VAT, where applicable</p>
         <Link
           href={`${base}/checkout`}
           className="block text-center px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors mb-3"

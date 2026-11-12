@@ -52,8 +52,8 @@ export function StoreHeader({
               Proposal Builder
             </Link>
           )}
-          <Link href={base} className="hover:text-terracotta transition-colors">
-            Our work
+          <Link href={`${base}/about`} className="hover:text-terracotta transition-colors">
+            About us
           </Link>
         </nav>
 

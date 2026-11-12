@@ -18,6 +18,10 @@ type Initial = {
   storefront_banner_url: string | null;
   catalog_banner_url: string | null;
   ai_render_enabled: boolean;
+  about_text: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  contact_address: string | null;
 };
 
 async function uploadAsset(
@@ -130,6 +134,10 @@ export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string;
           storefront_banner_url: storefrontBannerUrl,
           catalog_banner_url: catalogBannerUrl,
           ai_render_enabled: form.ai_render_enabled,
+          about_text: form.about_text,
+          contact_email: form.contact_email,
+          contact_phone: form.contact_phone,
+          contact_address: form.contact_address,
         })
         .eq("id", plannerId);
 
@@ -300,6 +308,50 @@ export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string;
           setCatalogBannerPreview(URL.createObjectURL(file));
         }}
       />
+
+      <div className="rounded-xl border border-line bg-white p-6 space-y-4">
+        <div>
+          <p className="text-sm font-medium">About us page</p>
+          <p className="text-xs text-muted">
+            Shown at /about on your storefront, linked from the &quot;About us&quot; nav item.
+          </p>
+        </div>
+        <div>
+          <label className="text-xs uppercase tracking-wide text-muted block mb-1">About text</label>
+          <textarea
+            rows={4}
+            value={form.about_text ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, about_text: e.target.value }))}
+            placeholder="Tell customers who you are and what makes your studio different."
+            className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+          />
+        </div>
+        <div>
+          <label className="text-xs uppercase tracking-wide text-muted block mb-1">Contact email</label>
+          <input
+            type="email"
+            value={form.contact_email ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, contact_email: e.target.value }))}
+            className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+          />
+        </div>
+        <div>
+          <label className="text-xs uppercase tracking-wide text-muted block mb-1">Contact phone</label>
+          <input
+            value={form.contact_phone ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, contact_phone: e.target.value }))}
+            className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+          />
+        </div>
+        <div>
+          <label className="text-xs uppercase tracking-wide text-muted block mb-1">Address</label>
+          <input
+            value={form.contact_address ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, contact_address: e.target.value }))}
+            className="w-full rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+          />
+        </div>
+      </div>
 
       <div className="flex items-center justify-between gap-4 rounded-lg border border-line px-4 py-3">
         <div>
