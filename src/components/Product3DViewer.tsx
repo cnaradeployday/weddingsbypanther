@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, useGLTF } from "@react-three/drei";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import * as THREE from "three";
 
 export type ZoneTextureInput = {
@@ -89,17 +90,49 @@ function Model({
   activeMeshName,
   otherMeshNames,
   zoneTextures,
+  onFit,
 }: {
   glbUrl: string;
   activeMeshName: string | null;
   otherMeshNames: string[];
   zoneTextures: ZoneTextureInput[];
+  onFit: (maxDim: number) => void;
 }) {
   const { scene } = useGLTF(glbUrl);
+  const { camera } = useThree();
   // A fresh clone per mount so repeated opens of the viewer (or opening it
   // for a different variant) never accumulate baked-texture state onto a
   // scene drei caches and reuses across mounts.
   const cloned = useMemo(() => scene.clone(true), [scene]);
+
+  // "se ve muy lejos el producto" — a GLB can come in at any real-world
+  // scale/units and be positioned anywhere, so a fixed camera distance (the
+  // previous [0,0,3]) only worked by coincidence. Centers the model at the
+  // origin and points the camera at it from a distance proportional to the
+  // model's own size instead of a guessed constant.
+  useEffect(() => {
+    const box = new THREE.Box3().setFromObject(cloned);
+    if (box.isEmpty()) return;
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    cloned.position.sub(center);
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    const dist = maxDim * 1.8;
+    camera.position.set(0, 0, dist);
+    camera.lookAt(0, 0, 0);
+    if (camera instanceof THREE.PerspectiveCamera) {
+      // react-hooks/immutability assumes a hook's return value is
+      // React-owned and read-only, but useThree()'s camera is the live
+      // three.js scene object react-three-fiber is built around mutating
+      // directly (every r3f/drei example does this) — not the kind of
+      // value this rule's assumption is meant to guard.
+      // eslint-disable-next-line react-hooks/immutability
+      camera.near = dist / 100;
+      camera.far = dist * 100;
+      camera.updateProjectionMatrix();
+    }
+    onFit(maxDim);
+  }, [cloned, camera, onFit]);
 
   useEffect(() => {
     const meshes: THREE.Mesh[] = [];
@@ -203,6 +236,23 @@ export function Product3DViewer({
   zoneTextures: ZoneTextureInput[];
 }) {
   const [failed, setFailed] = useState(false);
+  // Set once the model's own size is known (see Model's fit effect) so
+  // OrbitControls' zoom limits — and the +/- buttons below — scale with
+  // the model instead of assuming a fixed unit size.
+  const [maxDim, setMaxDim] = useState<number | null>(null);
+  const controlsRef = useRef<OrbitControlsImpl>(null);
+
+  // "agregale una herramienta de zoom tambien" — scroll/pinch already zooms
+  // (OrbitControls' own enableZoom), but an explicit +/- control is easier
+  // to discover, especially on a trackpad.
+  const zoomIn = () => {
+    controlsRef.current?.dollyIn(1.3);
+    controlsRef.current?.update();
+  };
+  const zoomOut = () => {
+    controlsRef.current?.dollyOut(1.3);
+    controlsRef.current?.update();
+  };
 
   if (failed) {
     return (
@@ -213,23 +263,52 @@ export function Product3DViewer({
   }
 
   return (
-    <Canvas
-      camera={{ position: [0, 0, 3], fov: 40 }}
-      onError={() => setFailed(true)}
-      className="!h-full !w-full"
-    >
-      <ambientLight intensity={0.7} />
-      <directionalLight position={[5, 5, 5]} intensity={1.3} />
-      <directionalLight position={[-5, -3, -5]} intensity={0.4} />
-      <Suspense fallback={null}>
-        <Model
-          glbUrl={glbUrl}
-          activeMeshName={activeMeshName}
-          otherMeshNames={otherMeshNames}
-          zoneTextures={zoneTextures}
+    <div className="relative h-full w-full">
+      <Canvas
+        camera={{ position: [0, 0, 3], fov: 40 }}
+        onError={() => setFailed(true)}
+        className="!h-full !w-full"
+      >
+        {/* "el fondo tiene que ser blanco para que tenga contraste" */}
+        <color attach="background" args={["#ffffff"]} />
+        <ambientLight intensity={0.7} />
+        <directionalLight position={[5, 5, 5]} intensity={1.3} />
+        <directionalLight position={[-5, -3, -5]} intensity={0.4} />
+        <Suspense fallback={null}>
+          <Model
+            glbUrl={glbUrl}
+            activeMeshName={activeMeshName}
+            otherMeshNames={otherMeshNames}
+            zoneTextures={zoneTextures}
+            onFit={setMaxDim}
+          />
+        </Suspense>
+        <OrbitControls
+          ref={controlsRef}
+          enablePan={false}
+          minDistance={maxDim ? maxDim * 0.4 : undefined}
+          maxDistance={maxDim ? maxDim * 6 : undefined}
         />
-      </Suspense>
-      <OrbitControls enablePan={false} minDistance={1} maxDistance={8} />
-    </Canvas>
+      </Canvas>
+      <div className="absolute bottom-3 right-3 flex flex-col rounded-full border border-line bg-white shadow-sm overflow-hidden">
+        <button
+          type="button"
+          onClick={zoomIn}
+          aria-label="Zoom in"
+          className="h-9 w-9 flex items-center justify-center text-dark hover:bg-cream"
+        >
+          +
+        </button>
+        <div className="h-px bg-line" />
+        <button
+          type="button"
+          onClick={zoomOut}
+          aria-label="Zoom out"
+          className="h-9 w-9 flex items-center justify-center text-dark hover:bg-cream"
+        >
+          −
+        </button>
+      </div>
+    </div>
   );
 }
