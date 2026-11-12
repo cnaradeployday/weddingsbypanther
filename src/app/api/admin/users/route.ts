@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { getBackofficePermissions } from "@/lib/permissions";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isFontChoiceId, DEFAULT_FONT_CHOICE } from "@/lib/fontChoices";
 
 export const runtime = "nodejs";
 
@@ -39,6 +40,10 @@ export async function POST(req: NextRequest) {
   const roleSelection: string = body?.roleSelection ?? "none"; // "none" | "super_admin" | <role_id>
   const plannerName: string = body?.plannerName?.trim() ?? "";
   const supplierName: string = body?.supplierName?.trim() ?? "";
+  // "cuando se crea una caja blanca poder elegir el font general de la
+  // pagina" — picked once, up front, instead of defaulting to Cormorant
+  // and requiring a second trip through Storefront settings to change it.
+  const fontChoice: string = isFontChoiceId(body?.fontChoice ?? "") ? body.fontChoice : DEFAULT_FONT_CHOICE;
 
   if (!email) {
     return NextResponse.json({ error: "Email is required." }, { status: 400 });
@@ -89,6 +94,7 @@ export async function POST(req: NextRequest) {
       business_name: plannerName,
       slug: slugify(plannerName),
       status: "approved",
+      font_choice: fontChoice,
     });
   }
 

@@ -37,6 +37,10 @@ export default async function StorefrontLayout({
     "--color-terracotta": planner.accent_color,
     "--color-terracotta-dark": darken(planner.accent_color, 0.15),
     "--color-gold": planner.secondary_color,
+    // "poder editar desde el backoffice... el color de la letra" — a
+    // single color for both the header and footer's own text, distinct
+    // from the accent/secondary colors above (those drive links/CTAs).
+    "--header-footer-text": planner.header_footer_text_color,
     ...fontChoiceVars(planner.font_choice),
   } as React.CSSProperties;
 
@@ -55,7 +59,12 @@ export default async function StorefrontLayout({
           showProposalBuilder={planner.business_type !== "merchandise"}
         />
         <main className="flex-1">{children}</main>
-        <StoreFooter businessName={planner.business_name} />
+        <StoreFooter
+          businessName={planner.business_name}
+          contactEmail={planner.contact_email}
+          contactPhone={planner.contact_phone}
+          contactAddress={planner.contact_address}
+        />
       </div>
     </CartProvider>
   );
