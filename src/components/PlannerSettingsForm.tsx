@@ -14,6 +14,7 @@ type Initial = {
   logo_url: string | null;
   accent_color: string;
   secondary_color: string;
+  header_footer_text_color: string;
   font_choice: string;
   storefront_banner_url: string | null;
   catalog_banner_url: string | null;
@@ -130,6 +131,7 @@ export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string;
           logo_url: logoUrl,
           accent_color: form.accent_color,
           secondary_color: form.secondary_color,
+          header_footer_text_color: form.header_footer_text_color,
           font_choice: form.font_choice,
           storefront_banner_url: storefrontBannerUrl,
           catalog_banner_url: catalogBannerUrl,
@@ -263,6 +265,20 @@ export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string;
               className="h-10 w-14 rounded border border-line cursor-pointer bg-transparent"
             />
             <span className="text-xs text-muted">{form.secondary_color}</span>
+          </div>
+        </div>
+        <div>
+          <label className="text-xs uppercase tracking-wide text-muted block mb-1">
+            Header &amp; footer text color
+          </label>
+          <div className="flex items-center gap-2 h-[46px]">
+            <input
+              type="color"
+              value={form.header_footer_text_color}
+              onChange={(e) => setForm((f) => ({ ...f, header_footer_text_color: e.target.value }))}
+              className="h-10 w-14 rounded border border-line cursor-pointer bg-transparent"
+            />
+            <span className="text-xs text-muted">{form.header_footer_text_color}</span>
           </div>
         </div>
       </div>

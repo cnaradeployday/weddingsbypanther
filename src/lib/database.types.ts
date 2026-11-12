@@ -275,6 +275,7 @@ export type Database = {
           created_at: string
           default_markup_pct: number
           font_choice: string
+          header_footer_text_color: string
           id: string
           initials: string | null
           logo_url: string | null
@@ -300,6 +301,7 @@ export type Database = {
           created_at?: string
           default_markup_pct?: number
           font_choice?: string
+          header_footer_text_color?: string
           id?: string
           initials?: string | null
           logo_url?: string | null
@@ -325,6 +327,7 @@ export type Database = {
           created_at?: string
           default_markup_pct?: number
           font_choice?: string
+          header_footer_text_color?: string
           id?: string
           initials?: string | null
           logo_url?: string | null

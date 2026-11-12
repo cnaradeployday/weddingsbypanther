@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { FONT_CHOICES, DEFAULT_FONT_CHOICE } from "@/lib/fontChoices";
 
 export function NewUserForm({ roles }: { roles: { id: string; name: string }[] }) {
   const router = useRouter();
@@ -11,6 +12,7 @@ export function NewUserForm({ roles }: { roles: { id: string; name: string }[] }
   const [roleSelection, setRoleSelection] = useState("none");
   const [wantsPlanner, setWantsPlanner] = useState(false);
   const [plannerName, setPlannerName] = useState("");
+  const [plannerFontChoice, setPlannerFontChoice] = useState<string>(DEFAULT_FONT_CHOICE);
   const [wantsSupplier, setWantsSupplier] = useState(false);
   const [supplierName, setSupplierName] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -25,6 +27,7 @@ export function NewUserForm({ roles }: { roles: { id: string; name: string }[] }
     setRoleSelection("none");
     setWantsPlanner(false);
     setPlannerName("");
+    setPlannerFontChoice(DEFAULT_FONT_CHOICE);
     setWantsSupplier(false);
     setSupplierName("");
     setError(null);
@@ -45,6 +48,7 @@ export function NewUserForm({ roles }: { roles: { id: string; name: string }[] }
         email,
         roleSelection,
         plannerName: wantsPlanner ? plannerName : "",
+        fontChoice: plannerFontChoice,
         supplierName: wantsSupplier ? supplierName : "",
       }),
     });
@@ -156,13 +160,31 @@ export function NewUserForm({ roles }: { roles: { id: string; name: string }[] }
                 Also give planner storefront access
               </label>
               {wantsPlanner && (
-                <input
-                  required
-                  placeholder="Studio name"
-                  value={plannerName}
-                  onChange={(e) => setPlannerName(e.target.value)}
-                  className="w-full rounded-lg border border-line px-4 py-2.5 text-sm focus:outline-none focus:border-dark"
-                />
+                <>
+                  <input
+                    required
+                    placeholder="Studio name"
+                    value={plannerName}
+                    onChange={(e) => setPlannerName(e.target.value)}
+                    className="w-full rounded-lg border border-line px-4 py-2.5 text-sm focus:outline-none focus:border-dark"
+                  />
+                  <div>
+                    <label className="text-xs uppercase tracking-wide text-muted block mb-1">
+                      Storefront font
+                    </label>
+                    <select
+                      value={plannerFontChoice}
+                      onChange={(e) => setPlannerFontChoice(e.target.value)}
+                      className="w-full rounded-lg border border-line px-4 py-2.5 text-sm focus:outline-none focus:border-dark"
+                    >
+                      {FONT_CHOICES.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label} — {opt.description}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
               )}
 
               <label className="flex items-center gap-2 text-sm">

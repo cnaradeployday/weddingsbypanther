@@ -23,7 +23,10 @@ export function StoreHeader({
   const base = `/store/${plannerSlug}`;
 
   return (
-    <header className="sticky top-0 z-40 bg-cream-light/95 backdrop-blur border-b border-line">
+    <header
+      className="sticky top-0 z-40 bg-cream-light/95 backdrop-blur border-b border-line"
+      style={{ color: "var(--header-footer-text)" }}
+    >
       <div className="mx-auto max-w-7xl px-6 py-4 flex items-center justify-between gap-6">
         <Link href={base} className="flex items-center gap-3 shrink-0">
           {logoUrl ? (
@@ -43,7 +46,7 @@ export function StoreHeader({
           </span>
         </Link>
 
-        <nav className="hidden md:flex items-center gap-8 text-sm text-dark/80">
+        <nav className="hidden md:flex items-center gap-8 text-sm">
           <Link href={`${base}/shop`} className="hover:text-terracotta transition-colors">
             Products
           </Link>

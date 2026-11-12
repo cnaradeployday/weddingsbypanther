@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { FONT_CHOICES, DEFAULT_FONT_CHOICE } from "@/lib/fontChoices";
 
 function slugify(input: string) {
   const base = input
@@ -31,6 +32,7 @@ export function UserAccessForm({
   );
   const [saving, setSaving] = useState(false);
   const [newPlannerName, setNewPlannerName] = useState("");
+  const [newPlannerFontChoice, setNewPlannerFontChoice] = useState<string>(DEFAULT_FONT_CHOICE);
   const [newSupplierName, setNewSupplierName] = useState("");
   const [busy, setBusy] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -91,9 +93,13 @@ export function UserAccessForm({
       business_name: newPlannerName.trim(),
       slug: slugify(newPlannerName),
       status: "approved",
+      // "cuando se crea una caja blanca poder elegir el font general de la
+      // pagina" — picked right here instead of defaulting to Cormorant.
+      font_choice: newPlannerFontChoice,
     });
     setBusy(false);
     setNewPlannerName("");
+    setNewPlannerFontChoice(DEFAULT_FONT_CHOICE);
     router.refresh();
   };
 
@@ -212,17 +218,31 @@ export function UserAccessForm({
             </button>
           </div>
         ) : (
-          <div className="flex gap-3">
-            <input
-              placeholder="Studio name"
-              value={newPlannerName}
-              onChange={(e) => setNewPlannerName(e.target.value)}
-              className="flex-1 rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
-            />
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-3">
+              <input
+                placeholder="Studio name"
+                value={newPlannerName}
+                onChange={(e) => setNewPlannerName(e.target.value)}
+                className="flex-1 rounded-lg border border-line px-4 py-3 focus:outline-none focus:border-dark"
+              />
+              <select
+                value={newPlannerFontChoice}
+                onChange={(e) => setNewPlannerFontChoice(e.target.value)}
+                aria-label="Storefront font"
+                className="rounded-lg border border-line px-3 py-3 text-sm focus:outline-none focus:border-dark"
+              >
+                {FONT_CHOICES.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <button
               onClick={linkPlanner}
               disabled={busy || !newPlannerName.trim()}
-              className="px-5 py-3 rounded-full border border-dark text-sm font-medium disabled:opacity-50 shrink-0"
+              className="px-5 py-3 rounded-full border border-dark text-sm font-medium disabled:opacity-50 shrink-0 self-start"
             >
               Grant planner access
             </button>
