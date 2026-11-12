@@ -2714,13 +2714,13 @@ export function ProductConfigurator({
       )}
 
       {show3DViewer && product.glbUrl && (
-        <div role="dialog" aria-modal="true" aria-label="3D view" className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-3xl h-[80vh] rounded-2xl bg-[var(--pc-ink-900,#1a1a1a)] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
-              <p className="text-sm font-medium text-white">Drag to rotate</p>
+        <div role="dialog" aria-modal="true" aria-label="3D view" className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-3xl h-[80vh] rounded-2xl bg-white overflow-hidden flex flex-col shadow-xl">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-line">
+              <p className="text-sm font-medium">Drag to rotate</p>
               <div className="flex items-center gap-3">
                 {!loading3D && (
-                  <button type="button" onClick={open3DViewer} className="text-xs text-white/70 hover:text-white">
+                  <button type="button" onClick={open3DViewer} className="text-xs text-muted hover:text-dark">
                     Refresh
                   </button>
                 )}
@@ -2728,20 +2728,20 @@ export function ProductConfigurator({
                   type="button"
                   onClick={() => setShow3DViewer(false)}
                   aria-label="Close"
-                  className="h-9 w-9 flex items-center justify-center text-white/70 hover:text-white text-lg"
+                  className="h-9 w-9 flex items-center justify-center text-muted hover:text-dark text-lg"
                 >
                   ×
                 </button>
               </div>
             </div>
-            <div className="flex-1 relative">
+            <div className="flex-1 relative bg-white">
               {error3D && (
                 <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 text-xs px-3 py-1.5 rounded-full bg-black/70 text-white">
                   {error3D}
                 </div>
               )}
               {loading3D ? (
-                <div className="flex items-center justify-center h-full text-sm text-white/70">Building your design in 3D…</div>
+                <div className="flex items-center justify-center h-full text-sm text-muted">Building your design in 3D…</div>
               ) : (
                 <Product3DViewer
                   glbUrl={product.glbUrl}
