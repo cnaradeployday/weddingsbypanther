@@ -38,6 +38,7 @@ export default async function ProductPage({
           personalizable: product.personalizable,
           factoryPrice: product.factoryPrice,
           markupPct: product.markupPct,
+          catalogImageUrl: product.catalogImageUrl,
           images: product.images,
           techniques: product.techniques,
           zones: product.zones,

@@ -235,6 +235,12 @@ export type ProductConfiguratorProduct = {
   leadTimeMin: number;
   leadTimeMax: number;
   personalizable: boolean;
+  // "Necesito que el sistema pueda cargar FOTOS COMERCIALES... aparte las de
+  // que usa el visual creator" — the browse/landing-facing commercial photo,
+  // independent of whichever photo each print zone uses as its own builder
+  // reference image. Defaults to the same photo on both sides until an
+  // admin/supplier explicitly picks a different one for either.
+  catalogImageUrl: string | null;
   images: ProductImage[];
   techniques: Technique[];
   zones: Zone[];

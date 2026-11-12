@@ -28,7 +28,7 @@ export default async function EditSupplierProductPage({
       .from("products")
       .select(
         `*, category:categories(business_type),
-         images:product_images(id, url, sort_order),
+         images:product_images!product_images_product_id_fkey(id, url, sort_order),
          techniques:product_print_techniques(technique),
          zones:product_print_zones(label, width_mm, height_mm, max_chars_per_line, corners_pct, image_id, sort_order, extra_price),
          variants:product_variants(id, label, sku, price_delta, stock_on_hand, image_url, sort_order)`
@@ -83,6 +83,7 @@ export default async function EditSupplierProductPage({
     styleTags: product.style_tags ?? [],
     relatedProductIds: product.related_product_ids ?? [],
     areas,
+    catalogImageId: product.catalog_image_id,
     images: (product.images ?? [])
       .slice()
       .sort((a, b) => a.sort_order - b.sort_order)

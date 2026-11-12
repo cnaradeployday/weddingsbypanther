@@ -84,6 +84,9 @@ export function AdminProductForm({
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [existingImages, setExistingImages] = useState<ExistingImage[]>(initial?.images ?? []);
+  const [catalogImageId, setCatalogImageId] = useState<string | null>(
+    initial?.catalogImageId ?? initial?.images?.[0]?.id ?? null
+  );
   const [addToPlanners, setAddToPlanners] = useState(!initial);
   const [areas, setAreas] = useState<AreaDraft[]>(
     toAreaDrafts(initial?.areas, initial?.images?.[0]?.id ?? null)
@@ -113,6 +116,7 @@ export function AdminProductForm({
   const removeExistingImage = (id: string) => {
     setExistingImages((prev) => prev.filter((img) => img.id !== id));
     setAreas((prev) => prev.map((a) => (a.imageId === id ? { ...a, imageId: null } : a)));
+    setCatalogImageId((prev) => (prev === id ? null : prev));
   };
 
   const removePendingPhoto = (index: number) => {
@@ -121,6 +125,7 @@ export function AdminProductForm({
     setAreas((prev) =>
       prev.map((a) => (a.imageId === `pending:${index}` ? { ...a, imageId: null } : a))
     );
+    setCatalogImageId((prev) => (prev === `pending:${index}` ? null : prev));
   };
 
   const addVariant = () => setVariants((prev) => [...prev, newVariantRow()]);
@@ -257,6 +262,16 @@ export function AdminProductForm({
       }
     }
 
+    const resolveImageId = (imageId: string | null) =>
+      imageId?.startsWith("pending:")
+        ? pendingIdByIndex.get(Number(imageId.split(":")[1])) ?? null
+        : imageId;
+
+    await supabase
+      .from("products")
+      .update({ catalog_image_id: resolveImageId(catalogImageId) })
+      .eq("id", productId);
+
     if (techniques.length > 0) {
       await supabase.from("product_print_techniques").insert(
         techniques.map((t, i) => ({
@@ -269,10 +284,6 @@ export function AdminProductForm({
     }
 
     if (personalizable && areas.length > 0) {
-      const resolveImageId = (imageId: string | null) =>
-        imageId?.startsWith("pending:")
-          ? pendingIdByIndex.get(Number(imageId.split(":")[1])) ?? null
-          : imageId;
       await supabase.from("product_print_zones").insert(
         areas.map((area, index) => ({
           product_id: productId,
@@ -503,6 +514,40 @@ export function AdminProductForm({
             )}
           </div>
         </div>
+
+        {(() => {
+          const allPhotos = [
+            ...existingImages,
+            ...previews.map((src, i) => ({ id: `pending:${i}`, url: src })),
+          ];
+          return allPhotos.length > 1 ? (
+            <div>
+              <label className="text-xs uppercase tracking-wide text-muted block mb-2">
+                Commercial photo (shown in Browse Products)
+              </label>
+              <div className="flex gap-2">
+                {allPhotos.map((img) => (
+                  <button
+                    key={img.id}
+                    type="button"
+                    onClick={() => setCatalogImageId(img.id)}
+                    className={`relative h-14 w-14 rounded-lg overflow-hidden border-2 ${
+                      (catalogImageId ?? allPhotos[0].id) === img.id ? "border-terracotta" : "border-transparent"
+                    }`}
+                  >
+                    <Image
+                      src={img.url}
+                      alt=""
+                      fill
+                      className="object-cover"
+                      unoptimized={img.id.startsWith("pending:")}
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null;
+        })()}
       </div>
 
       <div className="rounded-xl border border-line bg-white p-6 space-y-5">
