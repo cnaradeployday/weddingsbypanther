@@ -35,6 +35,10 @@ export default async function PlannerSettingsPage() {
           storefront_banner_url: planner.storefront_banner_url,
           catalog_banner_url: planner.catalog_banner_url,
           ai_render_enabled: planner.ai_render_enabled,
+          about_text: planner.about_text,
+          contact_email: planner.contact_email,
+          contact_phone: planner.contact_phone,
+          contact_address: planner.contact_address,
         }}
       />
     </div>

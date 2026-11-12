@@ -55,10 +55,10 @@ export default async function StorefrontHome({
               A hand-picked collection of {products.length} pieces, personalized in our
               studio and delivered to your venue.
             </p>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <Link
                 href={`${base}/shop`}
-                className="px-6 py-3 rounded-full bg-terracotta text-cream-light text-sm font-medium hover:bg-terracotta-dark transition-colors"
+                className="px-10 py-6 md:px-24 md:py-12 rounded-full bg-terracotta text-cream-light text-xl md:text-4xl font-medium hover:bg-terracotta-dark transition-colors"
               >
                 Browse Products
               </Link>
@@ -115,12 +115,19 @@ export default async function StorefrontHome({
         </div>
 
         <h2 className="font-serif text-3xl mb-6">Shop by category</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-16">
+        {/* "pone las 4 cagorias en 2 lineas (dos arriba y dos abajo)" — was
+            grid-cols-2 md:grid-cols-3, which gave 4 categories an
+            unbalanced 3-then-1 layout on desktop. Fixed at 2 columns
+            (2 rows of 2 for exactly 4 categories) at every width, with the
+            tile height bumped up to match — a narrower 3-col tile read fine
+            at h-44, but a now much wider 2-col tile looked squashed at the
+            same height. */}
+        <div className="grid grid-cols-2 gap-4 mb-16">
           {categories.map((cat) => (
             <Link
               key={cat.id}
               href={`${base}/shop?category=${cat.slug}`}
-              className="relative h-44 rounded-xl overflow-hidden group"
+              className="relative h-48 sm:h-64 md:h-72 rounded-xl overflow-hidden group"
             >
               <Image
                 src={CATEGORY_IMAGES[cat.slug] ?? "/images/hero-tablescape.jpg"}
@@ -129,7 +136,7 @@ export default async function StorefrontHome({
                 className="object-cover transition-transform duration-300 group-hover:scale-105"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-              <span className="absolute bottom-3 left-4 text-cream-light font-serif text-lg">
+              <span className="absolute bottom-4 left-5 text-cream-light font-serif text-xl md:text-2xl">
                 {cat.name}
               </span>
             </Link>

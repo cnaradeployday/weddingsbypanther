@@ -263,11 +263,15 @@ export type Database = {
       }
       planners: {
         Row: {
+          about_text: string | null
           accent_color: string
           ai_render_enabled: boolean
           business_name: string
           business_type: string
           catalog_banner_url: string | null
+          contact_address: string | null
+          contact_email: string | null
+          contact_phone: string | null
           created_at: string
           default_markup_pct: number
           font_choice: string
@@ -284,11 +288,15 @@ export type Database = {
           theme_dark: boolean
         }
         Insert: {
+          about_text?: string | null
           accent_color?: string
           ai_render_enabled?: boolean
           business_name: string
           business_type?: string
           catalog_banner_url?: string | null
+          contact_address?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
           created_at?: string
           default_markup_pct?: number
           font_choice?: string
@@ -305,11 +313,15 @@ export type Database = {
           theme_dark?: boolean
         }
         Update: {
+          about_text?: string | null
           accent_color?: string
           ai_render_enabled?: boolean
           business_name?: string
           business_type?: string
           catalog_banner_url?: string | null
+          contact_address?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
           created_at?: string
           default_markup_pct?: number
           font_choice?: string
