@@ -249,6 +249,7 @@ export function ProductConfigurator({
   product,
   relatedProducts = [],
   initialVariantId,
+  initialQuantity,
 }: {
   relatedProducts?: RelatedProduct[];
   product: ProductConfiguratorProduct;
@@ -257,6 +258,11 @@ export function ProductConfigurator({
   // builder always defaulted to product.variants[0], silently discarding
   // whatever the customer had just chosen.
   initialVariantId?: string;
+  // Same idea, for the quantity the customer already picked on that same
+  // product screen (its own quick-quantity buttons) — without this the
+  // builder always re-defaulted to popularQty/minOrder, discarding
+  // whatever quantity they'd actually chosen before clicking Personalize.
+  initialQuantity?: number;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -464,7 +470,11 @@ export function ProductConfigurator({
   );
   const [variantId, setVariantId] = useState(initialVariantId ?? product.variants[0]?.id ?? "");
   const [quantity, setQuantity] = useState(
-    product.popularQty && product.popularQty >= product.minOrder ? product.popularQty : product.minOrder
+    initialQuantity && initialQuantity >= product.minOrder
+      ? initialQuantity
+      : product.popularQty && product.popularQty >= product.minOrder
+        ? product.popularQty
+        : product.minOrder
   );
   const [quantityInput, setQuantityInput] = useState(String(quantity));
   const updateQuantity = (next: number) => {
