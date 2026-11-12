@@ -17,6 +17,7 @@ type VariantRow = {
   imageUrl: string | null;
   imageFile: File | null;
   imagePreview: string | null;
+  glbMeshName: string;
 };
 
 function newVariantRow(): VariantRow {
@@ -29,6 +30,7 @@ function newVariantRow(): VariantRow {
     imageUrl: null,
     imageFile: null,
     imagePreview: null,
+    glbMeshName: "",
   };
 }
 
@@ -91,6 +93,9 @@ export function AdminProductForm({
   const [areas, setAreas] = useState<AreaDraft[]>(
     toAreaDrafts(initial?.areas, initial?.images?.[0]?.id ?? null)
   );
+  const [glbFile, setGlbFile] = useState<File | null>(null);
+  const [glbUrl, setGlbUrl] = useState<string | null>(initial?.glbUrl ?? null);
+  const [glbMeshName, setGlbMeshName] = useState(initial?.glbMeshName ?? "");
   const [variants, setVariants] = useState<VariantRow[]>(
     (initial?.variants ?? []).map((v) => ({
       localId: v.id,
@@ -101,6 +106,7 @@ export function AdminProductForm({
       imageUrl: v.imageUrl,
       imageFile: null,
       imagePreview: null,
+      glbMeshName: v.glbMeshName ?? "",
     }))
   );
 
@@ -126,6 +132,17 @@ export function AdminProductForm({
       prev.map((a) => (a.imageId === `pending:${index}` ? { ...a, imageId: null } : a))
     );
     setCatalogImageId((prev) => (prev === `pending:${index}` ? null : prev));
+  };
+
+  const handleGlb = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setGlbFile(file);
+  };
+  const removeGlb = () => {
+    setGlbFile(null);
+    setGlbUrl(null);
   };
 
   const addVariant = () => setVariants((prev) => [...prev, newVariantRow()]);
@@ -267,9 +284,24 @@ export function AdminProductForm({
         ? pendingIdByIndex.get(Number(imageId.split(":")[1])) ?? null
         : imageId;
 
+    let finalGlbUrl = glbUrl;
+    if (glbFile) {
+      const path = `${supplierId}/${productId}/model-${Date.now()}.glb`;
+      const { error: glbUploadError } = await supabase.storage
+        .from("product-models")
+        .upload(path, glbFile, { contentType: "model/gltf-binary" });
+      if (!glbUploadError) {
+        finalGlbUrl = supabase.storage.from("product-models").getPublicUrl(path).data.publicUrl;
+      }
+    }
+
     await supabase
       .from("products")
-      .update({ catalog_image_id: resolveImageId(catalogImageId) })
+      .update({
+        catalog_image_id: resolveImageId(catalogImageId),
+        glb_url: finalGlbUrl,
+        glb_mesh_name: glbMeshName.trim() || null,
+      })
       .eq("id", productId);
 
     if (techniques.length > 0) {
@@ -296,6 +328,7 @@ export function AdminProductForm({
           image_id: resolveImageId(area.imageId),
           sort_order: index,
           extra_price: index === 0 ? 0 : area.extraPrice,
+          glb_uv_box: area.glbUvBox,
         }))
       );
     }
@@ -324,6 +357,7 @@ export function AdminProductForm({
             stock_on_hand: v.stock === "" ? null : Number(v.stock),
             image_url: imageUrl,
             sort_order: i,
+            glb_mesh_name: v.glbMeshName.trim() || null,
           };
         })
       );
@@ -550,6 +584,47 @@ export function AdminProductForm({
         })()}
       </div>
 
+      <div className="rounded-xl border border-line bg-white p-6 space-y-4">
+        <div>
+          <label className="text-xs uppercase tracking-wide text-muted block mb-2">
+            3D model (.glb) — optional
+          </label>
+          {glbUrl && !glbFile ? (
+            <div className="flex items-center gap-3 text-sm">
+              <span className="text-muted truncate">{glbUrl.split("/").pop()}</span>
+              <button type="button" onClick={removeGlb} className="text-xs text-terracotta-dark">
+                Remove
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <label className="text-xs px-3 py-2 rounded-lg border border-dashed border-line cursor-pointer text-muted">
+                {glbFile ? glbFile.name : "Upload .glb"}
+                <input type="file" accept=".glb,.gltf" onChange={handleGlb} className="hidden" />
+              </label>
+              {glbFile && (
+                <button type="button" onClick={removeGlb} className="text-xs text-terracotta-dark">
+                  Remove
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        {(glbFile || glbUrl) && (
+          <div>
+            <label className="text-xs text-muted block mb-1">
+              Default mesh/node name in the GLB (used when a color variant has none of its own)
+            </label>
+            <input
+              value={glbMeshName}
+              onChange={(e) => setGlbMeshName(e.target.value)}
+              placeholder="e.g. Notebook_Base"
+              className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
+            />
+          </div>
+        )}
+      </div>
+
       <div className="rounded-xl border border-line bg-white p-6 space-y-5">
         <p className="text-xs uppercase tracking-wide text-muted">Print techniques</p>
         <div className="flex flex-wrap gap-2">
@@ -617,6 +692,7 @@ export function AdminProductForm({
               ...existingImages,
               ...previews.map((src, i) => ({ id: `pending:${i}`, url: src })),
             ]}
+            hasGlb={!!glbFile || !!glbUrl}
           />
         ) : (
           <p className="text-sm text-muted">This product isn&apos;t personalizable, so it has no print area.</p>
@@ -686,49 +762,59 @@ export function AdminProductForm({
           <div className="overflow-x-auto">
             <div className="space-y-3 min-w-[560px]">
               {variants.map((v) => (
-                <div key={v.localId} className="grid grid-cols-[56px_1fr_1fr_100px_90px_auto] gap-3 items-center">
-                  <label className="relative h-14 w-14 rounded-lg overflow-hidden border border-line cursor-pointer bg-cream">
-                    {(v.imagePreview ?? v.imageUrl) && (
-                      <Image
-                        src={v.imagePreview ?? v.imageUrl ?? ""}
-                        alt=""
-                        fill
-                        className="object-cover"
-                        unoptimized={!!v.imagePreview}
-                      />
-                    )}
-                    <input type="file" accept="image/*" onChange={handleVariantImage(v.localId)} className="hidden" />
-                  </label>
-                  <input
-                    placeholder="Label (e.g. Walnut)"
-                    value={v.label}
-                    onChange={(e) => updateVariant(v.localId, { label: e.target.value })}
-                    className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
-                  />
-                  <input
-                    placeholder="SKU"
-                    value={v.sku}
-                    onChange={(e) => updateVariant(v.localId, { sku: e.target.value })}
-                    className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
-                  />
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="+price"
-                    value={v.priceDelta}
-                    onChange={(e) => updateVariant(v.localId, { priceDelta: Number(e.target.value) })}
-                    className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
-                  />
-                  <input
-                    type="number"
-                    placeholder="Stock"
-                    value={v.stock}
-                    onChange={(e) => updateVariant(v.localId, { stock: e.target.value })}
-                    className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
-                  />
-                  <button type="button" onClick={() => removeVariant(v.localId)} className="text-xs text-terracotta-dark">
-                    Remove
-                  </button>
+                <div key={v.localId} className="space-y-2">
+                  <div className="grid grid-cols-[56px_1fr_1fr_100px_90px_auto] gap-3 items-center">
+                    <label className="relative h-14 w-14 rounded-lg overflow-hidden border border-line cursor-pointer bg-cream">
+                      {(v.imagePreview ?? v.imageUrl) && (
+                        <Image
+                          src={v.imagePreview ?? v.imageUrl ?? ""}
+                          alt=""
+                          fill
+                          className="object-cover"
+                          unoptimized={!!v.imagePreview}
+                        />
+                      )}
+                      <input type="file" accept="image/*" onChange={handleVariantImage(v.localId)} className="hidden" />
+                    </label>
+                    <input
+                      placeholder="Label (e.g. Walnut)"
+                      value={v.label}
+                      onChange={(e) => updateVariant(v.localId, { label: e.target.value })}
+                      className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
+                    />
+                    <input
+                      placeholder="SKU"
+                      value={v.sku}
+                      onChange={(e) => updateVariant(v.localId, { sku: e.target.value })}
+                      className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
+                    />
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="+price"
+                      value={v.priceDelta}
+                      onChange={(e) => updateVariant(v.localId, { priceDelta: Number(e.target.value) })}
+                      className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Stock"
+                      value={v.stock}
+                      onChange={(e) => updateVariant(v.localId, { stock: e.target.value })}
+                      className="rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
+                    />
+                    <button type="button" onClick={() => removeVariant(v.localId)} className="text-xs text-terracotta-dark">
+                      Remove
+                    </button>
+                  </div>
+                  {(glbFile || glbUrl) && (
+                    <input
+                      placeholder="3D mesh/node name for this color (optional — falls back to the default above)"
+                      value={v.glbMeshName}
+                      onChange={(e) => updateVariant(v.localId, { glbMeshName: e.target.value })}
+                      className="w-full rounded-lg border border-line px-3 py-2 text-xs focus:outline-none focus:border-dark"
+                    />
+                  )}
                 </div>
               ))}
             </div>

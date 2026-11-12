@@ -43,6 +43,8 @@ export default async function ProductPage({
           techniques: product.techniques,
           zones: product.zones,
           variants: product.variants,
+          glbUrl: product.glbUrl,
+          glbMeshName: product.glbMeshName,
           plannerSlug: slug,
           plannerId: product.planner.id,
           businessType: isBusinessType(product.planner.business_type) ? product.planner.business_type : "wedding",

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { formatUSD } from "@/lib/format";
+import { Product3DBadge } from "@/components/Product3DBadge";
 import type { CatalogProduct } from "@/lib/queries";
 
 type Category = { id: string; slug: string; name: string; count: number };
@@ -172,6 +173,7 @@ export function CatalogSearch({
                   <span className="absolute top-3 left-3 text-[10px] uppercase tracking-wide bg-cream-light/90 px-2 py-1 rounded-full">
                     {p.categoryName}
                   </span>
+                  {p.has3d && <Product3DBadge />}
                 </div>
                 <p className="font-medium text-sm">{p.name}</p>
                 <p className="text-sm text-muted">
