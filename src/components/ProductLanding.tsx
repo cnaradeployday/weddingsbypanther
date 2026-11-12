@@ -67,7 +67,7 @@ export function ProductLanding({
   }
 
   const selectedVariant = sortedVariants.find((v) => v.id === variantId);
-  const heroImage = selectedVariant?.image_url ?? product.images[0]?.url ?? null;
+  const heroImage = selectedVariant?.image_url ?? product.catalogImageUrl ?? product.images[0]?.url ?? null;
   const unitPrice = applyMarkup(product.factoryPrice + (selectedVariant?.price_delta ?? 0), product.markupPct);
 
   return (

@@ -73,10 +73,10 @@ export async function getStorefrontCatalog(plannerSlug: string): Promise<Catalog
     .select(
       `markup_pct, enabled,
        product:products (
-         id, slug, name, description, factory_price, min_order, personalizable, status, style_tags,
+         id, slug, name, description, factory_price, min_order, personalizable, status, style_tags, catalog_image_id,
          category:categories ( name, slug ),
          supplier:suppliers ( business_name ),
-         images:product_images ( url, sort_order )
+         images:product_images!product_images_product_id_fkey ( id, url, sort_order )
        )`
     )
     .eq("planner_id", planner.id)
@@ -89,6 +89,12 @@ export async function getStorefrontCatalog(plannerSlug: string): Promise<Catalog
     .map((row) => {
       const p = row.product!;
       const images = (p.images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
+      // The commercial/catalog photo an admin or supplier picked for this
+      // product's browse-grid thumbnail — independent of whichever photo
+      // each print zone uses as its reference image (see getStorefrontProduct
+      // / getRelatedProducts for that side). Falls back to the first photo
+      // when nothing's been explicitly picked, same as before this existed.
+      const catalogImage = images.find((img) => img.id === p.catalog_image_id) ?? images[0];
       return {
         id: p.id,
         slug: p.slug,
@@ -101,7 +107,7 @@ export async function getStorefrontCatalog(plannerSlug: string): Promise<Catalog
         categoryName: p.category?.name ?? "",
         categorySlug: p.category?.slug ?? "",
         supplierName: p.supplier?.business_name ?? "",
-        image: images[0]?.url ?? null,
+        image: catalogImage?.url ?? null,
         styleTags: p.style_tags ?? [],
       };
     });
@@ -121,7 +127,7 @@ export async function getProposal(proposalId: string) {
     .select(
       `*, items:proposal_option_items (
         quantity, unit_price,
-        product:products ( id, slug, name, images:product_images ( url, sort_order ) )
+        product:products ( id, slug, name, images:product_images!product_images_product_id_fkey ( url, sort_order ) )
       )`
     )
     .eq("proposal_id", proposalId)
@@ -164,7 +170,8 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
         `*,
          category:categories ( name, slug ),
          supplier:suppliers ( business_name ),
-         images:product_images ( id, url, sort_order ),
+         catalog_image:product_images!products_catalog_image_id_fkey ( url ),
+         images:product_images!product_images_product_id_fkey ( id, url, sort_order ),
          techniques:product_print_techniques ( id, technique, extra_price, is_default ),
          zones:product_print_zones ( id, label, width_mm, height_mm, max_chars_per_line, max_lines, corners_pct, image_id, sort_order, extra_price ),
          variants:product_variants ( id, label, sku, price_delta, image_url, sort_order )`
@@ -231,6 +238,11 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
     personalizable: p.personalizable,
     categoryName: p.category?.name ?? "",
     supplierName: p.supplier?.business_name ?? "",
+    // The commercial/catalog photo picked for this product (independent of
+    // whichever photo each print zone uses as its builder reference image —
+    // see `zones`/`images` below for that). Falls back to the first photo
+    // when nothing's been explicitly picked.
+    catalogImageUrl: p.catalog_image?.url ?? images[0]?.url ?? null,
     images: images.map((i) => ({ id: i.id, url: i.url })),
     techniques,
     zones,
@@ -257,7 +269,7 @@ export async function getRelatedProducts(
       `markup_pct, enabled,
        product:products (
          id, slug, name, factory_price, min_order, lead_time_days_min, lead_time_days_max, personalizable, status,
-         images:product_images ( id, url, sort_order ),
+         images:product_images!product_images_product_id_fkey ( id, url, sort_order ),
          techniques:product_print_techniques ( technique, is_default ),
          zones:product_print_zones ( width_mm, height_mm, corners_pct, image_id, sort_order )
        )`

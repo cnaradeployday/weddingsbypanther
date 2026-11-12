@@ -13,7 +13,7 @@ export default async function AdminApprovalsPage() {
     .from("products")
     .select(
       `*, category:categories(name), supplier:suppliers(business_name),
-       images:product_images(url, sort_order), techniques:product_print_techniques(technique)`
+       images:product_images!product_images_product_id_fkey(url, sort_order), techniques:product_print_techniques(technique)`
     )
     .eq("status", "pending")
     .order("created_at", { ascending: true });

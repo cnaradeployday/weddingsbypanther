@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
       .from("products")
       .select(
         `name,
-         images:product_images ( id, url, sort_order ),
+         images:product_images!product_images_product_id_fkey ( id, url, sort_order ),
          zones:product_print_zones ( id, image_id, corners_pct, width_mm, height_mm, sort_order ),
          techniques:product_print_techniques ( technique, is_default )`
       )

@@ -80,7 +80,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
        planner:planners ( business_name, tagline, logo_url, accent_color ),
        items:order_items (
          *,
-         product:products ( name, lead_time_days_min, lead_time_days_max, images:product_images ( url, sort_order ) )
+         product:products ( name, lead_time_days_min, lead_time_days_max, images:product_images!product_images_product_id_fkey ( url, sort_order ) )
        )`
     )
     .eq("id", id)

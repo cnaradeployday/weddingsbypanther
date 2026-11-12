@@ -566,6 +566,7 @@ export type Database = {
       products: {
         Row: {
           allow_sample: boolean
+          catalog_image_id: string | null
           category_id: string | null
           created_at: string
           description: string | null
@@ -588,6 +589,7 @@ export type Database = {
         }
         Insert: {
           allow_sample?: boolean
+          catalog_image_id?: string | null
           category_id?: string | null
           created_at?: string
           description?: string | null
@@ -610,6 +612,7 @@ export type Database = {
         }
         Update: {
           allow_sample?: boolean
+          catalog_image_id?: string | null
           category_id?: string | null
           created_at?: string
           description?: string | null
@@ -631,6 +634,13 @@ export type Database = {
           supplier_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "products_catalog_image_id_fkey"
+            columns: ["catalog_image_id"]
+            isOneToOne: false
+            referencedRelation: "product_images"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "products_category_id_fkey"
             columns: ["category_id"]
