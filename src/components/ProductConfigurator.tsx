@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import dynamic from "next/dynamic";
+import type { ZoneTextureInput } from "./Product3DViewer";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { formatUSD, applyMarkup } from "@/lib/format";
 import { useCart, type AreaPersonalization } from "@/lib/cart";
@@ -71,6 +73,14 @@ import { PreviewModal, type PreviewPhoto, type PreviewAiRender } from "./customi
 import { ConfirmationStep } from "./customizer/ConfirmationStep";
 import { ConfirmationPreview } from "./customizer/ConfirmationPreview";
 
+// three.js/WebGL can't run during SSR — loaded only once the shopper
+// actually opens the 3D viewer, which also keeps its (fairly heavy) bundle
+// out of every shopper's initial Design-step load.
+const Product3DViewer = dynamic(() => import("./Product3DViewer").then((m) => m.Product3DViewer), {
+  ssr: false,
+  loading: () => <div className="flex items-center justify-center h-full text-sm text-muted">Loading 3D viewer…</div>,
+});
+
 // Approximates how each print technique looks on the manual (non-AI) live
 // preview — a plain color swap for printed techniques, plus a debossed
 // highlight/shadow pairing for engrave so it reads as cut into the material
@@ -98,6 +108,10 @@ type Variant = {
   price_delta: number;
   image_url: string | null;
   sort_order: number;
+  // Which mesh/node in the product's GLB (if any) shows this color — the
+  // other variant meshes are hidden while this one is active. Falls back
+  // to the product-level glbMeshName when not set.
+  glb_mesh_name: string | null;
 };
 type Zone = {
   id: string;
@@ -109,6 +123,10 @@ type Zone = {
   corners_pct: { x: number; y: number }[];
   image_id: string | null;
   extra_price: number;
+  // Where this zone's design gets composited onto the active 3D mesh's own
+  // texture, in UV space (0..1) — null when this zone has no 3D region
+  // configured, in which case it's skipped in the 3D viewer.
+  glbUvBox: { u0: number; v0: number; u1: number; v1: number } | null;
 };
 
 const SAMPLE_FEE = 50;
@@ -245,6 +263,12 @@ export type ProductConfiguratorProduct = {
   techniques: Technique[];
   zones: Zone[];
   variants: Variant[];
+  // "boton para ver el render en 3d, rotarlo con el mouse" — null when no
+  // GLB was uploaded for this product; the viewer button is hidden then.
+  glbUrl: string | null;
+  // Default mesh/node to show when the active variant has no glb_mesh_name
+  // of its own (or the product has no variants at all).
+  glbMeshName: string | null;
   plannerSlug: string;
   plannerId: string;
   businessType: BusinessType;
@@ -513,6 +537,13 @@ export function ProductConfigurator({
     { imageDataUrl: string; contextImageDataUrl: string | null; zoneId: string }[]
   >([]);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  // "boton para ver el render en 3d, rotarlo con el mouse, pero con el logo
+  // que se agregó en el visual creator" — gated on product.glbUrl; see
+  // open3DViewer below for how the per-zone textures get built.
+  const [show3DViewer, setShow3DViewer] = useState(false);
+  const [zoneTextures3D, setZoneTextures3D] = useState<ZoneTextureInput[]>([]);
+  const [loading3D, setLoading3D] = useState(false);
+  const [error3D, setError3D] = useState<string | null>(null);
 
   // Which print area the shopper is currently viewing/personalizing. The
   // primary area is always included in the order; secondary/tertiary ones
@@ -2038,6 +2069,62 @@ export function ProductConfigurator({
     setShowPreviewModal(true);
   }, [computePreviewPhotos]);
 
+  // Which mesh/node in the GLB shows the shopper's current color — the
+  // active variant's own glb_mesh_name, or the product's default when the
+  // variant has none (or there are no variants at all).
+  const active3DMeshName = variant?.glb_mesh_name || product.glbMeshName || null;
+  // Every OTHER known variant mesh needs hiding so only the active color's
+  // mesh renders — harmless/empty when the product has no variants.
+  const other3DMeshNames = product.variants
+    .map((v) => v.glb_mesh_name)
+    .filter((n): n is string => !!n && n !== active3DMeshName);
+
+  // Reuses the exact same per-zone "photo + logo/text, server-composited"
+  // snapshot already built for the 2D Preview/Confirmación steps (see
+  // computePreviewPhotos above and useCompositedPreview.ts) — just fetched
+  // eagerly for every zone with a 3D region configured, instead of lazily
+  // one at a time, since the 3D viewer needs them all at once to build a
+  // single texture.
+  const open3DViewer = useCallback(async () => {
+    if (!product.glbUrl) return;
+    setShow3DViewer(true);
+    setLoading3D(true);
+    setError3D(null);
+    try {
+      const photos = computePreviewPhotos();
+      const targets = photos
+        .map((p) => {
+          if (!p.snapshotRequest) return null;
+          const zoneRow = product.zones.find((z) => z.id === p.snapshotRequest!.zoneId);
+          return zoneRow?.glbUvBox ? { request: p.snapshotRequest, zone: zoneRow } : null;
+        })
+        .filter((t): t is { request: NonNullable<PreviewPhoto["snapshotRequest"]>; zone: Zone } => !!t);
+
+      const results = await Promise.all(
+        targets.map(async ({ request, zone }) => {
+          const res = await fetch("/api/personalization-snapshot", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(request),
+          });
+          if (!res.ok) return null;
+          const json = await res.json();
+          if (!json?.imageDataUrl) return null;
+          return {
+            cornersPct: zone.corners_pct,
+            uvBox: zone.glbUvBox!,
+            imageDataUrl: json.imageDataUrl as string,
+          };
+        })
+      );
+      setZoneTextures3D(results.filter((r): r is ZoneTextureInput => !!r));
+    } catch {
+      setError3D("Could not build the 3D preview — showing the model as-is.");
+    } finally {
+      setLoading3D(false);
+    }
+  }, [product.glbUrl, product.zones, computePreviewPhotos]);
+
   // "Necesitamos poder descargar el archivo en vectores con un botón en
   // esta pantalla" — a client-reachable twin of /api/order-items/[id]/
   // print-file (which needs an order that doesn't exist yet during
@@ -2626,6 +2713,48 @@ export function ProductConfigurator({
         <PreviewModal photos={previewPhotos} aiRenders={previewAiRenders} onClose={() => setShowPreviewModal(false)} />
       )}
 
+      {show3DViewer && product.glbUrl && (
+        <div role="dialog" aria-modal="true" aria-label="3D view" className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-3xl h-[80vh] rounded-2xl bg-[var(--pc-ink-900,#1a1a1a)] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
+              <p className="text-sm font-medium text-white">Drag to rotate</p>
+              <div className="flex items-center gap-3">
+                {!loading3D && (
+                  <button type="button" onClick={open3DViewer} className="text-xs text-white/70 hover:text-white">
+                    Refresh
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShow3DViewer(false)}
+                  aria-label="Close"
+                  className="h-9 w-9 flex items-center justify-center text-white/70 hover:text-white text-lg"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 relative">
+              {error3D && (
+                <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 text-xs px-3 py-1.5 rounded-full bg-black/70 text-white">
+                  {error3D}
+                </div>
+              )}
+              {loading3D ? (
+                <div className="flex items-center justify-center h-full text-sm text-white/70">Building your design in 3D…</div>
+              ) : (
+                <Product3DViewer
+                  glbUrl={product.glbUrl}
+                  activeMeshName={active3DMeshName}
+                  otherMeshNames={other3DMeshNames}
+                  zoneTextures={zoneTextures3D}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showDraftsModal && (
         <RecoveryModal
           versions={draftsVersions}
@@ -2789,6 +2918,22 @@ export function ProductConfigurator({
                   <circle cx="12" cy="12" r="3" />
                 </svg>
               </button>
+              {product.glbUrl && (
+                <button
+                  type="button"
+                  onClick={open3DViewer}
+                  aria-label="Ver en 3D"
+                  title="Ver en 3D"
+                  className="h-8 w-8 rounded-full flex items-center justify-center transition-colors hover:bg-[var(--pc-ink-50)]"
+                  style={{ color: "var(--pc-ink-600)" }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z" />
+                    <path d="M4 7.5 12 12l8-4.5" />
+                    <path d="M12 12v9" />
+                  </svg>
+                </button>
+              )}
             </div>
           </header>
 

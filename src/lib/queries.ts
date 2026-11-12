@@ -16,6 +16,10 @@ export type CatalogProduct = {
   supplierName: string;
   image: string | null;
   styleTags: string[];
+  // "agregale un simbolo a los productos que tengan cargado el glb" —
+  // whether this product has a 3D model uploaded, so the catalog grid can
+  // show a 3D badge on its tile.
+  has3d: boolean;
 };
 
 export type RelatedProduct = {
@@ -34,6 +38,7 @@ export type RelatedProduct = {
     corners_pct: { x: number; y: number }[];
   } | null;
   inkColor: string;
+  has3d: boolean;
 };
 
 export async function getPlannerBySlug(slug: string) {
@@ -73,7 +78,7 @@ export async function getStorefrontCatalog(plannerSlug: string): Promise<Catalog
     .select(
       `markup_pct, enabled,
        product:products (
-         id, slug, name, description, factory_price, min_order, personalizable, status, style_tags, catalog_image_id,
+         id, slug, name, description, factory_price, min_order, personalizable, status, style_tags, catalog_image_id, glb_url,
          category:categories ( name, slug ),
          supplier:suppliers ( business_name ),
          images:product_images!product_images_product_id_fkey ( id, url, sort_order )
@@ -109,6 +114,7 @@ export async function getStorefrontCatalog(plannerSlug: string): Promise<Catalog
         supplierName: p.supplier?.business_name ?? "",
         image: catalogImage?.url ?? null,
         styleTags: p.style_tags ?? [],
+        has3d: !!p.glb_url,
       };
     });
 }
@@ -173,8 +179,8 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
          catalog_image:product_images!products_catalog_image_id_fkey ( url ),
          images:product_images!product_images_product_id_fkey ( id, url, sort_order ),
          techniques:product_print_techniques ( id, technique, extra_price, is_default ),
-         zones:product_print_zones ( id, label, width_mm, height_mm, max_chars_per_line, max_lines, corners_pct, image_id, sort_order, extra_price ),
-         variants:product_variants ( id, label, sku, price_delta, image_url, sort_order )`
+         zones:product_print_zones ( id, label, width_mm, height_mm, max_chars_per_line, max_lines, corners_pct, image_id, sort_order, extra_price, glb_uv_box ),
+         variants:product_variants ( id, label, sku, price_delta, image_url, sort_order, glb_mesh_name )`
       )
       .eq("slug", productSlug)
       .eq("status", "approved")
@@ -218,6 +224,11 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
     .map((z) => ({
       ...z,
       corners_pct: (z.corners_pct as { x: number; y: number }[] | null) ?? [],
+      // Axis-aligned {u0,v0,u1,v1} region (0..1) within the active 3D
+      // mesh's own texture where this zone's design gets composited — a
+      // separate coordinate space from corners_pct above, which positions
+      // the overlay on the flat reference photo instead.
+      glbUvBox: (z.glb_uv_box as { u0: number; v0: number; u1: number; v1: number } | null) ?? null,
     }));
   const variants = (p.variants ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
 
@@ -248,6 +259,13 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
     zones,
     variants,
     relatedProductIds: p.related_product_ids ?? [],
+    // "boton para ver el render en 3d" — null when no GLB was uploaded for
+    // this product, which is what every "Ver en 3D" gate below checks.
+    glbUrl: p.glb_url,
+    // The mesh/node name to show when the current variant has none of its
+    // own (or the product has no variants at all) — see each variant's own
+    // glb_mesh_name for the per-color override.
+    glbMeshName: p.glb_mesh_name,
   };
 }
 
@@ -268,7 +286,7 @@ export async function getRelatedProducts(
     .select(
       `markup_pct, enabled,
        product:products (
-         id, slug, name, factory_price, min_order, lead_time_days_min, lead_time_days_max, personalizable, status,
+         id, slug, name, factory_price, min_order, lead_time_days_min, lead_time_days_max, personalizable, status, glb_url,
          images:product_images!product_images_product_id_fkey ( id, url, sort_order ),
          techniques:product_print_techniques ( technique, is_default ),
          zones:product_print_zones ( width_mm, height_mm, corners_pct, image_id, sort_order )
@@ -311,6 +329,7 @@ export async function getRelatedProducts(
             }
           : null,
         inkColor: techniqueInkColor(defaultTechnique?.technique),
+        has3d: !!p.glb_url,
       };
     });
 }

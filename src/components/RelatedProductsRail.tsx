@@ -10,6 +10,7 @@ import { frameSvgInner } from "@/lib/frameTemplates";
 import { textFontStyle } from "@/lib/textFonts";
 import { fitTextFontSize } from "@/lib/textFit";
 import { savePersonalizationHandoff } from "@/lib/personalizationHandoff";
+import { Product3DBadge } from "@/components/Product3DBadge";
 import { useCart } from "@/lib/cart";
 import { createClient } from "@/lib/supabase/client";
 import { dataUrlToBlob } from "@/lib/dataUrl";
@@ -214,6 +215,7 @@ function RelatedProductCard({
             className="object-cover transition-transform duration-300 group-hover:scale-110"
           />
         )}
+        {product.has3d && <Product3DBadge className="absolute top-2 right-2" />}
         {product.personalizable && zoneBox && hasPersonalization && (
           <div
             className="absolute text-center pointer-events-none"

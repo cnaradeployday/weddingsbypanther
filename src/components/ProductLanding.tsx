@@ -5,6 +5,7 @@ import Image from "next/image";
 import { formatUSD, applyMarkup } from "@/lib/format";
 import { parseQuantityInput, isQuantityBelowMinimum } from "@/lib/quantityValidation";
 import { ProductConfigurator, type ProductConfiguratorProduct } from "./ProductConfigurator";
+import { Product3DBadge } from "./Product3DBadge";
 import type { RelatedProduct } from "@/lib/queries";
 
 // "al momento de elegir el producto, antes del product builder, necesitamos
@@ -74,6 +75,7 @@ export function ProductLanding({
     <div className="max-w-5xl mx-auto px-4 md:px-6 py-8 md:py-12 grid md:grid-cols-2 gap-8 md:gap-12">
       <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-cream">
         {heroImage && <Image src={heroImage} alt={product.name} fill className="object-cover" unoptimized />}
+        {product.glbUrl && <Product3DBadge />}
       </div>
       <div className="flex flex-col gap-6">
         <div>

@@ -451,6 +451,7 @@ export type Database = {
         Row: {
           corners_pct: Json
           extra_price: number
+          glb_uv_box: Json | null
           height_mm: number | null
           height_pct: number
           id: string
@@ -469,6 +470,7 @@ export type Database = {
         Insert: {
           corners_pct?: Json
           extra_price?: number
+          glb_uv_box?: Json | null
           height_mm?: number | null
           height_pct?: number
           id?: string
@@ -487,6 +489,7 @@ export type Database = {
         Update: {
           corners_pct?: Json
           extra_price?: number
+          glb_uv_box?: Json | null
           height_mm?: number | null
           height_pct?: number
           id?: string
@@ -522,6 +525,7 @@ export type Database = {
       product_variants: {
         Row: {
           created_at: string
+          glb_mesh_name: string | null
           id: string
           image_url: string | null
           label: string
@@ -533,6 +537,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          glb_mesh_name?: string | null
           id?: string
           image_url?: string | null
           label: string
@@ -544,6 +549,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          glb_mesh_name?: string | null
           id?: string
           image_url?: string | null
           label?: string
@@ -571,6 +577,8 @@ export type Database = {
           created_at: string
           description: string | null
           factory_price: number
+          glb_mesh_name: string | null
+          glb_url: string | null
           id: string
           lead_time_days_max: number
           lead_time_days_min: number
@@ -594,6 +602,8 @@ export type Database = {
           created_at?: string
           description?: string | null
           factory_price: number
+          glb_mesh_name?: string | null
+          glb_url?: string | null
           id?: string
           lead_time_days_max?: number
           lead_time_days_min?: number
@@ -617,6 +627,8 @@ export type Database = {
           created_at?: string
           description?: string | null
           factory_price?: number
+          glb_mesh_name?: string | null
+          glb_url?: string | null
           id?: string
           lead_time_days_max?: number
           lead_time_days_min?: number

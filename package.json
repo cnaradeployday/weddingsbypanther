@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",
+    "@react-three/drei": "^10.7.9",
+    "@react-three/fiber": "^9.4.0",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.3",
     "@types/potrace": "^2.1.5",
@@ -25,6 +27,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "sharp": "^0.35.3",
+    "three": "^0.180.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

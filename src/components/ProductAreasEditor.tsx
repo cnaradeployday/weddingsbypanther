@@ -12,6 +12,8 @@ const DEFAULT_CORNERS: Quad = [
 
 // The persisted shape of one product_print_zones row, as far as the admin/
 // supplier forms need it (no id/product_id — those are assigned on save).
+export type UvBox = { u0: number; v0: number; u1: number; v1: number };
+
 export type AreaInput = {
   label: string;
   width: number;
@@ -20,7 +22,13 @@ export type AreaInput = {
   corners: Quad;
   imageId: string | null;
   extraPrice: number;
+  // Where this area's design gets composited onto the product's 3D mesh,
+  // in UV space (0..1) — null until an admin/supplier sets it, which skips
+  // this area in the 3D viewer (see "Ver en 3D" in ProductConfigurator).
+  glbUvBox: UvBox | null;
 };
+
+const DEFAULT_UV_BOX: UvBox = { u0: 0.3, v0: 0.3, u1: 0.7, v1: 0.6 };
 
 export type AreaDraft = AreaInput & { localId: string };
 
@@ -46,6 +54,7 @@ export function toAreaDrafts(areas: AreaInput[] | undefined, fallbackImageId: st
       corners: DEFAULT_CORNERS,
       imageId: fallbackImageId,
       extraPrice: 0,
+      glbUvBox: null,
     },
   ];
 }
@@ -60,6 +69,7 @@ function newExtraArea(fallbackImageId: string | null): AreaDraft {
     corners: DEFAULT_CORNERS,
     imageId: fallbackImageId,
     extraPrice: 0,
+    glbUvBox: null,
   };
 }
 
@@ -72,10 +82,14 @@ export function ProductAreasEditor({
   areas,
   onChange,
   images,
+  hasGlb = false,
 }: {
   areas: AreaDraft[];
   onChange: (areas: AreaDraft[]) => void;
   images: { id: string; url: string }[];
+  // Shows each area's 3D UV-box fields only once a GLB is actually
+  // attached — otherwise they'd be dead inputs with nothing to apply to.
+  hasGlb?: boolean;
 }) {
   const updateArea = (index: number, patch: Partial<AreaDraft>) => {
     onChange(areas.map((a, i) => (i === index ? { ...a, ...patch } : a)));
@@ -195,6 +209,49 @@ export function ProductAreasEditor({
                   onChange={(e) => updateArea(index, { extraPrice: Number(e.target.value) })}
                   className="w-40 rounded-lg border border-line px-3 py-2 focus:outline-none focus:border-dark"
                 />
+              </div>
+            )}
+
+            {hasGlb && (
+              <div className="mt-3 pt-3 border-t border-line">
+                <label className="flex items-center gap-2 text-xs text-muted mb-2">
+                  <input
+                    type="checkbox"
+                    checked={!!area.glbUvBox}
+                    onChange={(e) =>
+                      updateArea(index, { glbUvBox: e.target.checked ? DEFAULT_UV_BOX : null })
+                    }
+                  />
+                  Show this area in the 3D viewer
+                </label>
+                {area.glbUvBox && (
+                  <>
+                    <p className="text-xs text-muted mb-2">
+                      UV coordinates (0–1) of this area on the 3D model&apos;s own texture — ask
+                      whoever prepared the GLB for these.
+                    </p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {(["u0", "v0", "u1", "v1"] as const).map((key) => (
+                        <div key={key}>
+                          <label className="text-xs text-muted block mb-1 uppercase">{key}</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min={0}
+                            max={1}
+                            value={area.glbUvBox![key]}
+                            onChange={(e) =>
+                              updateArea(index, {
+                                glbUvBox: { ...area.glbUvBox!, [key]: Number(e.target.value) },
+                              })
+                            }
+                            className="w-full rounded-lg border border-line px-2 py-1.5 text-sm focus:outline-none focus:border-dark"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
