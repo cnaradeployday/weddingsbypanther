@@ -550,6 +550,16 @@ export function ProductConfigurator({
   const [zoneTextures3D, setZoneTextures3D] = useState<ZoneTextureInput[]>([]);
   const [loading3D, setLoading3D] = useState(false);
   const [error3D, setError3D] = useState<string | null>(null);
+  // "necesito que en el render 3d, tambien me crees un link que se pueda
+  // enviar... tambien un codigo qr" — a public, persisted copy of the
+  // CURRENT 3D render (GLB + baked zone artwork), so anyone opening the
+  // link or scanning the QR sees this exact design with no login and no
+  // live app state. null until Share is clicked; cleared on Refresh/Close
+  // since a stale share would silently point at a design that no longer
+  // matches what's on screen.
+  const [share3DUrl, setShare3DUrl] = useState<string | null>(null);
+  const [sharing3D, setSharing3D] = useState(false);
+  const [error3DShare, setError3DShare] = useState<string | null>(null);
 
   // Which print area the shopper is currently viewing/personalizing. The
   // primary area is always included in the order; secondary/tertiary ones
@@ -1970,6 +1980,10 @@ export function ProductConfigurator({
     : [];
 
   const qrSvg = useQrSvg(design.qrUrl, effectiveQrColor);
+  // The share-link QR code shown in the 3D modal — independent of the
+  // design-time QR tool above (that one prints a QR ONTO the product;
+  // this one just encodes the share3D link, always black).
+  const share3DQrSvg = useQrSvg(share3DUrl ?? "", "#000000");
 
   // FLOW-06's validation engine — reuses BUG-02/BUG-09's own checks. See
   // purchaseFlowValidation.ts for why "element outside the print area,"
@@ -2103,6 +2117,12 @@ export function ProductConfigurator({
     setShow3DViewer(true);
     setLoading3D(true);
     setError3D(null);
+    // A Refresh re-bakes the texture from the design's current state, so
+    // any share link/QR generated from the PREVIOUS bake no longer matches
+    // what's about to be shown — forcing a fresh Share click keeps the
+    // link always pointing at what's actually on screen.
+    setShare3DUrl(null);
+    setError3DShare(null);
     try {
       const photos = computePreviewPhotos();
       const targets = photos
@@ -2141,6 +2161,53 @@ export function ProductConfigurator({
       setLoading3D(false);
     }
   }, [active3DGlbUrl, product.zones, computePreviewPhotos]);
+
+  // "necesito que en el render 3d, tambien me crees un link que se pueda
+  // enviar y que el que lo abra, habra ese componente. tambien un codigo
+  // qr" — persists the CURRENTLY baked 3D render (the live viewer's own
+  // glbUrl/mesh names, plus each zone's artwork uploaded to storage so it
+  // has a real URL instead of a data: URL too large for either the row or
+  // a QR code) as one row in product_3d_shares, then builds the public
+  // /share/3d/[id] link from its id. Anyone opening that link (or a QR
+  // code encoding it) sees exactly this design with no login — see that
+  // page for how it's read back.
+  const createShare3D = useCallback(async () => {
+    if (!active3DGlbUrl) return;
+    setSharing3D(true);
+    setError3DShare(null);
+    try {
+      const client = createClient();
+      const shareBase = `share-3d-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const uploadedZoneTextures = await Promise.all(
+        zoneTextures3D.map(async (zt, i) => {
+          const blob = await dataUrlToBlob(zt.artworkDataUrl);
+          const path = `${shareBase}-${i}.png`;
+          const { error: uploadError } = await client.storage
+            .from("personalization-renders")
+            .upload(path, blob, { contentType: "image/png" });
+          if (uploadError) throw uploadError;
+          const artworkUrl = client.storage.from("personalization-renders").getPublicUrl(path).data.publicUrl;
+          return { uvBox: zt.uvBox, artworkUrl };
+        })
+      );
+      const { data, error: insertError } = await client
+        .from("product_3d_shares")
+        .insert({
+          glb_url: active3DGlbUrl,
+          active_mesh_name: active3DMeshName,
+          other_mesh_names: other3DMeshNames,
+          zone_textures: uploadedZoneTextures,
+        })
+        .select("id")
+        .single();
+      if (insertError || !data) throw insertError ?? new Error("No share id returned");
+      setShare3DUrl(`${window.location.origin}/share/3d/${data.id}`);
+    } catch {
+      setError3DShare("Could not create the share link — please try again.");
+    } finally {
+      setSharing3D(false);
+    }
+  }, [active3DGlbUrl, active3DMeshName, other3DMeshNames, zoneTextures3D]);
 
   // "Necesitamos poder descargar el archivo en vectores con un botón en
   // esta pantalla" — a client-reachable twin of /api/order-items/[id]/
@@ -2737,13 +2804,27 @@ export function ProductConfigurator({
               <p className="text-sm font-medium">Drag to rotate</p>
               <div className="flex items-center gap-3">
                 {!loading3D && (
-                  <button type="button" onClick={open3DViewer} className="text-xs text-muted hover:text-dark">
-                    Refresh
-                  </button>
+                  <>
+                    <button type="button" onClick={open3DViewer} className="text-xs text-muted hover:text-dark">
+                      Refresh
+                    </button>
+                    <button
+                      type="button"
+                      onClick={createShare3D}
+                      disabled={sharing3D}
+                      className="text-xs text-muted hover:text-dark disabled:opacity-50"
+                    >
+                      {sharing3D ? "Creating link…" : "Share"}
+                    </button>
+                  </>
                 )}
                 <button
                   type="button"
-                  onClick={() => setShow3DViewer(false)}
+                  onClick={() => {
+                    setShow3DViewer(false);
+                    setShare3DUrl(null);
+                    setError3DShare(null);
+                  }}
                   aria-label="Close"
                   className="h-9 w-9 flex items-center justify-center text-muted hover:text-dark text-lg"
                 >
@@ -2751,6 +2832,43 @@ export function ProductConfigurator({
                 </button>
               </div>
             </div>
+            {(share3DUrl || error3DShare) && (
+              <div className="flex items-center gap-3 px-5 py-3 border-b border-line bg-cream">
+                {error3DShare ? (
+                  <p className="text-xs text-red-600">{error3DShare}</p>
+                ) : (
+                  <>
+                    {share3DQrSvg && (
+                      <div
+                        className="h-14 w-14 shrink-0 bg-white rounded border border-line p-1"
+                        dangerouslySetInnerHTML={{ __html: share3DQrSvg }}
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-muted mb-1">Share this 3D view — scan the QR or send the link</p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={share3DUrl ?? ""}
+                          onFocus={(e) => e.currentTarget.select()}
+                          className="flex-1 min-w-0 text-xs px-2 py-1.5 rounded border border-line bg-white truncate"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (share3DUrl) navigator.clipboard?.writeText(share3DUrl).catch(() => {});
+                          }}
+                          className="text-xs px-2.5 py-1.5 rounded border border-line bg-white hover:bg-cream shrink-0"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             <div className="flex-1 relative bg-white">
               {error3D && (
                 <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 text-xs px-3 py-1.5 rounded-full bg-black/70 text-white">
