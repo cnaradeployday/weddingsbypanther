@@ -7,18 +7,17 @@ import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import * as THREE from "three";
 
 export type ZoneTextureInput = {
-  // Percentages (0–100) of the composited photo this zone's design was
-  // rendered against — the same corners_pct the 2D canvas/overlay already
-  // uses, reused here to crop out just this zone's region.
-  cornersPct: { x: number; y: number }[];
-  // Where that cropped region lands on the active mesh's own texture, in
+  // Where this zone's artwork lands on the active mesh's own texture, in
   // UV space (0–1) — set by an admin/supplier per print area.
   uvBox: { u0: number; v0: number; u1: number; v1: number };
-  // The already-composited (photo + logo/text) PNG for this zone, fetched
-  // the same way the 2D Preview/Confirmación steps do (see
-  // useCompositedPreview.ts) — reused as-is rather than re-implementing
-  // logo/text rendering in WebGL.
-  imageDataUrl: string;
+  // The logo/text artwork for this zone ALONE, on a transparent background
+  // (see personalizationComposite.ts's `artwork` return and the
+  // /api/personalization-snapshot route) — not the full photo. Drawing
+  // only this (rather than a crop of the full composited photo) is what
+  // keeps the print area itself invisible on the model: everywhere outside
+  // the real ink pixels stays transparent, so the mesh's own material
+  // shows through unchanged.
+  artworkDataUrl: string;
 };
 
 function loadHtmlImage(src: string): Promise<HTMLImageElement> {
@@ -29,60 +28,6 @@ function loadHtmlImage(src: string): Promise<HTMLImageElement> {
     img.onerror = () => reject(new Error("Could not load composited design image"));
     img.src = src;
   });
-}
-
-// Warps the quad (top-left, top-right, _, bottom-left — the 4th corner is
-// unused, matching the rest of this app's parallelogram approximation of a
-// freeform quad) out of `img` into a fresh `destW`×`destH` canvas. An affine
-// map, not a true perspective warp, so it's exact for an axis-aligned
-// rectangle and a reasonable approximation for the mild skews this editor's
-// corner-drag tool actually produces.
-function warpQuadToCanvas(
-  img: HTMLImageElement,
-  quad: { x: number; y: number }[],
-  destW: number,
-  destH: number
-): HTMLCanvasElement | null {
-  if (quad.length !== 4) return null;
-  const [tl, tr, , bl] = quad;
-  const toPx = (c: { x: number; y: number }) => ({
-    x: (c.x / 100) * img.naturalWidth,
-    y: (c.y / 100) * img.naturalHeight,
-  });
-  const srcTL = toPx(tl);
-  const srcTR = toPx(tr);
-  const srcBL = toPx(bl);
-
-  const ux = srcTR.x - srcTL.x;
-  const uy = srcTR.y - srcTL.y;
-  const vx = srcBL.x - srcTL.x;
-  const vy = srcBL.y - srcTL.y;
-  const det = ux * vy - vx * uy;
-  if (Math.abs(det) < 1e-6) return null;
-
-  // [a c; b d] takes raw image-pixel coordinates straight to this dest
-  // canvas's own pixel coordinates — derived by solving the 3-point affine
-  // correspondence srcTL->(0,0), srcTR->(destW,0), srcBL->(0,destH).
-  const invA = vy / det;
-  const invB = -uy / det;
-  const invC = -vx / det;
-  const invD = ux / det;
-  const a = destW * invA;
-  const c = destW * invC;
-  const b = destH * invB;
-  const d = destH * invD;
-  const e = -(a * srcTL.x + c * srcTL.y);
-  const f = -(b * srcTL.x + d * srcTL.y);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(destW));
-  canvas.height = Math.max(1, Math.round(destH));
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  ctx.setTransform(a, b, c, d, e, f);
-  ctx.drawImage(img, 0, 0);
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  return canvas;
 }
 
 function Model({
@@ -181,7 +126,7 @@ function Model({
       const loaded = await Promise.all(
         zoneTextures.map(async (zt) => {
           try {
-            return { zt, img: await loadHtmlImage(zt.imageDataUrl) };
+            return { zt, img: await loadHtmlImage(zt.artworkDataUrl) };
           } catch {
             return null;
           }
@@ -196,8 +141,12 @@ function Model({
         const dy = zt.uvBox.v0 * height;
         const dw = Math.max(1, (zt.uvBox.u1 - zt.uvBox.u0) * width);
         const dh = Math.max(1, (zt.uvBox.v1 - zt.uvBox.v0) * height);
-        const warped = warpQuadToCanvas(img, zt.cornersPct, dw, dh);
-        if (warped) ctx.drawImage(warped, dx, dy, dw, dh);
+        // The artwork is already just the logo/text on a transparent
+        // background, sized to the print zone's own bounding box — a plain
+        // stretch-to-fit draw, no cropping/warping needed, and the
+        // transparent pixels outside the ink leave the mesh's real texture
+        // showing through everywhere else in this rectangle.
+        ctx.drawImage(img, dx, dy, dw, dh);
       }
 
       const newTexture = new THREE.CanvasTexture(canvas);
@@ -268,6 +217,15 @@ export function Product3DViewer({
         camera={{ position: [0, 0, 3], fov: 40 }}
         onError={() => setFailed(true)}
         className="!h-full !w-full"
+        // "el color se ve mas oscuro, como si hubiera una transparencia" /
+        // "el logo se configuro en blanco pero se ve gris" — react-three-
+        // fiber's Canvas defaults to ACESFilmicToneMapping, which rolls off
+        // highlights and mutes saturated colors (a pure white reads as a
+        // light gray, a saturated red reads darker) — exactly this
+        // symptom. `flat` switches the renderer to NoToneMapping, so a
+        // material's real color comes through unchanged, matching the
+        // flat product photo it's being compared against.
+        flat
       >
         {/* "el fondo tiene que ser blanco para que tenga contraste" */}
         <color attach="background" args={["#ffffff"]} />

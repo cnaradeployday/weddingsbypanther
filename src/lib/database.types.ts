@@ -526,6 +526,7 @@ export type Database = {
         Row: {
           created_at: string
           glb_mesh_name: string | null
+          glb_url: string | null
           id: string
           image_url: string | null
           label: string
@@ -538,6 +539,7 @@ export type Database = {
         Insert: {
           created_at?: string
           glb_mesh_name?: string | null
+          glb_url?: string | null
           id?: string
           image_url?: string | null
           label: string
@@ -550,6 +552,7 @@ export type Database = {
         Update: {
           created_at?: string
           glb_mesh_name?: string | null
+          glb_url?: string | null
           id?: string
           image_url?: string | null
           label?: string

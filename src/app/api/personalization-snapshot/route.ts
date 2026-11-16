@@ -174,5 +174,12 @@ async function handlePost(req: NextRequest) {
     return NextResponse.json({ error: "Could not load the product photo." }, { status: 502 });
   }
 
-  return NextResponse.json({ imageDataUrl: `data:${result.mimeType};base64,${result.data}` });
+  return NextResponse.json({
+    imageDataUrl: `data:${result.image.mimeType};base64,${result.image.data}`,
+    // "necesito que cuando este armado el 3d no se note el area de
+    // impresion" — the 3D viewer's own zone texture, logo/text only on a
+    // transparent background, so it can bake just the ink onto the model's
+    // real material instead of a visible rectangle of flat photo.
+    artworkDataUrl: `data:${result.artwork.mimeType};base64,${result.artwork.data}`,
+  });
 }

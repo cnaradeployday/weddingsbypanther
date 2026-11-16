@@ -27,7 +27,7 @@ export default async function EditAdminProductPage({
            images:product_images!product_images_product_id_fkey(id, url, sort_order),
            techniques:product_print_techniques(technique),
            zones:product_print_zones(label, width_mm, height_mm, max_chars_per_line, corners_pct, image_id, sort_order, extra_price, glb_uv_box),
-           variants:product_variants(id, label, sku, price_delta, stock_on_hand, image_url, sort_order, glb_mesh_name)`
+           variants:product_variants(id, label, sku, price_delta, stock_on_hand, image_url, sort_order, glb_mesh_name, glb_url)`
         )
         .eq("id", id)
         .maybeSingle(),
@@ -98,6 +98,7 @@ export default async function EditAdminProductPage({
         stock: v.stock_on_hand,
         imageUrl: v.image_url,
         glbMeshName: v.glb_mesh_name,
+        glbUrl: v.glb_url,
       })),
   };
 

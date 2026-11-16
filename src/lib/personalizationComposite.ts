@@ -534,7 +534,12 @@ export async function composeProductPersonalization({
   // every real caller except the Laser Engrave override in the snapshot
   // route.
   opacity?: number;
-}): Promise<ImagePayload | null> {
+}): Promise<{ image: ImagePayload; artwork: ImagePayload } | null> {
+  // Returns the artwork (transparent PNG, logo/text only) alongside the
+  // final composited photo — "necesito que cuando este armado el 3d no se
+  // note el area de impresion": the 3D viewer bakes the logo/text onto the
+  // model's own texture instead of a flat photo, so it needs the artwork by
+  // itself rather than cropping a visible rectangle out of the full photo.
   const baseImage = await loadImageAsBase64(referenceImageUrl);
   if (!baseImage) return null;
   const croppedBase = await cropToStorefrontAspect(baseImage);
@@ -615,5 +620,6 @@ export async function composeProductPersonalization({
       ? await sharp(artworkBuffer).resize(canvasW, canvasH, { fit: "fill", kernel: "mitchell" }).png().toBuffer()
       : artworkBuffer;
 
-  return compositePersonalization(croppedBase, finalArtwork, box, canvasW, canvasH, "over");
+  const image = await compositePersonalization(croppedBase, finalArtwork, box, canvasW, canvasH, "over");
+  return { image, artwork: { data: finalArtwork.toString("base64"), mimeType: "image/png" } };
 }
