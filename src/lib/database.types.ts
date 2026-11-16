@@ -386,6 +386,33 @@ export type Database = {
         }
         Relationships: []
       }
+      product_3d_shares: {
+        Row: {
+          active_mesh_name: string | null
+          created_at: string
+          glb_url: string
+          id: string
+          other_mesh_names: string[]
+          zone_textures: Json
+        }
+        Insert: {
+          active_mesh_name?: string | null
+          created_at?: string
+          glb_url: string
+          id?: string
+          other_mesh_names?: string[]
+          zone_textures?: Json
+        }
+        Update: {
+          active_mesh_name?: string | null
+          created_at?: string
+          glb_url?: string
+          id?: string
+          other_mesh_names?: string[]
+          zone_textures?: Json
+        }
+        Relationships: []
+      }
       product_images: {
         Row: {
           id: string
