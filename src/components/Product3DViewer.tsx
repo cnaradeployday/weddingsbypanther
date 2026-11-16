@@ -229,9 +229,16 @@ export function Product3DViewer({
       >
         {/* "el fondo tiene que ser blanco para que tenga contraste" */}
         <color attach="background" args={["#ffffff"]} />
-        <ambientLight intensity={0.7} />
-        <directionalLight position={[5, 5, 5]} intensity={1.3} />
-        <directionalLight position={[-5, -3, -5]} intensity={0.4} />
+        {/* "se sigue viendo opacado" — `flat` (above) removed the tone-
+            mapping darkening, but MeshStandardMaterial's Lambertian BRDF
+            divides by π, so the previous lights (summing to ~2.0 at a
+            best-lit point) only reached ~64% of the texture's real color.
+            Pushed well past π (~3.14) so a lit surface reads at or above
+            its true albedo, matching the flat reference photo, while the
+            fill light keeps unlit faces from going too dark. */}
+        <ambientLight intensity={1.8} />
+        <directionalLight position={[5, 5, 5]} intensity={2.4} />
+        <directionalLight position={[-5, -3, -5]} intensity={1} />
         <Suspense fallback={null}>
           <Model
             glbUrl={glbUrl}
