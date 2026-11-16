@@ -18,6 +18,8 @@ type VariantRow = {
   imageFile: File | null;
   imagePreview: string | null;
   glbMeshName: string;
+  glbUrl: string | null;
+  glbFile: File | null;
 };
 
 function newVariantRow(): VariantRow {
@@ -31,6 +33,8 @@ function newVariantRow(): VariantRow {
     imageFile: null,
     imagePreview: null,
     glbMeshName: "",
+    glbUrl: null,
+    glbFile: null,
   };
 }
 
@@ -107,6 +111,8 @@ export function AdminProductForm({
       imageFile: null,
       imagePreview: null,
       glbMeshName: v.glbMeshName ?? "",
+      glbUrl: v.glbUrl ?? null,
+      glbFile: null,
     }))
   );
 
@@ -155,6 +161,13 @@ export function AdminProductForm({
     if (!file) return;
     updateVariant(localId, { imageFile: file, imagePreview: URL.createObjectURL(file) });
   };
+  const handleVariantGlb = (localId: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    updateVariant(localId, { glbFile: file });
+  };
+  const removeVariantGlb = (localId: string) => updateVariant(localId, { glbFile: null, glbUrl: null });
 
   const toggleTechnique = (t: string) =>
     setTechniques((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
@@ -349,6 +362,16 @@ export function AdminProductForm({
               imageUrl = publicUrl.publicUrl;
             }
           }
+          let variantGlbUrl = v.glbUrl;
+          if (v.glbFile) {
+            const path = `${supplierId}/${productId}/variants/${i}-model-${Date.now()}.glb`;
+            const { error: glbUploadError } = await supabase.storage
+              .from("product-models")
+              .upload(path, v.glbFile, { contentType: "model/gltf-binary" });
+            if (!glbUploadError) {
+              variantGlbUrl = supabase.storage.from("product-models").getPublicUrl(path).data.publicUrl;
+            }
+          }
           return {
             product_id: productId,
             label: v.label.trim(),
@@ -358,6 +381,7 @@ export function AdminProductForm({
             image_url: imageUrl,
             sort_order: i,
             glb_mesh_name: v.glbMeshName.trim() || null,
+            glb_url: variantGlbUrl,
           };
         })
       );
@@ -807,7 +831,27 @@ export function AdminProductForm({
                       Remove
                     </button>
                   </div>
-                  {(glbFile || glbUrl) && (
+                  <div className="flex items-center gap-2">
+                    {v.glbUrl && !v.glbFile ? (
+                      <>
+                        <span className="text-xs text-muted truncate flex-1">{v.glbUrl.split("/").pop()}</span>
+                        <button type="button" onClick={() => removeVariantGlb(v.localId)} className="text-xs text-terracotta-dark shrink-0">
+                          Remove 3D
+                        </button>
+                      </>
+                    ) : (
+                      <label className="text-xs px-2 py-1.5 rounded-lg border border-dashed border-line cursor-pointer text-muted flex-1 truncate">
+                        {v.glbFile ? v.glbFile.name : "Upload this color's own .glb (optional)"}
+                        <input type="file" accept=".glb,.gltf" onChange={handleVariantGlb(v.localId)} className="hidden" />
+                      </label>
+                    )}
+                    {v.glbFile && (
+                      <button type="button" onClick={() => removeVariantGlb(v.localId)} className="text-xs text-terracotta-dark shrink-0">
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  {(glbFile || glbUrl || v.glbUrl || v.glbFile) && (
                     <input
                       placeholder="3D mesh/node name for this color (optional — falls back to the default above)"
                       value={v.glbMeshName}

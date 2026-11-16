@@ -193,7 +193,7 @@ export async function POST(req: NextRequest) {
   // pass. Asking an image model to redraw arbitrary source artwork risks
   // it hallucinating/garbling any text baked into the logo, which is worse
   // than skipping the cosmetic restyle.
-  const productResultImage = await composeProductPersonalization({
+  const productResult = await composeProductPersonalization({
     referenceImageUrl: referenceImage.url,
     zone,
     logoImage,
@@ -207,9 +207,10 @@ export async function POST(req: NextRequest) {
     elemScale,
     elemRotationOffsetDeg,
   });
-  if (!productResultImage) {
+  if (!productResult) {
     return NextResponse.json({ error: "Could not load the product photo." }, { status: 502 });
   }
+  const productResultImage = productResult.image;
   const productImageDataUrl = `data:${productResultImage.mimeType};base64,${productResultImage.data}`;
 
   // Second pass: Gemini generates an EMPTY wedding lifestyle scene — no

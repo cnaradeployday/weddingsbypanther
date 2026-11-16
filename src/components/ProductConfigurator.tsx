@@ -108,10 +108,16 @@ type Variant = {
   price_delta: number;
   image_url: string | null;
   sort_order: number;
-  // Which mesh/node in the product's GLB (if any) shows this color — the
+  // Which mesh/node in the product's (shared) GLB shows this color — the
   // other variant meshes are hidden while this one is active. Falls back
-  // to the product-level glbMeshName when not set.
+  // to the product-level glbMeshName when not set. Irrelevant once this
+  // variant has its own glb_url (below): that file needs no mesh-hiding
+  // since it isn't sharing space with any other color's meshes.
   glb_mesh_name: string | null;
+  // "finalmente vamos a poner 1 glb por cada color" — an independent GLB
+  // for just this color, overriding the product's shared one entirely.
+  // Null means this color still comes from the product's shared file.
+  glb_url: string | null;
 };
 type Zone = {
   id: string;
@@ -2069,12 +2075,19 @@ export function ProductConfigurator({
     setShowPreviewModal(true);
   }, [computePreviewPhotos]);
 
+  // "finalmente vamos a poner 1 glb por cada color" — the active variant's
+  // own independent file, when it has one, entirely replaces the product's
+  // shared GLB rather than just picking a mesh within it.
+  const active3DGlbUrl = variant?.glb_url || product.glbUrl || null;
   // Which mesh/node in the GLB shows the shopper's current color — the
   // active variant's own glb_mesh_name, or the product's default when the
-  // variant has none (or there are no variants at all).
+  // variant has none (or there are no variants at all). Only meaningful
+  // when variant/product share one file; a variant with its own glb_url
+  // has no other colors' meshes to pick among in that file.
   const active3DMeshName = variant?.glb_mesh_name || product.glbMeshName || null;
   // Every OTHER known variant mesh needs hiding so only the active color's
-  // mesh renders — harmless/empty when the product has no variants.
+  // mesh renders when they share one file — harmless/empty otherwise (a
+  // variant-specific file has none of those other mesh names to hide).
   const other3DMeshNames = product.variants
     .map((v) => v.glb_mesh_name)
     .filter((n): n is string => !!n && n !== active3DMeshName);
@@ -2086,7 +2099,7 @@ export function ProductConfigurator({
   // one at a time, since the 3D viewer needs them all at once to build a
   // single texture.
   const open3DViewer = useCallback(async () => {
-    if (!product.glbUrl) return;
+    if (!active3DGlbUrl) return;
     setShow3DViewer(true);
     setLoading3D(true);
     setError3D(null);
@@ -2109,11 +2122,15 @@ export function ProductConfigurator({
           });
           if (!res.ok) return null;
           const json = await res.json();
-          if (!json?.imageDataUrl) return null;
+          // "que no se note el area de impresion" — the transparent,
+          // logo/text-only artwork (see personalizationComposite.ts), not
+          // the full photo, so only the real ink pixels land on the mesh's
+          // own texture and everything else still shows the model's own
+          // material.
+          if (!json?.artworkDataUrl) return null;
           return {
-            cornersPct: zone.corners_pct,
             uvBox: zone.glbUvBox!,
-            imageDataUrl: json.imageDataUrl as string,
+            artworkDataUrl: json.artworkDataUrl as string,
           };
         })
       );
@@ -2123,7 +2140,7 @@ export function ProductConfigurator({
     } finally {
       setLoading3D(false);
     }
-  }, [product.glbUrl, product.zones, computePreviewPhotos]);
+  }, [active3DGlbUrl, product.zones, computePreviewPhotos]);
 
   // "Necesitamos poder descargar el archivo en vectores con un botón en
   // esta pantalla" — a client-reachable twin of /api/order-items/[id]/
@@ -2713,7 +2730,7 @@ export function ProductConfigurator({
         <PreviewModal photos={previewPhotos} aiRenders={previewAiRenders} onClose={() => setShowPreviewModal(false)} />
       )}
 
-      {show3DViewer && product.glbUrl && (
+      {show3DViewer && active3DGlbUrl && (
         <div role="dialog" aria-modal="true" aria-label="3D view" className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-3xl h-[80vh] rounded-2xl bg-white overflow-hidden flex flex-col shadow-xl">
             <div className="flex items-center justify-between px-5 py-3 border-b border-line">
@@ -2744,7 +2761,7 @@ export function ProductConfigurator({
                 <div className="flex items-center justify-center h-full text-sm text-muted">Building your design in 3D…</div>
               ) : (
                 <Product3DViewer
-                  glbUrl={product.glbUrl}
+                  glbUrl={active3DGlbUrl}
                   activeMeshName={active3DMeshName}
                   otherMeshNames={other3DMeshNames}
                   zoneTextures={zoneTextures3D}
@@ -2918,7 +2935,7 @@ export function ProductConfigurator({
                   <circle cx="12" cy="12" r="3" />
                 </svg>
               </button>
-              {product.glbUrl && (
+              {active3DGlbUrl && (
                 <button
                   type="button"
                   onClick={open3DViewer}

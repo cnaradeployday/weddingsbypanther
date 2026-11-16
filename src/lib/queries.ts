@@ -81,7 +81,8 @@ export async function getStorefrontCatalog(plannerSlug: string): Promise<Catalog
          id, slug, name, description, factory_price, min_order, personalizable, status, style_tags, catalog_image_id, glb_url,
          category:categories ( name, slug ),
          supplier:suppliers ( business_name ),
-         images:product_images!product_images_product_id_fkey ( id, url, sort_order )
+         images:product_images!product_images_product_id_fkey ( id, url, sort_order ),
+         variants:product_variants ( glb_url )
        )`
     )
     .eq("planner_id", planner.id)
@@ -114,7 +115,9 @@ export async function getStorefrontCatalog(plannerSlug: string): Promise<Catalog
         supplierName: p.supplier?.business_name ?? "",
         image: catalogImage?.url ?? null,
         styleTags: p.style_tags ?? [],
-        has3d: !!p.glb_url,
+        // A product-level GLB, or any color's own independent one (see
+        // product_variants.glb_url), both count as "has a 3D view".
+        has3d: !!p.glb_url || (p.variants ?? []).some((v) => !!v.glb_url),
       };
     });
 }
@@ -180,7 +183,7 @@ export async function getStorefrontProduct(plannerSlug: string, productSlug: str
          images:product_images!product_images_product_id_fkey ( id, url, sort_order ),
          techniques:product_print_techniques ( id, technique, extra_price, is_default ),
          zones:product_print_zones ( id, label, width_mm, height_mm, max_chars_per_line, max_lines, corners_pct, image_id, sort_order, extra_price, glb_uv_box ),
-         variants:product_variants ( id, label, sku, price_delta, image_url, sort_order, glb_mesh_name )`
+         variants:product_variants ( id, label, sku, price_delta, image_url, sort_order, glb_mesh_name, glb_url )`
       )
       .eq("slug", productSlug)
       .eq("status", "approved")
@@ -289,7 +292,8 @@ export async function getRelatedProducts(
          id, slug, name, factory_price, min_order, lead_time_days_min, lead_time_days_max, personalizable, status, glb_url,
          images:product_images!product_images_product_id_fkey ( id, url, sort_order ),
          techniques:product_print_techniques ( technique, is_default ),
-         zones:product_print_zones ( width_mm, height_mm, corners_pct, image_id, sort_order )
+         zones:product_print_zones ( width_mm, height_mm, corners_pct, image_id, sort_order ),
+         variants:product_variants ( glb_url )
        )`
     )
     .eq("planner_id", planner.id)
@@ -329,7 +333,7 @@ export async function getRelatedProducts(
             }
           : null,
         inkColor: techniqueInkColor(defaultTechnique?.technique),
-        has3d: !!p.glb_url,
+        has3d: !!p.glb_url || (p.variants ?? []).some((v) => !!v.glb_url),
       };
     });
 }
