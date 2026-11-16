@@ -50,6 +50,33 @@ function Model({
   // scene drei caches and reuses across mounts.
   const cloned = useMemo(() => scene.clone(true), [scene]);
 
+  // "borre el logo anterior, subi otro, pero en el 3d me guardo el anterior
+  // y lo super puso" — scene.clone(true) deep-clones the mesh hierarchy but
+  // NOT materials: every mesh in `cloned` still points at the exact same
+  // Material object drei's GLTF loader cache shares across every mount of
+  // this glbUrl, for the lifetime of the page. Baking straight onto
+  // `material.map` (as this used to) mutated that one shared material, so
+  // the NEXT bake (a new logo, a Refresh, even just reopening the viewer)
+  // started from the PREVIOUS bake's result instead of the model's real
+  // texture — stacking every design on top of the last forever. Cloning
+  // the material once per mesh name, the first time it's needed, and
+  // remembering its true pristine base layer separately (captured at that
+  // same moment, before any mutation) means every later bake always
+  // starts over from the real texture, replacing rather than layering.
+  const bakeStateRef = useRef(
+    new Map<
+      string,
+      {
+        material: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
+        baseImage?: HTMLImageElement | HTMLCanvasElement | ImageBitmap;
+        baseColorHex: string;
+      }
+    >()
+  );
+  useEffect(() => {
+    bakeStateRef.current = new Map();
+  }, [cloned]);
+
   // "se ve muy lejos el producto" — a GLB can come in at any real-world
   // scale/units and be positioned anywhere, so a fixed camera distance (the
   // previous [0,0,3]) only worked by coincidence. Centers the model at the
@@ -96,15 +123,31 @@ function Model({
     if (!activeMeshName || zoneTextures.length === 0) return;
     const targetMesh = meshes.find((m) => m.name === activeMeshName);
     if (!targetMesh) return;
-    const material = Array.isArray(targetMesh.material) ? targetMesh.material[0] : targetMesh.material;
-    if (!(material instanceof THREE.MeshStandardMaterial) && !(material instanceof THREE.MeshBasicMaterial)) {
-      return;
+
+    let entry = bakeStateRef.current.get(activeMeshName);
+    if (!entry) {
+      const original = Array.isArray(targetMesh.material) ? targetMesh.material[0] : targetMesh.material;
+      if (!(original instanceof THREE.MeshStandardMaterial) && !(original instanceof THREE.MeshBasicMaterial)) {
+        return;
+      }
+      // Our own copy to mutate from here on — the shared cached material
+      // (and its texture) never gets touched, so it stays the real,
+      // pristine base for every future bake, including in a brand-new
+      // Product3DViewer mount later.
+      const material = original.clone() as typeof original;
+      entry = {
+        material,
+        baseImage: material.map?.image as HTMLImageElement | HTMLCanvasElement | ImageBitmap | undefined,
+        baseColorHex: `#${material.color.getHexString()}`,
+      };
+      bakeStateRef.current.set(activeMeshName, entry);
     }
+    targetMesh.material = entry.material;
+    const material = entry.material;
+    const { baseImage, baseColorHex } = entry;
 
     let cancelled = false;
     (async () => {
-      const baseTexture = material.map;
-      const baseImage = baseTexture?.image as HTMLImageElement | ImageBitmap | undefined;
       const width = baseImage?.width ?? 1024;
       const height = baseImage?.height ?? 1024;
 
@@ -115,11 +158,11 @@ function Model({
       if (!ctx) return;
 
       if (baseImage) {
-        ctx.drawImage(baseImage as CanvasImageSource, 0, 0, width, height);
+        ctx.drawImage(baseImage, 0, 0, width, height);
       } else {
         // No existing base texture (a plain-color material) — start from
         // that color instead of leaving the canvas transparent.
-        ctx.fillStyle = `#${material.color.getHexString()}`;
+        ctx.fillStyle = baseColorHex;
         ctx.fillRect(0, 0, width, height);
       }
 
@@ -134,9 +177,9 @@ function Model({
       );
       if (cancelled) return;
 
-      for (const entry of loaded) {
-        if (!entry) continue;
-        const { zt, img } = entry;
+      for (const loadedEntry of loaded) {
+        if (!loadedEntry) continue;
+        const { zt, img } = loadedEntry;
         const dx = zt.uvBox.u0 * width;
         const dy = zt.uvBox.v0 * height;
         const dw = Math.max(1, (zt.uvBox.u1 - zt.uvBox.u0) * width);
