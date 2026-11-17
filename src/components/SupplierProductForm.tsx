@@ -629,8 +629,21 @@ export function SupplierProductForm({
       <div className="rounded-xl border border-line bg-white p-6 space-y-4">
         <div>
           <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-            3D model (.glb) — optional
+            Shared 3D model (.glb) — optional
           </label>
+          {/* "toma solo el que pones ahi arriba, los que están en la
+              variable de color no los toma" — this one field is shared by
+              every color that doesn't have its own file in Variants below;
+              re-uploading here replaces it for ALL of them, it isn't "this
+              color's" file. A supplier who meant to give each color its own
+              model kept re-uploading here instead of using each color's own
+              uploader further down, silently losing every upload but the
+              last. */}
+          <p className="text-xs text-muted mb-2">
+            Used as a fallback for any color below that doesn&apos;t have its own file. To give a color its
+            own independent model, upload it on that color&apos;s own row in Variants instead — uploading
+            here again replaces this one shared file for every color that relies on it.
+          </p>
           {glbUrl && !glbFile ? (
             <div className="flex items-center gap-3 text-sm">
               <span className="text-muted truncate">{glbUrl.split("/").pop()}</span>
@@ -775,6 +788,13 @@ export function SupplierProductForm({
             + Add variant
           </button>
         </div>
+        {(glbFile || glbUrl) && (
+          <p className="text-xs text-muted -mt-1">
+            Want a fully independent 3D model per color instead of sharing the one above? Upload it on
+            that color&apos;s own row below — don&apos;t re-upload it in the Shared 3D model field above,
+            which replaces that one shared file for every color at once.
+          </p>
+        )}
         {variants.length === 0 && (
           <p className="text-sm text-muted">No variants — this product sells as a single option.</p>
         )}
