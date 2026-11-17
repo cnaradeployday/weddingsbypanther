@@ -5,6 +5,13 @@ import { isStorefrontTemplateId } from "@/lib/storefrontTemplates";
 import { ClassicHome } from "@/components/storefront-templates/ClassicHome";
 import { ModernHome } from "@/components/storefront-templates/ModernHome";
 import { BoldHome } from "@/components/storefront-templates/BoldHome";
+import { EditorialHome } from "@/components/storefront-templates/EditorialHome";
+import { MinimalHome } from "@/components/storefront-templates/MinimalHome";
+import { GalleryHome } from "@/components/storefront-templates/GalleryHome";
+import { BoutiqueHome } from "@/components/storefront-templates/BoutiqueHome";
+import { PlayfulHome } from "@/components/storefront-templates/PlayfulHome";
+import { GridHome } from "@/components/storefront-templates/GridHome";
+import { ShowcaseHome } from "@/components/storefront-templates/ShowcaseHome";
 
 const CATEGORY_IMAGES: Record<string, string> = {
   "wedding-favors": "/images/favors-ringbox-flatlay.jpg",
@@ -51,5 +58,12 @@ export default async function StorefrontHome({
   const template = isStorefrontTemplateId(planner.template) ? planner.template : "classic";
   if (template === "modern") return <ModernHome {...templateProps} />;
   if (template === "bold") return <BoldHome {...templateProps} />;
+  if (template === "editorial") return <EditorialHome {...templateProps} />;
+  if (template === "minimal") return <MinimalHome {...templateProps} />;
+  if (template === "gallery") return <GalleryHome {...templateProps} />;
+  if (template === "boutique") return <BoutiqueHome {...templateProps} />;
+  if (template === "playful") return <PlayfulHome {...templateProps} />;
+  if (template === "grid") return <GridHome {...templateProps} />;
+  if (template === "showcase") return <ShowcaseHome {...templateProps} />;
   return <ClassicHome {...templateProps} />;
 }
