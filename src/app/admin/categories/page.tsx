@@ -9,7 +9,10 @@ export default async function AdminCategoriesPage() {
   const supabase = await createClient();
   const perms = await getBackofficePermissions(supabase, session.profile);
 
-  const { data: categories } = await supabase.from("categories").select("*").order("sort_order");
+  const { data: categories } = await supabase
+    .from("categories")
+    .select("id, name, slug, sort_order, business_type, banner_url")
+    .order("sort_order");
   const weddingCategories = (categories ?? []).filter((c) => c.business_type === "wedding");
   const merchandiseCategories = (categories ?? []).filter((c) => c.business_type === "merchandise");
 

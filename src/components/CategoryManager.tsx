@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 
 function slugify(input: string) {
@@ -12,12 +13,64 @@ function slugify(input: string) {
     .replace(/(^-|-$)/g, "");
 }
 
+type Category = { id: string; name: string; slug: string; sort_order: number; banner_url: string | null };
+
+function BannerCell({ category, canWrite }: { category: Category; canWrite: boolean }) {
+  const router = useRouter();
+  const supabase = createClient();
+  const [uploading, setUploading] = useState(false);
+
+  const handleFile = async (file: File) => {
+    setUploading(true);
+    const ext = file.name.split(".").pop() ?? "jpg";
+    const path = `categories/${category.id}-${Date.now()}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from("product-images").upload(path, file);
+    if (!uploadError) {
+      const { data: publicUrl } = supabase.storage.from("product-images").getPublicUrl(path);
+      await supabase.from("categories").update({ banner_url: publicUrl.publicUrl }).eq("id", category.id);
+      router.refresh();
+    }
+    setUploading(false);
+  };
+
+  return (
+    <label
+      className={`relative block h-14 w-24 rounded-md overflow-hidden border border-line bg-cream shrink-0 ${
+        canWrite ? "cursor-pointer hover:border-dark" : ""
+      }`}
+    >
+      {category.banner_url ? (
+        <Image src={category.banner_url} alt="" fill className="object-cover" unoptimized />
+      ) : (
+        <span className="absolute inset-0 flex items-center justify-center text-[10px] text-muted text-center px-1">
+          {canWrite ? "Click to upload" : "No banner"}
+        </span>
+      )}
+      {uploading && (
+        <span className="absolute inset-0 flex items-center justify-center bg-white/70 text-[10px]">...</span>
+      )}
+      {canWrite && (
+        <input
+          type="file"
+          accept="image/*"
+          className="hidden"
+          disabled={uploading}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFile(file);
+          }}
+        />
+      )}
+    </label>
+  );
+}
+
 export function CategoryManager({
   categories,
   businessType,
   canWrite = true,
 }: {
-  categories: { id: string; name: string; slug: string; sort_order: number }[];
+  categories: Category[];
   businessType: "wedding" | "merchandise";
   canWrite?: boolean;
 }) {
@@ -47,6 +100,7 @@ export function CategoryManager({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
+              <th className="px-5 py-3 font-medium">Banner</th>
               <th className="px-5 py-3 font-medium">Name</th>
               <th className="px-5 py-3 font-medium">Slug</th>
               <th className="px-5 py-3 font-medium">Order</th>
@@ -55,6 +109,9 @@ export function CategoryManager({
           <tbody>
             {categories.map((c) => (
               <tr key={c.id} className="border-b border-line last:border-0">
+                <td className="px-5 py-4">
+                  <BannerCell category={c} canWrite={canWrite} />
+                </td>
                 <td className="px-5 py-4 font-medium">{c.name}</td>
                 <td className="px-5 py-4 text-muted">{c.slug}</td>
                 <td className="px-5 py-4 text-muted">{c.sort_order}</td>

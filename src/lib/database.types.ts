@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       categories: {
         Row: {
+          banner_url: string | null
           business_type: string
           id: string
           name: string
@@ -23,6 +24,7 @@ export type Database = {
           sort_order: number
         }
         Insert: {
+          banner_url?: string | null
           business_type?: string
           id?: string
           name: string
@@ -30,6 +32,7 @@ export type Database = {
           sort_order?: number
         }
         Update: {
+          banner_url?: string | null
           business_type?: string
           id?: string
           name?: string

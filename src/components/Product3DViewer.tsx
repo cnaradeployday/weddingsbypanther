@@ -112,60 +112,69 @@ function Model({
       if ((obj as THREE.Mesh).isMesh) meshes.push(obj as THREE.Mesh);
     });
 
-    // Hide every other known color-variant mesh so only the active color
-    // shows — a no-op when the product has no variant mesh names at all.
+    // "la tapa tiene otro color... no se si vos modificas el color" — every
+    // VISIBLE mesh gets the same true-color treatment now, not just the one
+    // carrying the logo: a product is routinely more than one mesh (a
+    // bottle's cap vs. its body, say), and only ever fixing the actively
+    // personalized mesh left every other part of the same model on the old,
+    // plain-lit material — fine on its own, but visibly mismatched in
+    // brightness/tint next to a now-corrected neighbor.
     for (const mesh of meshes) {
       if (otherMeshNames.includes(mesh.name) && mesh.name !== activeMeshName) {
+        // A hidden color-variant mesh for a different color — a no-op when
+        // the product has no variant mesh names at all.
         mesh.visible = false;
+        continue;
       }
+
+      let entry = bakeStateRef.current.get(mesh.name);
+      if (!entry) {
+        const original = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+        if (!(original instanceof THREE.MeshStandardMaterial) && !(original instanceof THREE.MeshBasicMaterial)) {
+          continue;
+        }
+        const baseColorHex = `#${original.color.getHexString()}`;
+        // Our own copy to mutate from here on — the shared cached material
+        // (and its texture/metalness/roughness/normal maps) never gets
+        // touched, so it stays the real, pristine base for every future
+        // bake, including in a brand-new Product3DViewer mount later.
+        const material = original.clone() as typeof original;
+        // Reset the diffuse tint to white: `map` texels get multiplied by
+        // `color` component-wise, and the canvas below already starts from
+        // this material's real base color/photo (see baseImage/baseColorHex
+        // above), so nothing should multiply/darken it a second time.
+        material.color.set(0xffffff);
+        if (material instanceof THREE.MeshStandardMaterial) {
+          // "le sacaste el efecto de iluminacion que tenia antes (la azul)"
+          // — making this mesh fully unlit (MeshBasicMaterial, the previous
+          // fix for "en la botella se ve mal") stopped the N·L falloff from
+          // ever darkening it below the true color, but also threw away
+          // every bit of shading, so the bottle lost the metallic
+          // highlight/gradient it has in the reference render. Give the
+          // real lit material an emissive floor instead, equal to its own
+          // true texture (its own map, unless this is the actively
+          // personalized mesh — see below): emissive alone already
+          // guarantees every point reads at least as bright as the real
+          // photo regardless of curvature or light angle, while the normal
+          // lit diffuse/specular response on top can only ADD extra
+          // brightness (a highlight) — never subtract.
+          material.emissive.set(0xffffff);
+          material.emissiveIntensity = 1;
+          material.emissiveMap = material.map;
+        }
+        entry = {
+          material,
+          baseImage: material.map?.image as HTMLImageElement | HTMLCanvasElement | ImageBitmap | undefined,
+          baseColorHex,
+        };
+        bakeStateRef.current.set(mesh.name, entry);
+      }
+      mesh.material = entry.material;
     }
 
     if (!activeMeshName || zoneTextures.length === 0) return;
-    const targetMesh = meshes.find((m) => m.name === activeMeshName);
-    if (!targetMesh) return;
-
-    let entry = bakeStateRef.current.get(activeMeshName);
-    if (!entry) {
-      const original = Array.isArray(targetMesh.material) ? targetMesh.material[0] : targetMesh.material;
-      if (!(original instanceof THREE.MeshStandardMaterial) && !(original instanceof THREE.MeshBasicMaterial)) {
-        return;
-      }
-      const baseColorHex = `#${original.color.getHexString()}`;
-      // Our own copy to mutate from here on — the shared cached material
-      // (and its texture/metalness/roughness/normal maps) never gets
-      // touched, so it stays the real, pristine base for every future
-      // bake, including in a brand-new Product3DViewer mount later.
-      const material = original.clone() as typeof original;
-      // Reset the diffuse tint to white: `map` texels get multiplied by
-      // `color` component-wise, and the canvas below already starts from
-      // this material's real base color/photo (see baseImage/baseColorHex
-      // above), so nothing should multiply/darken it a second time.
-      material.color.set(0xffffff);
-      if (material instanceof THREE.MeshStandardMaterial) {
-        // "le sacaste el efecto de iluminacion que tenia antes (la azul)"
-        // — making this mesh fully unlit (MeshBasicMaterial, the previous
-        // fix for "en la botella se ve mal") stopped the N·L falloff from
-        // ever darkening it below the true color, but also threw away
-        // every bit of shading, so the bottle lost the metallic
-        // highlight/gradient it has in the reference render. Give the real
-        // lit material an emissive floor instead, equal to its own true
-        // texture: emissive alone already guarantees every point reads at
-        // least as bright as the real photo regardless of curvature or
-        // light angle, while the normal lit diffuse/specular response on
-        // top can only ADD extra brightness (a highlight) — never
-        // subtract. Same accurate color everywhere a flat material gave
-        // us, but the shine is back.
-        material.emissive.set(0xffffff);
-        material.emissiveIntensity = 1;
-      }
-      entry = {
-        material,
-        baseImage: material.map?.image as HTMLImageElement | HTMLCanvasElement | ImageBitmap | undefined,
-        baseColorHex,
-      };
-      bakeStateRef.current.set(activeMeshName, entry);
-    }
-    targetMesh.material = entry.material;
+    const entry = bakeStateRef.current.get(activeMeshName);
+    if (!entry) return;
     const material = entry.material;
     const { baseImage, baseColorHex } = entry;
 
@@ -302,17 +311,23 @@ export function Product3DViewer({
       >
         {/* "el fondo tiene que ser blanco para que tenga contraste" */}
         <color attach="background" args={["#ffffff"]} />
-        {/* The baked mesh's material now carries its own emissive floor
-            (see Model's bake effect above) equal to its true texture, so
-            these lights no longer have to single-handedly guarantee a
-            minimum brightness — that was the old problem: any ambient/
-            directional ratio strong enough to keep a curved surface's
-            shadowed side (a bottle) at true color blew out a flatter one
-            (a notebook cover), and the reverse. They only need to add a
-            believable highlight/gradient on top of that floor now. */}
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[5, 5, 5]} intensity={1.1} />
-        <directionalLight position={[-5, -3, -5]} intensity={0.5} />
+        {/* Every visible mesh now carries its own emissive floor (see
+            Model's bake effect above) equal to its true texture, so these
+            lights no longer have to single-handedly guarantee a minimum
+            brightness — that was the old problem: any ambient/directional
+            ratio strong enough to keep a curved surface's shadowed side (a
+            bottle) at true color blew out a flatter one (a notebook
+            cover), and the reverse. They only need to add a believable
+            highlight on top of that floor now, which is additive on top of
+            an already-100%-bright surface: "el plateado no respeta el
+            color" — kept at the earlier intensities, a near-white color
+            like silver had almost no headroom left before this extra
+            light pushed it past white and clipped, reading flat/washed-out
+            instead of a true metallic silver. Dialed down well below that
+            so the added highlight stays a subtle sheen, not a wash. */}
+        <ambientLight intensity={0.25} />
+        <directionalLight position={[5, 5, 5]} intensity={0.35} />
+        <directionalLight position={[-5, -3, -5]} intensity={0.15} />
         <Suspense fallback={null}>
           <Model
             glbUrl={glbUrl}
