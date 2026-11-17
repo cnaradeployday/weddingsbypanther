@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionProfile, createClient } from "@/lib/supabase/server";
 import { PlannerSettingsForm } from "@/components/PlannerSettingsForm";
+import { isBusinessType, STOREFRONT_ORIGIN } from "@/lib/businessType";
 
 export default async function PlannerSettingsPage() {
   const session = await getSessionProfile();
@@ -14,6 +15,9 @@ export default async function PlannerSettingsPage() {
     .maybeSingle();
   if (!planner) redirect("/login");
 
+  const businessType = isBusinessType(planner.business_type) ? planner.business_type : "wedding";
+  const storefrontUrl = `${STOREFRONT_ORIGIN[businessType]}/store/${planner.slug}`;
+
   return (
     <div>
       <h1 className="font-serif text-3xl mb-1">Storefront settings</h1>
@@ -22,6 +26,7 @@ export default async function PlannerSettingsPage() {
       </p>
       <PlannerSettingsForm
         plannerId={planner.id}
+        storefrontUrl={storefrontUrl}
         initial={{
           business_name: planner.business_name,
           tagline: planner.tagline,

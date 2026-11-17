@@ -82,7 +82,19 @@ function ImagePickerField({
   );
 }
 
-export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string; initial: Initial }) {
+export function PlannerSettingsForm({
+  plannerId,
+  initial,
+  storefrontUrl,
+}: {
+  plannerId: string;
+  initial: Initial;
+  // "al lado de los templates, como se ve el front de esa web en
+  // cuestion" — the absolute /store/<slug> URL (on the right domain for
+  // this planner's own business_type) used to build the live preview
+  // iframe next to the template picker below.
+  storefrontUrl: string;
+}) {
   const supabase = createClient();
   const [form, setForm] = useState(initial);
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -168,7 +180,8 @@ export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string;
   };
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-lg space-y-4">
+    <form onSubmit={handleSubmit} className="max-w-5xl space-y-4">
+      <div className="max-w-lg space-y-4">
       <div>
         <label className="text-xs uppercase tracking-wide text-muted block mb-2">Logo</label>
         <div className="flex items-center gap-4">
@@ -307,29 +320,65 @@ export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string;
           ))}
         </div>
       </div>
+      </div>
 
-      <div>
-        <label className="text-xs uppercase tracking-wide text-muted block mb-2">
-          Storefront template
-        </label>
-        <div className="grid grid-cols-3 gap-2">
-          {STOREFRONT_TEMPLATES.map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => setForm((f) => ({ ...f, template: opt.id }))}
-              className={`rounded-lg border p-2 text-left ${
-                form.template === opt.id ? "border-dark bg-cream" : "border-line"
-              }`}
-            >
-              <TemplatePreview templateId={opt.id} />
-              <span className="block font-medium text-sm mt-2">{opt.label}</span>
-              <span className="block text-[11px] text-muted leading-snug">{opt.description}</span>
-            </button>
-          ))}
+      <div className="grid md:grid-cols-[1fr_380px] gap-6 items-start">
+        <div>
+          <label className="text-xs uppercase tracking-wide text-muted block mb-2">
+            Storefront template
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            {STOREFRONT_TEMPLATES.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, template: opt.id }))}
+                className={`rounded-lg border p-2 text-left ${
+                  form.template === opt.id ? "border-dark bg-cream" : "border-line"
+                }`}
+              >
+                <TemplatePreview templateId={opt.id} />
+                <span className="block font-medium text-sm mt-2">{opt.label}</span>
+                <span className="block text-[11px] text-muted leading-snug">{opt.description}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* The actual live storefront (this planner's own data/branding),
+            rendered with the currently-selected template via a query param
+            the storefront page reads just for this preview — never
+            persisted, so clicking around templates before saving costs
+            nothing. */}
+        <div className="md:sticky md:top-20">
+          <label className="text-xs uppercase tracking-wide text-muted block mb-2">
+            Live preview — {STOREFRONT_TEMPLATES.find((t) => t.id === form.template)?.label}
+          </label>
+          <div className="rounded-xl border border-line overflow-hidden shadow-sm bg-cream-light">
+            <div className="h-7 bg-cream border-b border-line flex items-center gap-1.5 px-3">
+              <span className="h-2 w-2 rounded-full bg-line" />
+              <span className="h-2 w-2 rounded-full bg-line" />
+              <span className="h-2 w-2 rounded-full bg-line" />
+            </div>
+            <iframe
+              key={form.template}
+              src={`${storefrontUrl}?previewTemplate=${form.template}`}
+              title="Storefront preview"
+              className="w-full h-[480px] bg-white"
+            />
+          </div>
+          <a
+            href={storefrontUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-terracotta underline underline-offset-2 mt-2 inline-block"
+          >
+            Open the live storefront in a new tab ↗
+          </a>
         </div>
       </div>
 
+      <div className="max-w-lg space-y-4">
       <ImagePickerField
         label="Storefront banner"
         hint="Shown at the top of your store's home page."
@@ -426,6 +475,7 @@ export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string;
       >
         {saving ? "Saving…" : saved ? "Saved ✓" : "Save changes"}
       </button>
+      </div>
     </form>
   );
 }

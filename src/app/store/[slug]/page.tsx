@@ -28,10 +28,19 @@ const CATEGORY_IMAGES: Record<string, string> = {
 
 export default async function StorefrontHome({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ previewTemplate?: string }>;
 }) {
   const { slug } = await params;
+  // "al lado de los templates, como se ve el front de esa web en
+  // cuestion" — the Storefront template picker (PlannerSettingsForm) embeds
+  // this exact page in a preview iframe with this query param, so an
+  // admin/planner can see the real page (their real data/branding) render
+  // under a template they haven't saved yet. Public and harmless: it only
+  // picks which already-public layout renders, never anything private.
+  const { previewTemplate } = await searchParams;
   const planner = await getPlannerBySlug(slug);
   if (!planner) notFound();
 
@@ -55,7 +64,9 @@ export default async function StorefrontHome({
     showProposalBuilder,
   };
 
-  const template = isStorefrontTemplateId(planner.template) ? planner.template : "classic";
+  const template =
+    (previewTemplate && isStorefrontTemplateId(previewTemplate) ? previewTemplate : null) ??
+    (isStorefrontTemplateId(planner.template) ? planner.template : "classic");
   if (template === "modern") return <ModernHome {...templateProps} />;
   if (template === "bold") return <BoldHome {...templateProps} />;
   if (template === "editorial") return <EditorialHome {...templateProps} />;

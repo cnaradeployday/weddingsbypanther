@@ -76,6 +76,7 @@ export default async function EditPlannerPage({ params }: { params: Promise<{ id
       </p>
       <PlannerSettingsForm
         plannerId={planner.id}
+        storefrontUrl={storefrontUrl}
         initial={{
           business_name: planner.business_name,
           tagline: planner.tagline,
