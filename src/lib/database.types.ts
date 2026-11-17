@@ -286,6 +286,7 @@ export type Database = {
           storefront_banner_url: string | null
           storefront_subtitle: string | null
           tagline: string | null
+          template: string
           theme_dark: boolean
         }
         Insert: {
@@ -312,6 +313,7 @@ export type Database = {
           storefront_banner_url?: string | null
           storefront_subtitle?: string | null
           tagline?: string | null
+          template?: string
           theme_dark?: boolean
         }
         Update: {
@@ -338,6 +340,7 @@ export type Database = {
           storefront_banner_url?: string | null
           storefront_subtitle?: string | null
           tagline?: string | null
+          template?: string
           theme_dark?: boolean
         }
         Relationships: [
