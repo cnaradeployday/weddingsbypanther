@@ -13,7 +13,10 @@ import { PlayfulHome } from "@/components/storefront-templates/PlayfulHome";
 import { GridHome } from "@/components/storefront-templates/GridHome";
 import { ShowcaseHome } from "@/components/storefront-templates/ShowcaseHome";
 
-const CATEGORY_IMAGES: Record<string, string> = {
+// Fallback for any category an admin hasn't uploaded a real banner for yet
+// (see /admin/categories) — keeps existing storefronts looking the same
+// until each one is replaced with the admin's own image.
+const DEFAULT_CATEGORY_IMAGES: Record<string, string> = {
   "wedding-favors": "/images/favors-ringbox-flatlay.jpg",
   centerpieces: "/images/centerpieces-gold-chandelier.jpg",
   "table-numbers": "/images/tablenumbers-long-table.jpg",
@@ -54,11 +57,21 @@ export default async function StorefrontHome({
   // concept — a promotional-merchandise storefront just shops a catalog.
   const showProposalBuilder = planner.business_type !== "merchandise";
 
+  // "los banners de las categorias se tienen que poder modificar desde el
+  // backoffice" — each category's own banner_url (set in /admin/categories)
+  // now wins; the old hardcoded image only fills in for a category nobody
+  // has uploaded one for yet.
+  const categoryImages: Record<string, string> = {};
+  for (const cat of categories) {
+    const image = cat.banner_url ?? DEFAULT_CATEGORY_IMAGES[cat.slug];
+    if (image) categoryImages[cat.slug] = image;
+  }
+
   const templateProps = {
     plannerBusinessName: planner.business_name,
     storefrontBannerUrl: planner.storefront_banner_url,
     categories,
-    categoryImages: CATEGORY_IMAGES,
+    categoryImages,
     products,
     base,
     showProposalBuilder,

@@ -4,7 +4,9 @@ import { getCategories } from "@/lib/queries";
 import { DEPLOYMENT_BUSINESS_TYPE, BUSINESS_COPY } from "@/lib/businessType";
 import { BrandPanel } from "@/components/BrandPanel";
 
-const CATEGORY_IMAGES: Record<string, string> = {
+// Fallback for any category an admin hasn't uploaded a real banner for yet
+// (see /admin/categories).
+const DEFAULT_CATEGORY_IMAGES: Record<string, string> = {
   "wedding-favors": "/images/favors-ringbox-flatlay.jpg",
   centerpieces: "/images/centerpieces-gold-chandelier.jpg",
   "table-numbers": "/images/tablenumbers-long-table.jpg",
@@ -129,7 +131,7 @@ export default async function Home() {
                 className="relative h-48 rounded-xl overflow-hidden group"
               >
                 <Image
-                  src={CATEGORY_IMAGES[cat.slug] ?? "/images/hero-tablescape.jpg"}
+                  src={cat.banner_url ?? DEFAULT_CATEGORY_IMAGES[cat.slug] ?? "/images/hero-tablescape.jpg"}
                   alt={cat.name}
                   fill
                   className="object-cover transition-transform duration-300 group-hover:scale-105"
