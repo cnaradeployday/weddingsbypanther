@@ -277,11 +277,21 @@ export function Product3DViewer({
             divides by π, so the previous lights (summing to ~2.0 at a
             best-lit point) only reached ~64% of the texture's real color.
             Pushed well past π (~3.14) so a lit surface reads at or above
-            its true albedo, matching the flat reference photo, while the
-            fill light keeps unlit faces from going too dark. */}
-        <ambientLight intensity={1.8} />
-        <directionalLight position={[5, 5, 5]} intensity={2.4} />
-        <directionalLight position={[-5, -3, -5]} intensity={1} />
+            its true albedo, matching the flat reference photo.
+            "el color se veia apago... ahora lo vuelvo a ver en una botella"
+            — on a curved surface (a bottle, vs. the flatter notebook cover
+            this was first tuned against), the directional lights' N·L
+            falloff still visibly darkens the sides even though the
+            front-most point reads correctly: a saturated, dark color (navy
+            blue) shows that falloff as a "veil" much more than a mid-tone
+            red did. Made ambient — which has no falloff, the same at every
+            point on the surface — the dominant term instead of the
+            directional lights, so the curve's sides stay close to the
+            front's brightness; the directional lights are now just a soft
+            highlight rather than the main light source. */}
+        <ambientLight intensity={3.4} />
+        <directionalLight position={[5, 5, 5]} intensity={1} />
+        <directionalLight position={[-5, -3, -5]} intensity={0.6} />
         <Suspense fallback={null}>
           <Model
             glbUrl={glbUrl}
