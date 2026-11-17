@@ -158,9 +158,20 @@ function Model({
           // photo regardless of curvature or light angle, while the normal
           // lit diffuse/specular response on top can only ADD extra
           // brightness (a highlight) — never subtract.
-          material.emissive.set(0xffffff);
           material.emissiveIntensity = 1;
-          material.emissiveMap = material.map;
+          if (material.map) {
+            material.emissive.set(0xffffff);
+            material.emissiveMap = material.map;
+          } else {
+            // "sumaste problemas nuevos" — a plain-color mesh (no texture,
+            // like a bottle cap) has no map to drive a per-texel emissive
+            // floor, so `emissive = white` made its floor flat WHITE
+            // regardless of its real color — the cap stopped looking like
+            // a cap at all, reading the same light gray as the body next
+            // to it. The floor has to be this mesh's own true color
+            // instead, not an assumed white.
+            material.emissive.set(baseColorHex);
+          }
         }
         entry = {
           material,
@@ -237,7 +248,13 @@ function Model({
         // Same bitmap drives the emissive floor (see the emissive setup
         // above) as drives the lit diffuse response, so the logo itself
         // reads at full true color even in a shadowed area, not just the
-        // surrounding base color.
+        // surrounding base color. Always reset emissive to white first: if
+        // this mesh originally had no map (a plain-color base, like the
+        // cap-color case above), the initial setup left `emissive` at this
+        // mesh's own baseColorHex — left as-is, that would multiply this
+        // already-true-color canvas by baseColorHex a second time, the
+        // same "velo" bug all over again.
+        material.emissive.set(0xffffff);
         material.emissiveMap = newTexture;
       }
       material.needsUpdate = true;
