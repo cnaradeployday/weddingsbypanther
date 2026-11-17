@@ -135,10 +135,24 @@ function Model({
       // pristine base for every future bake, including in a brand-new
       // Product3DViewer mount later.
       const material = original.clone() as typeof original;
+      const baseColorHex = `#${material.color.getHexString()}`;
+      // "en el 3d se sigue viendo mas oscuro el logo... como si hay un
+      // velo" — a different root cause than the 2D "velo" bug
+      // (personalizationComposite.ts's old multiply-blend trick), but the
+      // same symptom: three.js multiplies a MeshStandardMaterial's `map`
+      // texel colors by `material.color` component-wise, so this GLB's own
+      // base color (e.g. a saturated red) was tinting/darkening EVERYTHING
+      // drawn onto the baked texture below, including the logo stacked on
+      // top of it at full strength. The baked canvas already starts from
+      // this material's real base color/photo (see baseImage/baseColorHex
+      // just below), so nothing should multiply on top of it a second
+      // time — reset to white so the texture's own baked-in colors (base
+      // AND logo) read at their true value.
+      material.color.set(0xffffff);
       entry = {
         material,
         baseImage: material.map?.image as HTMLImageElement | HTMLCanvasElement | ImageBitmap | undefined,
-        baseColorHex: `#${material.color.getHexString()}`,
+        baseColorHex,
       };
       bakeStateRef.current.set(activeMeshName, entry);
     }
