@@ -665,19 +665,22 @@ export function SupplierProductForm({
             </div>
           )}
         </div>
-        {(glbFile || glbUrl) && (
-          <div>
-            <label className="text-xs text-muted block mb-1">
-              Default mesh/node name in the GLB (used when a color variant has none of its own)
-            </label>
-            <input
-              value={glbMeshName}
-              onChange={(e) => setGlbMeshName(e.target.value)}
-              placeholder="e.g. Notebook_Base"
-              className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
-            />
-          </div>
-        )}
+        {/* "y el Default mesh/node name en SHARED 3D MODEL [sin necesidad
+            de cargar un archivo]" — shown unconditionally now rather than
+            gated on glbFile/glbUrl, since typing this (or the per-zone 3D
+            checkbox above) shouldn't require the shared file to exist
+            yet. */}
+        <div>
+          <label className="text-xs text-muted block mb-1">
+            Default mesh/node name in the GLB (used when a color variant has none of its own)
+          </label>
+          <input
+            value={glbMeshName}
+            onChange={(e) => setGlbMeshName(e.target.value)}
+            placeholder="e.g. Notebook_Base"
+            className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:border-dark"
+          />
+        </div>
       </div>
 
       <div className="rounded-xl border border-line bg-white p-6 space-y-5">
@@ -747,7 +750,13 @@ export function SupplierProductForm({
               ...existingImages,
               ...previews.map((src, i) => ({ id: `pending:${i}`, url: src })),
             ]}
-            hasGlb={!!glbFile || !!glbUrl}
+            // "Habilitar 'Show this area in the 3D viewer' sin necesidad
+            // de tener que cargar un archivo [compartido]" — a product
+            // using ONLY independent per-color .glb files (no shared
+            // fallback one at all) still needs to be able to mark which
+            // print zones show in the 3D viewer, so this isn't gated on
+            // the shared file alone anymore.
+            hasGlb={!!glbFile || !!glbUrl || variants.some((v) => !!v.glbFile || !!v.glbUrl)}
           />
         ) : (
           <p className="text-sm text-muted">This product isn&apos;t personalizable, so it has no print area.</p>
