@@ -87,6 +87,7 @@ export default async function EditPlannerPage({ params }: { params: Promise<{ id
           secondary_color: planner.secondary_color,
           header_footer_text_color: planner.header_footer_text_color,
           font_choice: planner.font_choice,
+          template: planner.template,
           storefront_banner_url: planner.storefront_banner_url,
           catalog_banner_url: planner.catalog_banner_url,
           ai_render_enabled: planner.ai_render_enabled,

@@ -4,6 +4,8 @@ import { useState } from "react";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { FONT_CHOICES, FONT_PAIR_VARS } from "@/lib/fontChoices";
+import { STOREFRONT_TEMPLATES } from "@/lib/storefrontTemplates";
+import { TemplatePreview } from "./TemplatePreview";
 
 type Initial = {
   business_name: string;
@@ -16,6 +18,7 @@ type Initial = {
   secondary_color: string;
   header_footer_text_color: string;
   font_choice: string;
+  template: string;
   storefront_banner_url: string | null;
   catalog_banner_url: string | null;
   ai_render_enabled: boolean;
@@ -135,6 +138,7 @@ export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string;
           font_choice: form.font_choice,
           storefront_banner_url: storefrontBannerUrl,
           catalog_banner_url: catalogBannerUrl,
+          template: form.template,
           ai_render_enabled: form.ai_render_enabled,
           about_text: form.about_text,
           contact_email: form.contact_email,
@@ -299,6 +303,28 @@ export function PlannerSettingsForm({ plannerId, initial }: { plannerId: string;
               </span>
               <span className="block font-medium">{opt.label}</span>
               <span className="block text-xs text-muted">{opt.description}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs uppercase tracking-wide text-muted block mb-2">
+          Storefront template
+        </label>
+        <div className="grid grid-cols-3 gap-2">
+          {STOREFRONT_TEMPLATES.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setForm((f) => ({ ...f, template: opt.id }))}
+              className={`rounded-lg border p-2 text-left ${
+                form.template === opt.id ? "border-dark bg-cream" : "border-line"
+              }`}
+            >
+              <TemplatePreview templateId={opt.id} />
+              <span className="block font-medium text-sm mt-2">{opt.label}</span>
+              <span className="block text-[11px] text-muted leading-snug">{opt.description}</span>
             </button>
           ))}
         </div>
