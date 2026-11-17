@@ -6,7 +6,13 @@ import { formatUSD, applyMarkup } from "@/lib/format";
 import { parseQuantityInput, isQuantityBelowMinimum } from "@/lib/quantityValidation";
 import { ProductConfigurator, type ProductConfiguratorProduct } from "./ProductConfigurator";
 import { Product3DBadge } from "./Product3DBadge";
+import { resolveSwatchColor } from "@/lib/colorSwatch";
 import type { RelatedProduct } from "@/lib/queries";
+
+// "por ahora ponele 1.000 a todo" — a placeholder shown under every color
+// swatch until the real per-variant stock feed (an external API) is wired
+// up; not meant to be accurate yet.
+const PLACEHOLDER_STOCK = 1000;
 
 // "al momento de elegir el producto, antes del product builder, necesitamos
 // poder elegir el color" — the variant/color picker used to live inside
@@ -138,24 +144,58 @@ export function ProductLanding({
           <label className="text-xs uppercase tracking-wide text-muted block mb-2">
             {sortedVariants[0]?.sku ? "Option" : "Color"}
           </label>
-          <div className="flex flex-wrap gap-2">
-            {sortedVariants.map((v) => (
-              <button
-                key={v.id}
-                type="button"
-                onClick={() => setVariantId(v.id)}
-                className={`px-4 py-2 rounded-lg text-sm border text-left ${variantId === v.id ? "border-dark bg-cream" : "border-line"}`}
-              >
-                <span className="block font-medium">{v.label}</span>
-                {v.price_delta !== 0 && (
-                  <span className="text-xs text-muted">
-                    {v.price_delta > 0 ? "+" : ""}
-                    {formatUSD(applyMarkup(v.price_delta, product.markupPct))}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
+          {sortedVariants[0]?.sku ? (
+            <div className="flex flex-wrap gap-2">
+              {sortedVariants.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => setVariantId(v.id)}
+                  className={`px-4 py-2 rounded-lg text-sm border text-left ${variantId === v.id ? "border-dark bg-cream" : "border-line"}`}
+                >
+                  <span className="block font-medium">{v.label}</span>
+                  {v.price_delta !== 0 && (
+                    <span className="text-xs text-muted">
+                      {v.price_delta > 0 ? "+" : ""}
+                      {formatUSD(applyMarkup(v.price_delta, product.markupPct))}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          ) : (
+            // "en lugar de la palabra del color, un circulo con el color y
+            // debajo el stock" — the swatch itself carries the color (with
+            // the label kept as a tooltip/aria-label for accessibility,
+            // since free-text color names don't always map to a real CSS
+            // color — see colorSwatch.ts), with the placeholder stock
+            // count underneath.
+            <div className="flex flex-wrap gap-3">
+              {sortedVariants.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => setVariantId(v.id)}
+                  title={v.label}
+                  aria-label={v.label}
+                  aria-pressed={variantId === v.id}
+                  className="flex flex-col items-center gap-1 w-16"
+                >
+                  <span
+                    className={`h-9 w-9 rounded-full border-2 ${variantId === v.id ? "border-dark" : "border-line"}`}
+                    style={{ backgroundColor: resolveSwatchColor(v.label) }}
+                  />
+                  {v.price_delta !== 0 && (
+                    <span className="text-[11px] text-muted">
+                      {v.price_delta > 0 ? "+" : ""}
+                      {formatUSD(applyMarkup(v.price_delta, product.markupPct))}
+                    </span>
+                  )}
+                  <span className="text-[11px] text-muted">{PLACEHOLDER_STOCK.toLocaleString()} in stock</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <button
