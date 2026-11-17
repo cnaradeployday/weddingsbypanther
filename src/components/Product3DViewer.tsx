@@ -67,7 +67,7 @@ function Model({
     new Map<
       string,
       {
-        material: THREE.MeshBasicMaterial;
+        material: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
         baseImage?: HTMLImageElement | HTMLCanvasElement | ImageBitmap;
         baseColorHex: string;
       }
@@ -131,32 +131,33 @@ function Model({
         return;
       }
       const baseColorHex = `#${original.color.getHexString()}`;
-      // "en el cuaderno se ve bien y en la botella se ve mal, tiene que
-      // verse bien en todos" — the scene's ambient/directional ratio
-      // (tuned for a curved bottle earlier) can only ever be a compromise:
-      // any lit material still shades a curved surface's sides darker than
-      // its front (N·L falloff), just less visibly on a flat notebook
-      // cover than on a bottle. The baked canvas below is a flat product
-      // photo, not something meant to look physically lit, so the only way
-      // to make every product read identically regardless of its own
-      // geometry is to stop lighting this mesh altogether: a
-      // MeshBasicMaterial ignores normals/lights entirely and just shows
-      // its map at face value — our own copy, built from the original's
-      // map/transparency, never touching the shared cached material (and
-      // its texture) other meshes/mounts still rely on.
-      const material = new THREE.MeshBasicMaterial({
-        map: original.map,
-        transparent: original.transparent,
-        opacity: original.opacity,
-        alphaTest: original.alphaTest,
-        side: original.side,
-      });
-      // Still reset to white: MeshBasicMaterial multiplies `map` texels by
-      // `color` the same way MeshStandardMaterial did, and the canvas below
-      // already starts from this material's real base color/photo (see
-      // baseImage/baseColorHex above), so nothing should multiply on top of
-      // it a second time.
+      // Our own copy to mutate from here on — the shared cached material
+      // (and its texture/metalness/roughness/normal maps) never gets
+      // touched, so it stays the real, pristine base for every future
+      // bake, including in a brand-new Product3DViewer mount later.
+      const material = original.clone() as typeof original;
+      // Reset the diffuse tint to white: `map` texels get multiplied by
+      // `color` component-wise, and the canvas below already starts from
+      // this material's real base color/photo (see baseImage/baseColorHex
+      // above), so nothing should multiply/darken it a second time.
       material.color.set(0xffffff);
+      if (material instanceof THREE.MeshStandardMaterial) {
+        // "le sacaste el efecto de iluminacion que tenia antes (la azul)"
+        // — making this mesh fully unlit (MeshBasicMaterial, the previous
+        // fix for "en la botella se ve mal") stopped the N·L falloff from
+        // ever darkening it below the true color, but also threw away
+        // every bit of shading, so the bottle lost the metallic
+        // highlight/gradient it has in the reference render. Give the real
+        // lit material an emissive floor instead, equal to its own true
+        // texture: emissive alone already guarantees every point reads at
+        // least as bright as the real photo regardless of curvature or
+        // light angle, while the normal lit diffuse/specular response on
+        // top can only ADD extra brightness (a highlight) — never
+        // subtract. Same accurate color everywhere a flat material gave
+        // us, but the shine is back.
+        material.emissive.set(0xffffff);
+        material.emissiveIntensity = 1;
+      }
       entry = {
         material,
         baseImage: material.map?.image as HTMLImageElement | HTMLCanvasElement | ImageBitmap | undefined,
@@ -223,6 +224,13 @@ function Model({
       newTexture.colorSpace = THREE.SRGBColorSpace;
       newTexture.needsUpdate = true;
       material.map = newTexture;
+      if (material instanceof THREE.MeshStandardMaterial) {
+        // Same bitmap drives the emissive floor (see the emissive setup
+        // above) as drives the lit diffuse response, so the logo itself
+        // reads at full true color even in a shadowed area, not just the
+        // surrounding base color.
+        material.emissiveMap = newTexture;
+      }
       material.needsUpdate = true;
     })();
 
@@ -294,26 +302,17 @@ export function Product3DViewer({
       >
         {/* "el fondo tiene que ser blanco para que tenga contraste" */}
         <color attach="background" args={["#ffffff"]} />
-        {/* "se sigue viendo opacado" — `flat` (above) removed the tone-
-            mapping darkening, but MeshStandardMaterial's Lambertian BRDF
-            divides by π, so the previous lights (summing to ~2.0 at a
-            best-lit point) only reached ~64% of the texture's real color.
-            Pushed well past π (~3.14) so a lit surface reads at or above
-            its true albedo, matching the flat reference photo.
-            "el color se veia apago... ahora lo vuelvo a ver en una botella"
-            — on a curved surface (a bottle, vs. the flatter notebook cover
-            this was first tuned against), the directional lights' N·L
-            falloff still visibly darkens the sides even though the
-            front-most point reads correctly: a saturated, dark color (navy
-            blue) shows that falloff as a "veil" much more than a mid-tone
-            red did. Made ambient — which has no falloff, the same at every
-            point on the surface — the dominant term instead of the
-            directional lights, so the curve's sides stay close to the
-            front's brightness; the directional lights are now just a soft
-            highlight rather than the main light source. */}
-        <ambientLight intensity={3.4} />
-        <directionalLight position={[5, 5, 5]} intensity={1} />
-        <directionalLight position={[-5, -3, -5]} intensity={0.6} />
+        {/* The baked mesh's material now carries its own emissive floor
+            (see Model's bake effect above) equal to its true texture, so
+            these lights no longer have to single-handedly guarantee a
+            minimum brightness — that was the old problem: any ambient/
+            directional ratio strong enough to keep a curved surface's
+            shadowed side (a bottle) at true color blew out a flatter one
+            (a notebook cover), and the reverse. They only need to add a
+            believable highlight/gradient on top of that floor now. */}
+        <ambientLight intensity={0.6} />
+        <directionalLight position={[5, 5, 5]} intensity={1.1} />
+        <directionalLight position={[-5, -3, -5]} intensity={0.5} />
         <Suspense fallback={null}>
           <Model
             glbUrl={glbUrl}
