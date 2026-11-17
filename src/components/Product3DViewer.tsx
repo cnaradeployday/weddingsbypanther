@@ -67,7 +67,7 @@ function Model({
     new Map<
       string,
       {
-        material: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
+        material: THREE.MeshBasicMaterial;
         baseImage?: HTMLImageElement | HTMLCanvasElement | ImageBitmap;
         baseColorHex: string;
       }
@@ -130,24 +130,32 @@ function Model({
       if (!(original instanceof THREE.MeshStandardMaterial) && !(original instanceof THREE.MeshBasicMaterial)) {
         return;
       }
-      // Our own copy to mutate from here on — the shared cached material
-      // (and its texture) never gets touched, so it stays the real,
-      // pristine base for every future bake, including in a brand-new
-      // Product3DViewer mount later.
-      const material = original.clone() as typeof original;
-      const baseColorHex = `#${material.color.getHexString()}`;
-      // "en el 3d se sigue viendo mas oscuro el logo... como si hay un
-      // velo" — a different root cause than the 2D "velo" bug
-      // (personalizationComposite.ts's old multiply-blend trick), but the
-      // same symptom: three.js multiplies a MeshStandardMaterial's `map`
-      // texel colors by `material.color` component-wise, so this GLB's own
-      // base color (e.g. a saturated red) was tinting/darkening EVERYTHING
-      // drawn onto the baked texture below, including the logo stacked on
-      // top of it at full strength. The baked canvas already starts from
-      // this material's real base color/photo (see baseImage/baseColorHex
-      // just below), so nothing should multiply on top of it a second
-      // time — reset to white so the texture's own baked-in colors (base
-      // AND logo) read at their true value.
+      const baseColorHex = `#${original.color.getHexString()}`;
+      // "en el cuaderno se ve bien y en la botella se ve mal, tiene que
+      // verse bien en todos" — the scene's ambient/directional ratio
+      // (tuned for a curved bottle earlier) can only ever be a compromise:
+      // any lit material still shades a curved surface's sides darker than
+      // its front (N·L falloff), just less visibly on a flat notebook
+      // cover than on a bottle. The baked canvas below is a flat product
+      // photo, not something meant to look physically lit, so the only way
+      // to make every product read identically regardless of its own
+      // geometry is to stop lighting this mesh altogether: a
+      // MeshBasicMaterial ignores normals/lights entirely and just shows
+      // its map at face value — our own copy, built from the original's
+      // map/transparency, never touching the shared cached material (and
+      // its texture) other meshes/mounts still rely on.
+      const material = new THREE.MeshBasicMaterial({
+        map: original.map,
+        transparent: original.transparent,
+        opacity: original.opacity,
+        alphaTest: original.alphaTest,
+        side: original.side,
+      });
+      // Still reset to white: MeshBasicMaterial multiplies `map` texels by
+      // `color` the same way MeshStandardMaterial did, and the canvas below
+      // already starts from this material's real base color/photo (see
+      // baseImage/baseColorHex above), so nothing should multiply on top of
+      // it a second time.
       material.color.set(0xffffff);
       entry = {
         material,
