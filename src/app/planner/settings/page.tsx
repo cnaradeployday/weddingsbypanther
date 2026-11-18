@@ -18,6 +18,12 @@ export default async function PlannerSettingsPage() {
   const businessType = isBusinessType(planner.business_type) ? planner.business_type : "wedding";
   const storefrontUrl = `${STOREFRONT_ORIGIN[businessType]}/store/${planner.slug}`;
 
+  const { data: categories } = await supabase
+    .from("categories")
+    .select("id, name, slug")
+    .eq("business_type", businessType)
+    .order("sort_order");
+
   return (
     <div>
       <h1 className="font-serif text-3xl mb-1">Storefront settings</h1>
@@ -27,6 +33,7 @@ export default async function PlannerSettingsPage() {
       <PlannerSettingsForm
         plannerId={planner.id}
         storefrontUrl={storefrontUrl}
+        categories={categories ?? []}
         initial={{
           business_name: planner.business_name,
           tagline: planner.tagline,
@@ -41,6 +48,7 @@ export default async function PlannerSettingsPage() {
           template: planner.template,
           storefront_banner_url: planner.storefront_banner_url,
           catalog_banner_url: planner.catalog_banner_url,
+          category_banner_overrides: (planner.category_banner_overrides as Record<string, string>) ?? {},
           ai_render_enabled: planner.ai_render_enabled,
           about_text: planner.about_text,
           contact_email: planner.contact_email,

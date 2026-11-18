@@ -21,6 +21,13 @@ type Initial = {
   template: string;
   storefront_banner_url: string | null;
   catalog_banner_url: string | null;
+  // "quiero poder modificar eso en cada caja blanca, no a nivel
+  // categories" — a category's banner_url (set at /admin/categories) is
+  // shared across every storefront; this is this ONE planner's own
+  // per-category override, keyed by category slug, so their storefront
+  // can show different photos than the marketplace default without
+  // changing it for anyone else.
+  category_banner_overrides: Record<string, string>;
   ai_render_enabled: boolean;
   about_text: string | null;
   contact_email: string | null;
@@ -86,6 +93,7 @@ export function PlannerSettingsForm({
   plannerId,
   initial,
   storefrontUrl,
+  categories,
 }: {
   plannerId: string;
   initial: Initial;
@@ -94,6 +102,9 @@ export function PlannerSettingsForm({
   // this planner's own business_type) used to build the live preview
   // iframe next to the template picker below.
   storefrontUrl: string;
+  // This planner's own catalog categories (their business_type), so the
+  // "Category photos" card below can offer one upload slot per category.
+  categories: { id: string; name: string; slug: string }[];
 }) {
   const supabase = createClient();
   const [form, setForm] = useState(initial);
@@ -105,6 +116,10 @@ export function PlannerSettingsForm({
   );
   const [catalogBannerFile, setCatalogBannerFile] = useState<File | null>(null);
   const [catalogBannerPreview, setCatalogBannerPreview] = useState<string | null>(initial.catalog_banner_url);
+  const [categoryBannerFiles, setCategoryBannerFiles] = useState<Record<string, File>>({});
+  const [categoryBannerPreviews, setCategoryBannerPreviews] = useState<Record<string, string>>(
+    initial.category_banner_overrides
+  );
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,6 +149,12 @@ export function PlannerSettingsForm({
         if (!uploaded) throw new Error("Couldn't upload the catalog banner — try a different image.");
         catalogBannerUrl = uploaded;
       }
+      const categoryBannerOverrides = { ...form.category_banner_overrides };
+      for (const [slug, file] of Object.entries(categoryBannerFiles)) {
+        const uploaded = await uploadAsset(supabase, plannerId, file, `category-${slug}`);
+        if (!uploaded) throw new Error("Couldn't upload a category photo — try a different image.");
+        categoryBannerOverrides[slug] = uploaded;
+      }
 
       const { error: updateError } = await supabase
         .from("planners")
@@ -150,6 +171,7 @@ export function PlannerSettingsForm({
           font_choice: form.font_choice,
           storefront_banner_url: storefrontBannerUrl,
           catalog_banner_url: catalogBannerUrl,
+          category_banner_overrides: categoryBannerOverrides,
           template: form.template,
           ai_render_enabled: form.ai_render_enabled,
           about_text: form.about_text,
@@ -166,10 +188,12 @@ export function PlannerSettingsForm({
         logo_url: logoUrl,
         storefront_banner_url: storefrontBannerUrl,
         catalog_banner_url: catalogBannerUrl,
+        category_banner_overrides: categoryBannerOverrides,
       }));
       setLogoFile(null);
       setStorefrontBannerFile(null);
       setCatalogBannerFile(null);
+      setCategoryBannerFiles({});
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
@@ -392,6 +416,32 @@ export function PlannerSettingsForm({
           </div>
         </div>
       </div>
+
+      {categories.length > 0 && (
+        <div className="rounded-xl border border-line bg-white p-6 space-y-4">
+          <div>
+            <p className="text-sm font-medium">Category photos</p>
+            <p className="text-xs text-muted">
+              Shown on category tiles on your storefront (templates like Classic and Gallery). Leave a
+              category blank to use the marketplace&apos;s default photo for it.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {categories.map((cat) => (
+              <ImagePickerField
+                key={cat.id}
+                label={cat.name}
+                previewUrl={categoryBannerPreviews[cat.slug] ?? null}
+                aspectClass="aspect-[4/3]"
+                onChange={(file) => {
+                  setCategoryBannerFiles((f) => ({ ...f, [cat.slug]: file }));
+                  setCategoryBannerPreviews((p) => ({ ...p, [cat.slug]: URL.createObjectURL(file) }));
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-2 gap-6 items-start">
         <div className="rounded-xl border border-line bg-white p-6 space-y-4">
