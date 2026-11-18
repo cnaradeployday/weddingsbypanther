@@ -26,7 +26,7 @@ export default async function EditPlannerPage({ params }: { params: Promise<{ id
   // here (disabled, at the store's default markup) so admins can turn on
   // products a planner was never linked to in the first place, not just
   // toggle ones already linked.
-  const [{ data: catalogProducts }, { data: links }] = await Promise.all([
+  const [{ data: catalogProducts }, { data: links }, { data: categories }] = await Promise.all([
     supabase
       .from("products")
       .select(
@@ -37,6 +37,7 @@ export default async function EditPlannerPage({ params }: { params: Promise<{ id
       .eq("category.business_type", businessType)
       .order("name"),
     supabase.from("planner_products").select("id, product_id, markup_pct, enabled").eq("planner_id", planner.id),
+    supabase.from("categories").select("id, name, slug").eq("business_type", businessType).order("sort_order"),
   ]);
 
   const linkByProduct = new Map((links ?? []).map((l) => [l.product_id, l]));
@@ -77,6 +78,7 @@ export default async function EditPlannerPage({ params }: { params: Promise<{ id
       <PlannerSettingsForm
         plannerId={planner.id}
         storefrontUrl={storefrontUrl}
+        categories={categories ?? []}
         initial={{
           business_name: planner.business_name,
           tagline: planner.tagline,
@@ -91,6 +93,7 @@ export default async function EditPlannerPage({ params }: { params: Promise<{ id
           template: planner.template,
           storefront_banner_url: planner.storefront_banner_url,
           catalog_banner_url: planner.catalog_banner_url,
+          category_banner_overrides: (planner.category_banner_overrides as Record<string, string>) ?? {},
           ai_render_enabled: planner.ai_render_enabled,
           about_text: planner.about_text,
           contact_email: planner.contact_email,

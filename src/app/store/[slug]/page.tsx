@@ -59,11 +59,17 @@ export default async function StorefrontHome({
 
   // "los banners de las categorias se tienen que poder modificar desde el
   // backoffice" — each category's own banner_url (set in /admin/categories)
-  // now wins; the old hardcoded image only fills in for a category nobody
-  // has uploaded one for yet.
+  // wins over the old hardcoded image, which only fills in for a category
+  // nobody has uploaded one for yet.
+  // "quiero poder modificar eso en cada caja blanca, no a nivel
+  // categories" — this ONE planner's own per-category override (set from
+  // their Storefront settings) wins over even that, so a planner can show
+  // different category photos on their storefront without changing the
+  // marketplace-wide default for anyone else.
+  const categoryOverrides = (planner.category_banner_overrides as Record<string, string> | null) ?? {};
   const categoryImages: Record<string, string> = {};
   for (const cat of categories) {
-    const image = cat.banner_url ?? DEFAULT_CATEGORY_IMAGES[cat.slug];
+    const image = categoryOverrides[cat.slug] ?? cat.banner_url ?? DEFAULT_CATEGORY_IMAGES[cat.slug];
     if (image) categoryImages[cat.slug] = image;
   }
 

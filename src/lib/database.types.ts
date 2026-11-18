@@ -272,6 +272,7 @@ export type Database = {
           business_name: string
           business_type: string
           catalog_banner_url: string | null
+          category_banner_overrides: Json
           contact_address: string | null
           contact_email: string | null
           contact_phone: string | null
@@ -299,6 +300,7 @@ export type Database = {
           business_name: string
           business_type?: string
           catalog_banner_url?: string | null
+          category_banner_overrides?: Json
           contact_address?: string | null
           contact_email?: string | null
           contact_phone?: string | null
@@ -326,6 +328,7 @@ export type Database = {
           business_name?: string
           business_type?: string
           catalog_banner_url?: string | null
+          category_banner_overrides?: Json
           contact_address?: string | null
           contact_email?: string | null
           contact_phone?: string | null
