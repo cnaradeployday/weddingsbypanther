@@ -67,7 +67,7 @@ function Model({
     new Map<
       string,
       {
-        material: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
+        material: THREE.MeshStandardMaterial;
         baseImage?: HTMLImageElement | HTMLCanvasElement | ImageBitmap;
         baseColorHex: string;
       }
@@ -130,52 +130,77 @@ function Model({
       let entry = bakeStateRef.current.get(mesh.name);
       if (!entry) {
         const original = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
-        if (!(original instanceof THREE.MeshStandardMaterial) && !(original instanceof THREE.MeshBasicMaterial)) {
+        // "en la parte de adelante se ve el color solido, pero en la parte
+        // de atras se ve ese velo... implementa la solucion pero para
+        // todas las caras" — gating this fix on `instanceof
+        // MeshStandardMaterial/MeshBasicMaterial` silently skipped any
+        // other material type a GLB might use for a different mesh (a
+        // notebook's back cover vs. its front, say, each routinely a
+        // separate mesh/material in these models): MeshPhongMaterial,
+        // MeshLambertMaterial, MeshPhysicalMaterial's own plain fallback,
+        // anything — those meshes kept the model's original, untouched,
+        // plain-lit material, fully exposed to the old N·L falloff. Every
+        // material type ultimately extends THREE.Material and (for every
+        // mesh material three.js/glTF actually produces) carries a
+        // `color`, so build a fresh MeshStandardMaterial from whatever
+        // `original` is instead of requiring it to already be one — same
+        // true-color-floor treatment on every face, regardless of the
+        // GLB's own per-mesh material type.
+        if (!(original instanceof THREE.Material) || !("color" in original)) {
           continue;
         }
-        const baseColorHex = `#${original.color.getHexString()}`;
+        const standardLike = original instanceof THREE.MeshStandardMaterial ? original : null;
+        const originalMap = "map" in original ? ((original as { map?: THREE.Texture | null }).map ?? null) : null;
+        const baseColorHex = `#${(original as THREE.Material & { color: THREE.Color }).color.getHexString()}`;
         // Our own copy to mutate from here on — the shared cached material
         // (and its texture/metalness/roughness/normal maps) never gets
         // touched, so it stays the real, pristine base for every future
         // bake, including in a brand-new Product3DViewer mount later.
-        const material = original.clone() as typeof original;
+        const material = new THREE.MeshStandardMaterial({
+          map: originalMap,
+          transparent: original.transparent,
+          opacity: original.opacity,
+          alphaTest: original.alphaTest,
+          side: original.side,
+          roughness: standardLike?.roughness ?? 1,
+          metalness: standardLike?.metalness ?? 0,
+          normalMap: standardLike?.normalMap ?? null,
+        });
         // Reset the diffuse tint to white: `map` texels get multiplied by
         // `color` component-wise, and the canvas below already starts from
         // this material's real base color/photo (see baseImage/baseColorHex
         // above), so nothing should multiply/darken it a second time.
         material.color.set(0xffffff);
-        if (material instanceof THREE.MeshStandardMaterial) {
-          // "le sacaste el efecto de iluminacion que tenia antes (la azul)"
-          // — making this mesh fully unlit (MeshBasicMaterial, the previous
-          // fix for "en la botella se ve mal") stopped the N·L falloff from
-          // ever darkening it below the true color, but also threw away
-          // every bit of shading, so the bottle lost the metallic
-          // highlight/gradient it has in the reference render. Give the
-          // real lit material an emissive floor instead, equal to its own
-          // true texture (its own map, unless this is the actively
-          // personalized mesh — see below): emissive alone already
-          // guarantees every point reads at least as bright as the real
-          // photo regardless of curvature or light angle, while the normal
-          // lit diffuse/specular response on top can only ADD extra
-          // brightness (a highlight) — never subtract.
-          material.emissiveIntensity = 1;
-          if (material.map) {
-            material.emissive.set(0xffffff);
-            material.emissiveMap = material.map;
-          } else {
-            // "sumaste problemas nuevos" — a plain-color mesh (no texture,
-            // like a bottle cap) has no map to drive a per-texel emissive
-            // floor, so `emissive = white` made its floor flat WHITE
-            // regardless of its real color — the cap stopped looking like
-            // a cap at all, reading the same light gray as the body next
-            // to it. The floor has to be this mesh's own true color
-            // instead, not an assumed white.
-            material.emissive.set(baseColorHex);
-          }
+        // "le sacaste el efecto de iluminacion que tenia antes (la azul)"
+        // — making this mesh fully unlit (MeshBasicMaterial, the previous
+        // fix for "en la botella se ve mal") stopped the N·L falloff from
+        // ever darkening it below the true color, but also threw away
+        // every bit of shading, so the bottle lost the metallic
+        // highlight/gradient it has in the reference render. Give the
+        // real lit material an emissive floor instead, equal to its own
+        // true texture (its own map, unless this is the actively
+        // personalized mesh — see below): emissive alone already
+        // guarantees every point reads at least as bright as the real
+        // photo regardless of curvature or light angle, while the normal
+        // lit diffuse/specular response on top can only ADD extra
+        // brightness (a highlight) — never subtract.
+        material.emissiveIntensity = 1;
+        if (originalMap) {
+          material.emissive.set(0xffffff);
+          material.emissiveMap = originalMap;
+        } else {
+          // "sumaste problemas nuevos" — a plain-color mesh (no texture,
+          // like a bottle cap) has no map to drive a per-texel emissive
+          // floor, so `emissive = white` made its floor flat WHITE
+          // regardless of its real color — the cap stopped looking like
+          // a cap at all, reading the same light gray as the body next
+          // to it. The floor has to be this mesh's own true color
+          // instead, not an assumed white.
+          material.emissive.set(baseColorHex);
         }
         entry = {
           material,
-          baseImage: material.map?.image as HTMLImageElement | HTMLCanvasElement | ImageBitmap | undefined,
+          baseImage: originalMap?.image as HTMLImageElement | HTMLCanvasElement | ImageBitmap | undefined,
           baseColorHex,
         };
         bakeStateRef.current.set(mesh.name, entry);
@@ -244,19 +269,17 @@ function Model({
       newTexture.colorSpace = THREE.SRGBColorSpace;
       newTexture.needsUpdate = true;
       material.map = newTexture;
-      if (material instanceof THREE.MeshStandardMaterial) {
-        // Same bitmap drives the emissive floor (see the emissive setup
-        // above) as drives the lit diffuse response, so the logo itself
-        // reads at full true color even in a shadowed area, not just the
-        // surrounding base color. Always reset emissive to white first: if
-        // this mesh originally had no map (a plain-color base, like the
-        // cap-color case above), the initial setup left `emissive` at this
-        // mesh's own baseColorHex — left as-is, that would multiply this
-        // already-true-color canvas by baseColorHex a second time, the
-        // same "velo" bug all over again.
-        material.emissive.set(0xffffff);
-        material.emissiveMap = newTexture;
-      }
+      // Same bitmap drives the emissive floor (see the emissive setup
+      // above) as drives the lit diffuse response, so the logo itself
+      // reads at full true color even in a shadowed area, not just the
+      // surrounding base color. Always reset emissive to white first: if
+      // this mesh originally had no map (a plain-color base, like the
+      // cap-color case above), the initial setup left `emissive` at this
+      // mesh's own baseColorHex — left as-is, that would multiply this
+      // already-true-color canvas by baseColorHex a second time, the
+      // same "velo" bug all over again.
+      material.emissive.set(0xffffff);
+      material.emissiveMap = newTexture;
       material.needsUpdate = true;
     })();
 
