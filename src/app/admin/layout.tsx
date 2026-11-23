@@ -79,7 +79,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     return n;
   });
 
-  const brand = DEPLOYMENT_BUSINESS_TYPE === "merchandise" ? "Merchandise" : "BespokeWedding";
+  const brand = DEPLOYMENT_BUSINESS_TYPE === "merchandise" ? "Merchandise" : "WHITELABELADMIN";
 
   return (
     <BackofficeShell brand={brand} subtitle="Marketplace admin" nav={nav}>
